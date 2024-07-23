@@ -23,7 +23,7 @@ repository = "https://github.com/neptune-ai/neptune-client-scale"
 readme = "README.md"
 license = "Apache License 2.0"
 packages = [
-    { include = "neptune_client_scale", from = "src" },
+    { include = "neptune_scale", from = "src" },
 ]
 include = []
 classifiers = [
@@ -79,7 +79,7 @@ line-length = 120
 select = ["F", "UP"]
 
 [tool.mypy]
-files = 'src/neptune_client_scale'
+files = 'src/neptune_scale'
 mypy_path = "stubs"
 install_types = "True"
 non_interactive = "True"
