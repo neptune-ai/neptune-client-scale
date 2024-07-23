@@ -28,8 +28,17 @@ BLOCK_TIMEOUT = 1.0
 
 
 class OperationQueue(Generic[K, V]):
+    """
+    Propoerties:
+        1. The order of elements in the batch is the same as the order in which they were put.
+        2. All values in returned batch have the same key.
+        3. Value put with key=None is always returned as a single-element batch.
+        4. Returned batch is always of size <= batch_size.
+        5. get_batch() blocks until the biggest possible batch is ready to be returned unless stop_blocking() was called.
+    """
+
     def __init__(self, batch_size: int) -> None:
-        self._queue: Queue[QueueElement[K, V]] = Queue(maxsize=-1)
+        self._queue: Queue[QueueElement[K, V]] = Queue(maxsize=-1)  # unbounded size
         self._batch_size = batch_size
         self._placeholder: Optional[QueueElement[K, V]] = None
         self._stop_blocking = False
