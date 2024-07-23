@@ -79,7 +79,7 @@ line-length = 120
 select = ["F", "UP"]
 
 [tool.mypy]
-files = 'src/neptune_scale'
+files = 'src/neptune_scale, tests'
 mypy_path = "stubs"
 install_types = "True"
 non_interactive = "True"
@@ -90,3 +90,11 @@ check_untyped_defs = "True"
 warn_return_any = "True"
 show_error_codes = "True"
 warn_unused_ignores = "True"
+
+
+[[tool.mypy.overrides]]
+module = [
+    "tests/*"
+]
+allow_untyped_defs = "True"
+allow_untyped_calls = "True"

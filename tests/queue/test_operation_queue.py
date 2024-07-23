@@ -8,15 +8,18 @@ from typing import (
 
 import pytest
 
-from neptune_client_scale.run.operation_queue import OperationQueue
+from neptune_scale.queue.operation_queue import (
+    BLOCK_TIMEOUT,
+    OperationQueue,
+)
 
-WAIT_TIME = 3.0
-WAIT_ERROR = WAIT_TIME * 0.1
-TIMEOUT = WAIT_TIME * 2
+WAIT_TIME = 1.0
+WAIT_ERROR = WAIT_TIME * 0.1 + BLOCK_TIMEOUT
+TIMEOUT = WAIT_TIME + BLOCK_TIMEOUT + WAIT_ERROR
 
 
 def test_put():
-    queue = OperationQueue[int](batch_size=5)
+    queue = OperationQueue[int, int](batch_size=5)
 
     values = [1, 2, 3, 4, 5]
     for value in values:
@@ -28,7 +31,7 @@ def test_put():
 
 @pytest.mark.timeout(TIMEOUT)
 def test_blocking_get():
-    queue = OperationQueue[int](batch_size=4)
+    queue = OperationQueue[int, int](batch_size=4)
 
     def complete_batch():
         queue.put(key=1, value=4)
@@ -61,18 +64,14 @@ def test_blocking_get():
 )
 def test_batching(category_series: List[Optional[int]], expected_batch_summary: List[Tuple[int, int]]):
     values = [i for i in range(len(category_series))]
-    queue = OperationQueue[int](batch_size=64)
+    queue = OperationQueue[int, int](batch_size=64)
+    queue.stop_blocking()
 
     for k, v in zip(category_series, values):
         queue.put(key=k, value=v)
 
     offset = 0
-    unblock_iter = len(expected_batch_summary) - 1
-    for i, (expected_batch_size, expected_batch_key) in enumerate(expected_batch_summary):
-        if i == unblock_iter:
-            t = Timer(WAIT_TIME, queue.stop_blocking)
-            t.start()
-
+    for expected_batch_size, expected_batch_key in expected_batch_summary:
         batch = queue.get_batch()
         assert len(batch) == expected_batch_size
         assert all(key == expected_batch_key for key, _ in batch)
@@ -83,7 +82,7 @@ def test_batching(category_series: List[Optional[int]], expected_batch_summary: 
 
 @pytest.mark.timeout(TIMEOUT)
 def test_stop_blocking():
-    queue = OperationQueue[int](batch_size=64)
+    queue = OperationQueue[int, int](batch_size=64)
     values = [1, 2, 3]
     for value in values:
         queue.put(key=1, value=value)

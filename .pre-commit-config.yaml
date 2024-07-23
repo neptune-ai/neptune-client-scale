@@ -28,5 +28,6 @@ repos:
         pass_filenames: false
         additional_dependencies:
           - neptune-api==0.3.0
+          - pytest
 default_language_version:
     python: python3
