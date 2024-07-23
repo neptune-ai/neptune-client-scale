@@ -23,11 +23,7 @@ repository = "https://github.com/neptune-ai/neptune-client-scale"
 readme = "README.md"
 license = "Apache License 2.0"
 packages = [
-<<<<<<< HEAD
     { include = "neptune_scale", from = "src" },
-=======
-    { include = "neptune_client_scale", from = "src" },
->>>>>>> 63bfe71 (Init basic schema for future development)
 ]
 include = []
 classifiers = [
