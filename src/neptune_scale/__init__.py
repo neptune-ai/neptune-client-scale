@@ -26,13 +26,6 @@ class Run(AbstractContextManager):
     Representation of tracked metadata.
     """
 
-    Args:
-        project (str): Name of the project where the run should go, in the form `workspace-name/project_name`.
-        api_token (str): User's API token.
-        family (str): It must be common for all runs in a given run hierarchy. Select any string.
-        run_id (str): It must be unique in the project.
-    """
-
     def __init__(self, *, project: str, api_token: str, family: str, run_id: str) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -40,7 +33,7 @@ class Run(AbstractContextManager):
         Args:
             project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
             api_token: Your Neptune API token.
-            family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy. 
+            family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
         """
