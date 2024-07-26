@@ -1,0 +1,82 @@
+import uuid
+
+import pytest
+
+from neptune_scale import Run
+
+
+def test_context_manager():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # when
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id):
+        ...
+
+    # then
+    assert True
+
+
+def test_close():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # and
+    run = Run(project=project, api_token=api_token, family=family, run_id=run_id)
+
+    # when
+    run.close()
+
+    # then
+    assert True
+
+
+def test_family_too_long():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+
+    # and
+    family = "a" * 1000
+
+    # when
+    with pytest.raises(ValueError):
+        with Run(project=project, api_token=api_token, family=family, run_id=run_id):
+            ...
+
+
+def test_run_id_too_long():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    family = str(uuid.uuid4())
+
+    # and
+    run_id = "a" * 1000
+
+    # then
+    with pytest.raises(ValueError):
+        with Run(project=project, api_token=api_token, family=family, run_id=run_id):
+            ...
+
+
+def test_invalid_project_name():
+    # given
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # and
+    project = "just-project"
+
+    # then
+    with pytest.raises(ValueError):
+        with Run(project=project, api_token=api_token, family=family, run_id=run_id):
+            ...
