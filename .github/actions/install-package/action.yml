@@ -1,0 +1,28 @@
+---
+name: Package
+description: Install python and package
+inputs:
+  python-version:
+    description: "Python version"
+    required: true
+  os:
+    description: "Operating system"
+    required: true
+
+runs:
+    using: "composite"
+    steps:
+      - name: Install Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r dev_requirements.txt
+        shell: bash
+
+      - name: List dependencies
+        run: |
+          pip list
+        shell: bash

@@ -3,4 +3,4 @@
 # dev
 pre-commit
 pytest
-Faker
+pytest-timeout

@@ -1,0 +1,47 @@
+---
+name: Test Unit
+description: Check unit tests
+inputs:
+  python-version:
+    description: "Python version"
+    required: true
+  os:
+    description: "Operating system"
+    required: true
+  report_job:
+    description: "Job name to update by JUnit report"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install package
+      uses: ./.github/actions/install-package
+      with:
+        python-version: ${{ inputs.python-version }}
+        os: ${{ inputs.os }}-latest
+
+    - name: Test
+      run: |
+        pytest -v ./tests/unit/ \
+        --timeout=120 --timeout_method=thread \
+        --color=yes \
+        --junitxml="./test-results/test-unit-new-${{ inputs.os }}-${{ inputs.python-version }}.xml"
+      shell: bash
+
+    - name: Upload test reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-artifacts
+        path: ./test-results
+
+    - name: Report
+      uses: mikepenz/action-junit-report@v3.6.2
+      if: always()
+      with:
+        report_paths: './test-results/test-unit-*.xml'
+        update_check: true
+        include_passed: true
+        annotate_notice: true
+        job_name: ${{ inputs.report_job }}
