@@ -67,7 +67,7 @@ class Run(AbstractContextManager):
 
     def close(self) -> None:
         """
-        Close then run and stop tracking.
+        Stops the connection to Neptune and synchronizes all data.
         """
         pass
 
