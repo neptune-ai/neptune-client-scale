@@ -23,7 +23,8 @@ from neptune_scale.parameters import (
 
 class Run(AbstractContextManager):
     """
-    Starts a new tracked run that logs ML model-building metadata to neptune.ai.
+    Representation of tracked metadata.
+    """
 
     Args:
         project (str): Name of the project where the run should go, in the form `workspace-name/project_name`.
