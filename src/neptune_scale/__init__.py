@@ -53,7 +53,7 @@ class Run(WithResources, AbstractContextManager):
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
             max_queue_size: Maximum number of operations that can be queued before the queue is considered full.
-            max_queue_size_exceeded_callback: Callback function called when the queue is full. Accepts two arguments:
+            max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
                 the maximum size of the queue and the exception that caused the queue to be full.
         """
         verify_type("api_token", api_token, str)
