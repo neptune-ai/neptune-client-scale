@@ -1,4 +1,5 @@
 import threading
+from unittest.mock import MagicMock
 
 import pytest
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
@@ -34,7 +35,7 @@ def test__enqueue():
 def test__max_queue_size_exceeded():
     # given
     lock = threading.RLock()
-    callback = lambda _, __: 4 / 0
+    callback = MagicMock()
     queue = OperationsQueue(lock=lock, max_size=1, max_size_exceeded_callback=callback)
 
     # and
@@ -42,10 +43,10 @@ def test__max_queue_size_exceeded():
 
     # when
     queue.enqueue(operation=operation)
+    queue.enqueue(operation=operation)
 
     # then
-    with pytest.raises(ValueError):
-        queue.enqueue(operation=operation)
+    callback.assert_called_once()
 
 
 def test__max_element_size_exceeded():
