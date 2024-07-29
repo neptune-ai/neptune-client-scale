@@ -12,6 +12,7 @@ from typing import (
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.validation import verify_type
+from neptune_scale.parameters import MAX_QUEUE_ELEMENT_SIZE
 
 if TYPE_CHECKING:
     from threading import RLock
@@ -51,7 +52,12 @@ class OperationsQueue(Resource):
     def enqueue(self, *, operation: RunOperation) -> None:
         try:
             with self._lock:
-                self._queue.put_nowait(QueueElement(self._sequence_id, monotonic(), operation.SerializeToString()))
+                serialized_operation = operation.SerializeToString()
+
+                if len(serialized_operation) > MAX_QUEUE_ELEMENT_SIZE:
+                    raise ValueError(f"Operation size exceeds the maximum allowed size ({MAX_QUEUE_ELEMENT_SIZE})")
+
+                self._queue.put_nowait(QueueElement(self._sequence_id, monotonic(), serialized_operation))
                 self._sequence_id += 1
         except Exception as e:
             self._max_size_exceeded_callback(self._max_size, e)
