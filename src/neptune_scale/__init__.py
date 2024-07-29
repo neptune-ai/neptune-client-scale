@@ -52,7 +52,7 @@ class Run(WithResources, AbstractContextManager):
             family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
-            max_queue_size: Maximum number of operations that can be queued before the queue is considered full.
+            max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
                 Accepts two arguments:
                 - Maximum size of the queue.
