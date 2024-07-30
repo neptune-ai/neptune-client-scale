@@ -20,6 +20,7 @@ from neptune_scale.core.components.abstract import (
 )
 from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.message_builder import MessageBuilder
+from neptune_scale.core.proto_utils import datetime_to_proto
 from neptune_scale.core.validation import (
     verify_collection_type,
     verify_max_length,
@@ -47,6 +48,7 @@ class Run(WithResources, AbstractContextManager):
         family: str,
         run_id: str,
         resume: bool = False,
+        creation_time: datetime | None = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
         max_queue_size_exceeded_callback: Callable[[int, BaseException], None] | None = None,
     ) -> None:
@@ -70,6 +72,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
+        verify_type("creation_time", creation_time, (datetime, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
         verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
 
@@ -93,7 +96,9 @@ class Run(WithResources, AbstractContextManager):
         )
 
         if not resume:
-            self._create_run()
+            self._create_run(
+                creation_time=creation_time,
+            )
 
     def __enter__(self) -> Run:
         return self
@@ -108,12 +113,13 @@ class Run(WithResources, AbstractContextManager):
         """
         super().close()
 
-    def _create_run(self) -> None:
+    def _create_run(self, creation_time: datetime | None) -> None:
         operation = RunOperation(
             project=self._project,
             run_id=self._run_id,
             create=CreateRun(
                 family=self._family,
+                creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )
         self._operations_queue.enqueue(operation=operation)

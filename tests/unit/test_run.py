@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 import pytest
+from freezegun import freeze_time
 
 from neptune_scale import Run
 
@@ -175,6 +176,22 @@ def test_resume():
 
     # when
     with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True):
+        ...
+
+    # then
+    assert True
+
+
+@freeze_time("2024-07-30 12:12:12.000022")
+def test_creation_time():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # when
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, creation_time=datetime.now()):
         ...
 
     # then

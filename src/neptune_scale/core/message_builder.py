@@ -4,7 +4,6 @@ __all__ = ("MessageBuilder",)
 
 from datetime import datetime
 
-from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     ModifySet,
@@ -14,6 +13,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+
+from neptune_scale.core.proto_utils import datetime_to_proto
 
 
 class MessageBuilder:
@@ -91,11 +92,6 @@ def make_value(value: Value | float | str | int | bool | datetime | list[str] | 
         return fv
     else:
         raise ValueError(f"Unsupported ingest field value type: {type(value)}")
-
-
-def datetime_to_proto(dt: datetime) -> Timestamp:
-    dt_ts = dt.timestamp()
-    return Timestamp(seconds=int(dt_ts), nanos=int((dt_ts % 1) * 1e9))
 
 
 def make_step(number: float | int, raise_on_step_precision_loss: bool = False) -> Step:
