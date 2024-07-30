@@ -62,6 +62,7 @@ class Run(WithResources, AbstractContextManager):
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
             resume: Whether to resume an existing run.
+            creation_time: Time when the run was created.
             max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
                 Accepts two arguments:
