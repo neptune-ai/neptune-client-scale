@@ -51,6 +51,7 @@ class OperationsQueue(Resource):
 
     def enqueue(self, *, operation: RunOperation) -> None:
         try:
+            # TODO: This lock could be moved to the Run class
             with self._lock:
                 serialized_operation = operation.SerializeToString()
 

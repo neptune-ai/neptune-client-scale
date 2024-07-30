@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 import pytest
 
@@ -80,3 +81,86 @@ def test_invalid_project_name():
     with pytest.raises(ValueError):
         with Run(project=project, api_token=api_token, family=family, run_id=run_id):
             ...
+
+
+def test_metadata():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id) as run:
+        run.log(
+            step=1,
+            timestamp=datetime.now(),
+            fields={
+                "int": 1,
+                "string": "test",
+                "float": 3.14,
+                "bool": True,
+                "datetime": datetime.now(),
+            },
+            metrics={
+                "metric": 1.0,
+            },
+            add_tags={
+                "tags": ["tag1"],
+            },
+            remove_tags={
+                "group_tags": ["tag2"],
+            },
+        )
+
+
+def test_log_without_step():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id) as run:
+        run.log(
+            timestamp=datetime.now(),
+            fields={
+                "int": 1,
+            },
+        )
+
+
+def test_log_step_float():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id) as run:
+        run.log(
+            step=3.14,
+            timestamp=datetime.now(),
+            fields={
+                "int": 1,
+            },
+        )
+
+
+def test_log_no_timestamp():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id) as run:
+        run.log(
+            step=3.14,
+            fields={
+                "int": 1,
+            },
+        )

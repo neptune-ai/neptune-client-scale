@@ -8,6 +8,7 @@ __all__ = ["Run"]
 
 import threading
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Callable
 
 from neptune_scale.core.components.abstract import (
@@ -15,7 +16,9 @@ from neptune_scale.core.components.abstract import (
     WithResources,
 )
 from neptune_scale.core.components.operations_queue import OperationsQueue
+from neptune_scale.core.message_builder import MessageBuilder
 from neptune_scale.core.validation import (
+    verify_collection_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
@@ -95,3 +98,64 @@ class Run(WithResources, AbstractContextManager):
         Stops the connection to Neptune and synchronizes all data.
         """
         super().close()
+
+    def log(
+        self,
+        step: float | int | None = None,
+        timestamp: datetime | None = None,
+        fields: dict[str, float | bool | int | str | datetime | list | set] | None = None,
+        metrics: dict[str, float] | None = None,
+        add_tags: dict[str, list[str] | set[str]] | None = None,
+        remove_tags: dict[str, list[str] | set[str]] | None = None,
+    ) -> None:
+        """
+        Logs metadata to Neptune Run.
+
+        Args:
+            step: Step number.
+            timestamp: Time of the metadata.
+            fields: Dictionary of metadata fields.
+            metrics: Dictionary of metrics.
+            add_tags: Dictionary of tags to add.
+            remove_tags: Dictionary of tags to remove.
+
+        Examples:
+            >>> with Run(...) as run:
+            ...     run.log(step=1, timestamp=datetime.now(), fields={"int": 1, "string": "test"})
+            ...     run.log(step=2, timestamp=datetime.now(), metrics={"metric": 1.0})
+
+        """
+        verify_type("step", step, (float, int, type(None)))
+        verify_type("timestamp", timestamp, (datetime, type(None)))
+        verify_type("fields", fields, (dict, type(None)))
+        verify_type("metrics", metrics, (dict, type(None)))
+        verify_type("add_tags", add_tags, (dict, type(None)))
+        verify_type("remove_tags", remove_tags, (dict, type(None)))
+
+        timestamp = datetime.now() if timestamp is None else timestamp
+        fields = {} if fields is None else fields
+        metrics = {} if metrics is None else metrics
+        add_tags = {} if add_tags is None else add_tags
+        remove_tags = {} if remove_tags is None else remove_tags
+
+        verify_collection_type("`fields` keys", list(fields.keys()), str)
+        verify_collection_type("`metrics` keys", list(metrics.keys()), str)
+        verify_collection_type("`add_tags` keys", list(add_tags.keys()), str)
+        verify_collection_type("`remove_tags` keys", list(remove_tags.keys()), str)
+
+        verify_collection_type("`fields` values", list(fields.values()), (float, bool, int, str, datetime, list, set))
+        verify_collection_type("`metrics` values", list(metrics.values()), float)
+        verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
+        verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
+
+        for operation in MessageBuilder(
+            project=self._project,
+            run_id=self._run_id,
+            step=step,
+            timestamp=timestamp,
+            fields=fields,
+            metrics=metrics,
+            add_tags=add_tags,
+            remove_tags=remove_tags,
+        ):
+            self._operations_queue.enqueue(operation=operation)
