@@ -211,3 +211,20 @@ def test_assign_experiment():
 
     # then
     assert True
+
+
+def test_forking():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # when
+    with Run(
+        project=project, api_token=api_token, family=family, run_id=run_id, from_run_id="parent-run-id", from_step=3.14
+    ):
+        ...
+
+    # then
+    assert True
