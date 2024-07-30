@@ -48,6 +48,7 @@ class Run(WithResources, AbstractContextManager):
         family: str,
         run_id: str,
         resume: bool = False,
+        as_experiment: str | None = None,
         creation_time: datetime | None = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
         max_queue_size_exceeded_callback: Callable[[int, BaseException], None] | None = None,
@@ -62,6 +63,7 @@ class Run(WithResources, AbstractContextManager):
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
             resume: Whether to resume an existing run.
+            as_experiment: ID of the experiment to be associated with the run.
             creation_time: Time when the run was created.
             max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
@@ -73,6 +75,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
+        verify_type("as_experiment", as_experiment, (str, type(None)))
         verify_type("creation_time", creation_time, (datetime, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
         verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
@@ -99,6 +102,7 @@ class Run(WithResources, AbstractContextManager):
         if not resume:
             self._create_run(
                 creation_time=creation_time,
+                as_experiment=as_experiment,
             )
 
     def __enter__(self) -> Run:
@@ -114,12 +118,13 @@ class Run(WithResources, AbstractContextManager):
         """
         super().close()
 
-    def _create_run(self, creation_time: datetime | None) -> None:
+    def _create_run(self, creation_time: datetime | None, as_experiment: str | None) -> None:
         operation = RunOperation(
             project=self._project,
             run_id=self._run_id,
             create=CreateRun(
                 family=self._family,
+                experiment_id=as_experiment,
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )

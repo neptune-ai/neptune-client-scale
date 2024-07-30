@@ -196,3 +196,18 @@ def test_creation_time():
 
     # then
     assert True
+
+
+def test_assign_experiment():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # when
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, as_experiment="experiment_id"):
+        ...
+
+    # then
+    assert True
