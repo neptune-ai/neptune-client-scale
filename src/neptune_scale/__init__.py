@@ -80,9 +80,16 @@ class Run(WithResources, AbstractContextManager):
         verify_type("max_queue_size", max_queue_size, int)
         verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
 
+        if resume and creation_time is not None:
+            raise ValueError("`resume` and `creation_time` cannot be used together.")
+        if resume and as_experiment is not None:
+            raise ValueError("`resume` and `as_experiment` cannot be used together.")
+
         verify_non_empty("api_token", api_token)
         verify_non_empty("family", family)
         verify_non_empty("run_id", run_id)
+        if as_experiment is not None:
+            verify_non_empty("as_experiment", as_experiment)
 
         verify_project_qualified_name("project", project)
 
