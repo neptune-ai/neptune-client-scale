@@ -11,6 +11,9 @@ from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Callable
 
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+
 from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
@@ -43,6 +46,7 @@ class Run(WithResources, AbstractContextManager):
         api_token: str,
         family: str,
         run_id: str,
+        resume: bool = False,
         max_queue_size: int = MAX_QUEUE_SIZE,
         max_queue_size_exceeded_callback: Callable[[int, BaseException], None] | None = None,
     ) -> None:
@@ -55,6 +59,7 @@ class Run(WithResources, AbstractContextManager):
             family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
+            resume: Whether to resume an existing run.
             max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
                 Accepts two arguments:
@@ -64,6 +69,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("api_token", api_token, str)
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
+        verify_type("resume", resume, bool)
         verify_type("max_queue_size", max_queue_size, int)
         verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
 
@@ -86,6 +92,9 @@ class Run(WithResources, AbstractContextManager):
             lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
         )
 
+        if not resume:
+            self._create_run()
+
     def __enter__(self) -> Run:
         return self
 
@@ -98,6 +107,16 @@ class Run(WithResources, AbstractContextManager):
         Stops the connection to Neptune and synchronizes all data.
         """
         super().close()
+
+    def _create_run(self) -> None:
+        operation = RunOperation(
+            project=self._project,
+            run_id=self._run_id,
+            create=CreateRun(
+                family=self._family,
+            ),
+        )
+        self._operations_queue.enqueue(operation=operation)
 
     def log(
         self,

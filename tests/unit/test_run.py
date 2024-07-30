@@ -164,3 +164,18 @@ def test_log_no_timestamp():
                 "int": 1,
             },
         )
+
+
+def test_resume():
+    # given
+    project = "workspace/project"
+    api_token = "API_TOKEN"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # when
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True):
+        ...
+
+    # then
+    assert True
