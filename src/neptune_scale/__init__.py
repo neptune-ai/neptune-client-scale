@@ -126,7 +126,7 @@ class Run(WithResources, AbstractContextManager):
 
         if not resume:
             self._create_run(
-                creation_time=creation_time,
+                creation_time=datetime.now() if creation_time is None else creation_time,
                 as_experiment=as_experiment,
                 from_run_id=from_run_id,
                 from_step=from_step,
@@ -147,14 +147,16 @@ class Run(WithResources, AbstractContextManager):
 
     def _create_run(
         self,
-        creation_time: datetime | None,
+        creation_time: datetime,
         as_experiment: str | None,
         from_run_id: str | None,
         from_step: int | float | None,
     ) -> None:
         fork_point: ForkPoint | None = None
         if from_run_id is not None and from_step is not None:
-            fork_point = ForkPoint(parent_run_id=from_run_id, step=make_step(number=from_step))
+            fork_point = ForkPoint(
+                parent_project=self._project, parent_run_id=from_run_id, step=make_step(number=from_step)
+            )
 
         operation = RunOperation(
             project=self._project,
