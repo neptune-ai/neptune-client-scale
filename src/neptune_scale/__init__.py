@@ -109,7 +109,7 @@ class Run(WithResources, AbstractContextManager):
         remove_tags: dict[str, list[str] | set[str]] | None = None,
     ) -> None:
         """
-        Logs metadata to Neptune Run.
+        Logs the specified metadata to Neptune.
 
         Args:
             step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used. 
