@@ -1,21 +1,21 @@
+from __future__ import annotations
+
 __all__ = (
     "verify_type",
     "verify_non_empty",
     "verify_max_length",
     "verify_project_qualified_name",
+    "verify_collection_type",
 )
 
-from typing import (
-    Any,
-    Union,
-)
+from typing import Any
 
 
-def get_type_name(var_type: Union[type, tuple]) -> str:
+def get_type_name(var_type: type | tuple) -> str:
     return var_type.__name__ if hasattr(var_type, "__name__") else str(var_type)
 
 
-def verify_type(var_name: str, var: Any, expected_type: Union[type, tuple]) -> None:
+def verify_type(var_name: str, var: Any, expected_type: type | tuple) -> None:
     try:
         if isinstance(expected_type, tuple):
             type_name = " or ".join(get_type_name(t) for t in expected_type)
@@ -46,3 +46,10 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
     project_parts = var.split("/")
     if len(project_parts) != 2:
         raise ValueError(f"{var_name} is not in expected format, should be 'workspace-name/project-name")
+
+
+def verify_collection_type(var_name: str, var: list | set | tuple, expected_type: type | tuple) -> None:
+    verify_type(var_name, var, (list, set, tuple))
+
+    for value in var:
+        verify_type(f"elements of collection '{var_name}'", value, expected_type)
