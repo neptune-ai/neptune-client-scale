@@ -113,7 +113,7 @@ class Run(WithResources, AbstractContextManager):
 
         Args:
             step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used. 
-            timestamp: Time of the metadata.
+            timestamp: Time of logging the metadata.
             fields: Dictionary of metadata fields.
             metrics: Dictionary of metrics.
             add_tags: Dictionary of tags to add.
