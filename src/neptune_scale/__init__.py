@@ -117,7 +117,7 @@ class Run(WithResources, AbstractContextManager):
             fields: Dictionary of metadata fields.
             metrics: Dictionary of metrics.
             add_tags: Dictionary of tags to add.
-            remove_tags: Dictionary of tags to remove.
+            remove_tags: Dictionary of tags to remove from the run.
 
         Examples:
             >>> with Run(...) as run:
