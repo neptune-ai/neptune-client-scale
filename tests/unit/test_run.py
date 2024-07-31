@@ -1,5 +1,8 @@
+import base64
+import json
 import uuid
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
@@ -7,10 +10,29 @@ from freezegun import freeze_time
 from neptune_scale import Run
 
 
-def test_context_manager():
+@pytest.fixture(scope="session")
+def api_token():
+    return base64.b64encode(json.dumps({"api_address": "aa", "api_url": "bb"}).encode("utf-8")).decode("utf-8")
+
+
+class MockedApiClient:
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def submit(self, operation) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    def cleanup(self) -> None:
+        pass
+
+
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_context_manager(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -22,10 +44,10 @@ def test_context_manager():
     assert True
 
 
-def test_close():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_close(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -39,10 +61,10 @@ def test_close():
     assert True
 
 
-def test_family_too_long():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_family_too_long(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
 
     # and
@@ -54,10 +76,10 @@ def test_family_too_long():
             ...
 
 
-def test_run_id_too_long():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_run_id_too_long(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     family = str(uuid.uuid4())
 
     # and
@@ -69,9 +91,9 @@ def test_run_id_too_long():
             ...
 
 
-def test_invalid_project_name():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_invalid_project_name(api_token):
     # given
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -84,10 +106,10 @@ def test_invalid_project_name():
             ...
 
 
-def test_metadata():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_metadata(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -115,10 +137,10 @@ def test_metadata():
         )
 
 
-def test_log_without_step():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_log_without_step(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -132,10 +154,10 @@ def test_log_without_step():
         )
 
 
-def test_log_step_float():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_log_step_float(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -150,10 +172,10 @@ def test_log_step_float():
         )
 
 
-def test_log_no_timestamp():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_log_no_timestamp(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -167,10 +189,10 @@ def test_log_no_timestamp():
         )
 
 
-def test_resume():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_resume(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -182,11 +204,11 @@ def test_resume():
     assert True
 
 
+@patch("neptune_scale.ApiClient", MockedApiClient)
 @freeze_time("2024-07-30 12:12:12.000022")
-def test_creation_time():
+def test_creation_time(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -198,10 +220,10 @@ def test_creation_time():
     assert True
 
 
-def test_assign_experiment():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_assign_experiment(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 
@@ -213,10 +235,10 @@ def test_assign_experiment():
     assert True
 
 
-def test_forking():
+@patch("neptune_scale.ApiClient", MockedApiClient)
+def test_forking(api_token):
     # given
     project = "workspace/project"
-    api_token = "API_TOKEN"
     run_id = str(uuid.uuid4())
     family = run_id
 

@@ -13,24 +13,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import annotations
 
-__all__ = ["TokenRefreshingURLs", "get_config_and_token_urls", "create_auth_api_client"]
+__all__ = ["ApiClient"]
 
 
 from dataclasses import dataclass
-from typing import Tuple
 
 from neptune_api import (
     AuthenticatedClient,
     Client,
 )
 from neptune_api.api.backend import get_client_config
+from neptune_api.api.data_ingestion import submit_operation
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.models import (
     ClientConfig,
     Error,
 )
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+
+from neptune_scale.core.components.abstract import Resource
+
+
+class ApiClient(Resource):
+    def __init__(self, api_token: str) -> None:
+        credentials = Credentials.from_api_key(api_key=api_token)
+        config, token_urls = get_config_and_token_urls(credentials=credentials)
+        self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
+
+    def submit(self, operation: RunOperation) -> None:
+        _ = submit_operation.sync(client=self._backend, body=operation)
+
+    def cleanup(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._backend.__exit__()
 
 
 @dataclass
@@ -39,13 +59,13 @@ class TokenRefreshingURLs:
     token_endpoint: str
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TokenRefreshingURLs":
+    def from_dict(cls, data: dict) -> TokenRefreshingURLs:
         return TokenRefreshingURLs(
             authorization_endpoint=data["authorization_endpoint"], token_endpoint=data["token_endpoint"]
         )
 
 
-def get_config_and_token_urls(*, credentials: Credentials) -> Tuple[ClientConfig, TokenRefreshingURLs]:
+def get_config_and_token_urls(*, credentials: Credentials) -> tuple[ClientConfig, TokenRefreshingURLs]:
     with Client(base_url=credentials.base_url) as client:
         config = get_client_config.sync(client=client)
         if config is None or isinstance(config, Error):
