@@ -70,7 +70,7 @@ class Run(WithResources, AbstractContextManager):
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
             resume: Whether to resume an existing run.
-            as_experiment: ID of the experiment to be associated with the run.
+            as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
             creation_time: Time when the run was created.
             from_run_id: ID if the Run to fork from.
             from_step: Step number to fork from.
