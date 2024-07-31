@@ -112,7 +112,7 @@ class Run(WithResources, AbstractContextManager):
         Logs the specified metadata to Neptune.
 
         Args:
-            step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used. 
+            step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used.
             timestamp: Time of logging the metadata.
             fields: Dictionary of fields to log.
             metrics: Dictionary of metrics to log.
