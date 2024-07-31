@@ -6,20 +6,24 @@ from __future__ import annotations
 
 __all__ = ["Run"]
 
-import threading
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Callable
 
+from neptune_api.api.data_ingestion import submit_operation
+from neptune_api.credentials import Credentials
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
+from neptune_scale.api.api_client import (
+    create_auth_api_client,
+    get_config_and_token_urls,
+)
 from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
 )
-from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.message_builder import MessageBuilder
 from neptune_scale.core.proto_utils import (
     datetime_to_proto,
@@ -115,14 +119,18 @@ class Run(WithResources, AbstractContextManager):
         verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
 
         self._project: str = project
-        self._api_token: str = api_token
         self._family: str = family
         self._run_id: str = run_id
 
-        self._lock = threading.RLock()
-        self._operations_queue: OperationsQueue = OperationsQueue(
-            lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
-        )
+        # TODO: Bring back the operations queue
+        # self._lock = threading.RLock()
+        # self._operations_queue: OperationsQueue = OperationsQueue(
+        #     lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
+        # )
+
+        credentials = Credentials.from_api_key(api_key=api_token)
+        config, token_urls = get_config_and_token_urls(credentials=credentials)
+        self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
 
         if not resume:
             self._create_run(
@@ -137,13 +145,15 @@ class Run(WithResources, AbstractContextManager):
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return (self._operations_queue,)
+        # return (self._operations_queue,)
+        return ()
 
     def close(self) -> None:
         """
         Stops the connection to Neptune and synchronizes all data.
         """
         super().close()
+        self._backend.__exit__()
 
     def _create_run(
         self,
@@ -168,7 +178,9 @@ class Run(WithResources, AbstractContextManager):
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )
-        self._operations_queue.enqueue(operation=operation)
+        _ = submit_operation.sync(client=self._backend, body=operation)
+        # TODO: Enqueue on the operations queue
+        # self._operations_queue.enqueue(operation=operation)
 
     def log(
         self,
@@ -229,4 +241,6 @@ class Run(WithResources, AbstractContextManager):
             add_tags=add_tags,
             remove_tags=remove_tags,
         ):
-            self._operations_queue.enqueue(operation=operation)
+            _ = submit_operation.sync(client=self._backend, body=operation)
+            # TODO: Enqueue on the operations queue
+            # self._operations_queue.enqueue(operation=operation)
