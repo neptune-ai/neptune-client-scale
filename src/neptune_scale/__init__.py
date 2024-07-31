@@ -73,7 +73,7 @@ class Run(WithResources, AbstractContextManager):
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
             creation_time: Custom creation time of the run.
             from_run_id: If forking from an existing run, ID of the run to fork from.
-            from_step: Step number to fork from.
+            from_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
                 Accepts two arguments:
