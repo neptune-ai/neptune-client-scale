@@ -120,7 +120,11 @@ class Run(WithResources, AbstractContextManager):
             remove_tags: Dictionary of tags to remove from the run.
 
         Examples:
-            >>> with Run(...) as run:
+            ```
+            with Run(...) as run:
+                run.log(step=1, timestamp=datetime.now(), fields={"parameters/learning_rate": 0.001}, add_tags={sys/groupTags: ["group1", "group2"]})
+                run.log(step=2, timestamp=datetime.now(), metrics={"metrics/loss": 0.1})
+            ```
             ...     run.log(step=1, timestamp=datetime.now(), fields={"int": 1, "string": "test"})
             ...     run.log(step=2, timestamp=datetime.now(), metrics={"metric": 1.0})
 
