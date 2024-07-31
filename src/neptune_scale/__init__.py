@@ -121,12 +121,11 @@ class Run(WithResources, AbstractContextManager):
 
         Examples:
             ```
-            with Run(...) as run:
-                run.log(step=1, timestamp=datetime.now(), fields={"parameters/learning_rate": 0.001}, add_tags={sys/groupTags: ["group1", "group2"]})
-                run.log(step=2, timestamp=datetime.now(), metrics={"metrics/loss": 0.1})
+            >>> with Run(...) as run:
+            ...     run.log(step=1, fields={"parameters/learning_rate": 0.001})
+            ...     run.log(step=2, add_tags={"sys/group_tags": ["group1", "group2"]})
+            ...     run.log(step=3, metrics={"metrics/loss": 0.1})
             ```
-            ...     run.log(step=1, timestamp=datetime.now(), fields={"int": 1, "string": "test"})
-            ...     run.log(step=2, timestamp=datetime.now(), metrics={"metric": 1.0})
 
         """
         verify_type("step", step, (float, int, type(None)))
