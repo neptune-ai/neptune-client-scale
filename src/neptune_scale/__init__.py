@@ -116,7 +116,7 @@ class Run(WithResources, AbstractContextManager):
             timestamp: Time of logging the metadata.
             fields: Dictionary of fields to log.
             metrics: Dictionary of metrics to log.
-            add_tags: Dictionary of tags to add.
+            add_tags: Dictionary of tags to add to the run.
             remove_tags: Dictionary of tags to remove from the run.
 
         Examples:
