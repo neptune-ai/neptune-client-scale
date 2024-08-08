@@ -11,8 +11,8 @@ pattern = "default-unprefixed"
 [tool.poetry.dependencies]
 python = "^3.8"
 
-# Networking
 neptune-api = "0.3.0"
+more-itertools = "^10.0.0"
 
 [tool.poetry]
 name = "neptune-client-scale"
