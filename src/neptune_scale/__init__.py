@@ -22,8 +22,11 @@ from neptune_scale.core.components.abstract import (
     WithResources,
 )
 from neptune_scale.core.components.operations_queue import OperationsQueue
-from neptune_scale.core.message_builder import MessageBuilder
-from neptune_scale.core.proto_utils import (
+from neptune_scale.core.metadata_splitters import (
+    MetadataSplitter,
+    NoSplitting,
+)
+from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
 )
@@ -242,7 +245,7 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
         verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
 
-        for operation in MessageBuilder(
+        splitter: MetadataSplitter = NoSplitting(
             project=self._project,
             run_id=self._run_id,
             step=step,
@@ -251,7 +254,9 @@ class Run(WithResources, AbstractContextManager):
             metrics=metrics,
             add_tags=add_tags,
             remove_tags=remove_tags,
-        ):
+        )
+
+        for operation in splitter:
             self._backend.submit(operation=operation)
             # TODO: Enqueue on the operations queue
             # self._operations_queue.enqueue(operation=operation)
