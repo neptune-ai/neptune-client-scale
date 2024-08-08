@@ -327,6 +327,8 @@ class TestSerializationBased:
         timestamp = datetime.now()
         metrics = {f"metric{v}": 7 / 9.0 * v for v in range(1000)}
         fields = {f"field{v}": v for v in range(1000)}
+        add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
+        remove_tags = {f"remove/tag{v}": {f"value{v}"} for v in range(1000)}
 
         # and
         builder = SerializationBased(
@@ -336,8 +338,8 @@ class TestSerializationBased:
             timestamp=timestamp,
             fields=fields,
             metrics=metrics,
-            add_tags={},
-            remove_tags={},
+            add_tags=add_tags,
+            remove_tags=remove_tags,
             max_message_bytes_size=max_size,
         )
 
@@ -353,3 +355,6 @@ class TestSerializationBased:
         assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
         assert sorted([key for op in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
         assert sorted([key for op in result for key in op.update.assign.keys()]) == sorted(list(fields.keys()))
+        assert sorted([key for op in result for key in op.update.modify_sets.keys()]) == sorted(
+            list(add_tags.keys()) + list(remove_tags.keys())
+        )
