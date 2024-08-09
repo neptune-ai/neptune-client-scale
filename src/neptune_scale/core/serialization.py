@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-__all__ = ("mod_tags", "make_value", "make_step", "datetime_to_proto")
+__all__ = (
+    "mod_tags",
+    "make_value",
+    "make_step",
+    "datetime_to_proto",
+    "pb_key_size",
+)
 
 from datetime import datetime
 
@@ -70,3 +76,8 @@ def make_step(number: float | int, raise_on_step_precision_loss: bool = False) -
     micro = micro % m
 
     return Step(whole=whole, micro=micro)
+
+
+def pb_key_size(key: str) -> int:
+    key_bin = bytes(key, "utf-8")
+    return len(key_bin) + 2 + (1 if len(key_bin) > 127 else 0)

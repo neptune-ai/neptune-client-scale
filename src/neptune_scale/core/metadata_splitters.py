@@ -3,6 +3,8 @@ from __future__ import annotations
 __all__ = (
     "MetadataSplitter",
     "NoSplitting",
+    "SerializationBased",
+    "EstimationBased",
 )
 
 from datetime import datetime
@@ -23,6 +25,7 @@ from neptune_scale.core.serialization import (
     make_step,
     make_value,
     mod_tags,
+    pb_key_size,
 )
 
 T = TypeVar("T", bound=Any)
@@ -65,14 +68,15 @@ class NoSplitting(MetadataSplitter):
         self._messages = [self._build_message()]
 
     def _build_message(self) -> RunOperation:
-        modify_sets = {key: mod_tags(add=add) for key, add in self._add_tags.items()}
-        modify_sets.update({key: mod_tags(remove=remove) for key, remove in self._remove_tags.items()})
         update = UpdateRunSnapshot(
             step=self._step,
             timestamp=self._timestamp,
             assign={key: make_value(value) for key, value in self._fields.items()},
             append={key: make_value(value) for key, value in self._metrics.items()},
-            modify_sets=modify_sets,
+            modify_sets={
+                **{key: mod_tags(add=add) for key, add in self._add_tags.items()},
+                **{key: mod_tags(remove=remove) for key, remove in self._remove_tags.items()},
+            },
         )
 
         return RunOperation(project=self._project, run_id=self._run_id, update=update)
@@ -110,12 +114,13 @@ class SerializationBased(MetadataSplitter):
         self._add_tags = peekable(add_tags.items())
         self._remove_tags = peekable(remove_tags.items())
 
-        self._max_update_bytes_size = max_message_bytes_size - len(
-            RunOperation(
+        self._max_update_bytes_size = (
+            max_message_bytes_size
+            - RunOperation(
                 project=self._project,
                 run_id=self._run_id,
                 update=UpdateRunSnapshot(step=self._step, timestamp=self._timestamp),
-            ).SerializeToString()
+            ).ByteSize()
         )
 
         self._has_returned = False
@@ -159,7 +164,7 @@ class SerializationBased(MetadataSplitter):
         assets: peekable[Any],
         update_producer: Callable[[str, T], UpdateRunSnapshot],
     ) -> UpdateRunSnapshot:
-        while len(update.SerializeToString()) < self._max_update_bytes_size:
+        while update.ByteSize() < self._max_update_bytes_size:
             try:
                 key, value = assets.peek()
             except StopIteration:
@@ -168,9 +173,124 @@ class SerializationBased(MetadataSplitter):
             new_update = update_producer(key, value)
             new_update.MergeFrom(update)
 
-            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
+            if new_update.ByteSize() > self._max_update_bytes_size:
                 break
 
             update, _ = new_update, next(assets)
 
         return update
+
+
+class EstimationBased(MetadataSplitter):
+    def __init__(
+        self,
+        *,
+        project: str,
+        run_id: str,
+        step: int | float | None,
+        timestamp: datetime,
+        fields: dict[str, float | bool | int | str | datetime | list | set],
+        metrics: dict[str, float],
+        add_tags: dict[str, list[str] | set[str]],
+        remove_tags: dict[str, list[str] | set[str]],
+        max_message_bytes_size: int = 1024 * 1024,
+    ):
+        self._step = None if step is None else make_step(number=step)
+        self._timestamp = datetime_to_proto(timestamp)
+        self._project = project
+        self._run_id = run_id
+        self._fields = peekable(fields.items())
+        self._metrics = peekable(metrics.items())
+        self._add_tags = peekable(add_tags.items())
+        self._remove_tags = peekable(remove_tags.items())
+
+        self._max_update_bytes_size = (
+            max_message_bytes_size
+            - RunOperation(
+                project=self._project,
+                run_id=self._run_id,
+                update=UpdateRunSnapshot(step=self._step, timestamp=self._timestamp),
+            ).ByteSize()
+        )
+
+        self._has_returned = False
+
+    def __iter__(self) -> EstimationBased:
+        self._has_returned = False
+        return self
+
+    def __next__(self) -> RunOperation:
+        size = 0
+        update = UpdateRunSnapshot(
+            step=self._step,
+            timestamp=self._timestamp,
+            assign={},
+            append={},
+            modify_sets={},
+        )
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, value = self._fields.peek()
+            except StopIteration:
+                break
+
+            proto_value = make_value(value)
+            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
+
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.assign[key].MergeFrom(proto_value)
+            size, _ = new_size, next(self._fields)
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, value = self._metrics.peek()
+            except StopIteration:
+                break
+
+            proto_value = make_value(value)
+            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
+
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.append[key].MergeFrom(proto_value)
+            size, _ = new_size, next(self._metrics)
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, values = self._add_tags.peek()
+            except StopIteration:
+                break
+
+            proto_tags = mod_tags(add=values)
+            new_size = size + pb_key_size(key) + proto_tags.ByteSize() + 6
+
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.modify_sets[key].MergeFrom(proto_tags)
+            size, _ = new_size, next(self._add_tags)
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, values = self._remove_tags.peek()
+            except StopIteration:
+                break
+
+            proto_tags = mod_tags(remove=values)
+            new_size = size + pb_key_size(key) + proto_tags.ByteSize() + 6
+
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.modify_sets[key].MergeFrom(proto_tags)
+            size, _ = new_size, next(self._remove_tags)
+
+        if not self._has_returned or update.assign or update.append or update.modify_sets:
+            self._has_returned = True
+            return RunOperation(project=self._project, run_id=self._run_id, update=update)
+        else:
+            raise StopIteration
