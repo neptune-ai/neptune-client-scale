@@ -22,10 +22,7 @@ from neptune_scale.core.components.abstract import (
     WithResources,
 )
 from neptune_scale.core.components.operations_queue import OperationsQueue
-from neptune_scale.core.metadata_splitters import (
-    MetadataSplitter,
-    NoSplitting,
-)
+from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
@@ -245,7 +242,7 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
         verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
 
-        splitter: MetadataSplitter = NoSplitting(
+        splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
             step=step,

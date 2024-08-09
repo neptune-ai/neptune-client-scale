@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 __all__ = (
-    "mod_tags",
     "make_value",
     "make_step",
     "datetime_to_proto",
@@ -12,23 +11,10 @@ from datetime import datetime
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
-    SET_OPERATION,
-    ModifySet,
     Step,
     StringSet,
     Value,
 )
-
-
-def mod_tags(add: list[str] | set[str] | None = None, remove: list[str] | set[str] | None = None) -> ModifySet:
-    mod_set = ModifySet()
-    if add is not None:
-        for tag in add:
-            mod_set.string.values[tag] = SET_OPERATION.ADD
-    if remove is not None:
-        for tag in remove:
-            mod_set.string.values[tag] = SET_OPERATION.REMOVE
-    return mod_set
 
 
 def make_value(value: Value | float | str | int | bool | datetime | list[str] | set[str]) -> Value:
