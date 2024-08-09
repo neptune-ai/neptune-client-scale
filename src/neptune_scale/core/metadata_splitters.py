@@ -17,7 +17,11 @@ from typing import (
 )
 
 from more_itertools import peekable
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+    SET_OPERATION,
+    UpdateRunSnapshot,
+    Value,
+)
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.serialization import (
@@ -229,68 +233,86 @@ class EstimationBased(MetadataSplitter):
             modify_sets={},
         )
 
-        while size < self._max_update_bytes_size:
-            try:
-                key, value = self._fields.peek()
-            except StopIteration:
-                break
-
-            proto_value = make_value(value)
-            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
-
-            if new_size > self._max_update_bytes_size:
-                break
-
-            update.assign[key].MergeFrom(proto_value)
-            size, _ = new_size, next(self._fields)
-
-        while size < self._max_update_bytes_size:
-            try:
-                key, value = self._metrics.peek()
-            except StopIteration:
-                break
-
-            proto_value = make_value(value)
-            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
-
-            if new_size > self._max_update_bytes_size:
-                break
-
-            update.append[key].MergeFrom(proto_value)
-            size, _ = new_size, next(self._metrics)
-
-        while size < self._max_update_bytes_size:
-            try:
-                key, values = self._add_tags.peek()
-            except StopIteration:
-                break
-
-            proto_tags = mod_tags(add=values)
-            new_size = size + pb_key_size(key) + proto_tags.ByteSize() + 6
-
-            if new_size > self._max_update_bytes_size:
-                break
-
-            update.modify_sets[key].MergeFrom(proto_tags)
-            size, _ = new_size, next(self._add_tags)
-
-        while size < self._max_update_bytes_size:
-            try:
-                key, values = self._remove_tags.peek()
-            except StopIteration:
-                break
-
-            proto_tags = mod_tags(remove=values)
-            new_size = size + pb_key_size(key) + proto_tags.ByteSize() + 6
-
-            if new_size > self._max_update_bytes_size:
-                break
-
-            update.modify_sets[key].MergeFrom(proto_tags)
-            size, _ = new_size, next(self._remove_tags)
+        size = self.populate(
+            assets=self._fields,
+            update_producer=lambda key, value: update.assign[key].MergeFrom(value),
+            size=size,
+        )
+        size = self.populate(
+            assets=self._metrics,
+            update_producer=lambda key, value: update.append[key].MergeFrom(value),
+            size=size,
+        )
+        size = self.populate_tags(
+            update=update,
+            assets=self._add_tags,
+            operation=SET_OPERATION.ADD,
+            size=size,
+        )
+        _ = self.populate_tags(
+            update=update,
+            assets=self._remove_tags,
+            operation=SET_OPERATION.REMOVE,
+            size=size,
+        )
 
         if not self._has_returned or update.assign or update.append or update.modify_sets:
             self._has_returned = True
             return RunOperation(project=self._project, run_id=self._run_id, update=update)
         else:
             raise StopIteration
+
+    def populate(
+        self,
+        assets: peekable[Any],
+        update_producer: Callable[[str, Value], None],
+        size: int,
+    ) -> int:
+        while size < self._max_update_bytes_size:
+            try:
+                key, value = assets.peek()
+            except StopIteration:
+                break
+
+            proto_value = make_value(value)
+            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
+
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update_producer(key, proto_value)
+            size, _ = new_size, next(assets)
+
+        return size
+
+    def populate_tags(
+        self, update: UpdateRunSnapshot, assets: peekable[Any], operation: SET_OPERATION.ValueType, size: int
+    ) -> int:
+        while size < self._max_update_bytes_size:
+            try:
+                key, values = assets.peek()
+            except StopIteration:
+                break
+
+            if not isinstance(values, peekable):
+                values = peekable(values)
+
+            is_full = False
+            new_size = size + pb_key_size(key) + 6
+            for value in values:
+                tag_size = pb_key_size(value) + 6
+                if new_size + tag_size > self._max_update_bytes_size:
+                    values.prepend(value)
+                    is_full = True
+                    break
+
+                update.modify_sets[key].string.values[value] = operation
+                new_size += tag_size
+
+            size, _ = new_size, next(assets)
+
+            if is_full:
+                assets.prepend((key, list(values)))
+                break
+
+        return size
