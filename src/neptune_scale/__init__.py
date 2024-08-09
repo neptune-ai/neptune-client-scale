@@ -6,6 +6,7 @@ from __future__ import annotations
 
 __all__ = ["Run"]
 
+import os
 import threading
 from contextlib import AbstractContextManager
 from datetime import datetime
@@ -33,6 +34,10 @@ from neptune_scale.core.validation import (
     verify_project_qualified_name,
     verify_type,
 )
+from neptune_scale.envs import (
+    API_TOKEN_ENV_NAME,
+    PROJECT_ENV_NAME,
+)
 from neptune_scale.parameters import (
     MAX_FAMILY_LENGTH,
     MAX_QUEUE_SIZE,
@@ -48,10 +53,10 @@ class Run(WithResources, AbstractContextManager):
     def __init__(
         self,
         *,
-        project: str,
-        api_token: str,
         family: str,
         run_id: str,
+        project: str | None = None,
+        api_token: str | None = None,
         resume: bool = False,
         as_experiment: str | None = None,
         creation_time: datetime | None = None,
@@ -64,11 +69,13 @@ class Run(WithResources, AbstractContextManager):
         Initializes a run that logs the model-building metadata to Neptune.
 
         Args:
-            project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
-            api_token: Your Neptune API token.
             family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
                 Max length: 128 characters.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
+            project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
+                If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
+            api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
+                variable is used.
             resume: Whether to resume an existing run.
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
             creation_time: Custom creation time of the run.
@@ -80,10 +87,11 @@ class Run(WithResources, AbstractContextManager):
                 - Maximum size of the queue.
                 - Exception that made the queue full.
         """
-        verify_type("api_token", api_token, str)
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
+        verify_type("project", project, (str, type(None)))
+        verify_type("api_token", api_token, (str, type(None)))
         verify_type("as_experiment", as_experiment, (str, type(None)))
         verify_type("creation_time", creation_time, (datetime, type(None)))
         verify_type("from_run_id", from_run_id, (str, type(None)))
@@ -102,7 +110,16 @@ class Run(WithResources, AbstractContextManager):
         if resume and from_step is not None:
             raise ValueError("`resume` and `from_step` cannot be used together.")
 
+        project = project or os.environ.get(PROJECT_ENV_NAME)
+        verify_non_empty("project", project)
+        assert project is not None  # mypy
+        input_project: str = project
+
+        api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
         verify_non_empty("api_token", api_token)
+        assert api_token is not None  # mypy
+        input_api_token: str = api_token
+
         verify_non_empty("family", family)
         verify_non_empty("run_id", run_id)
         if as_experiment is not None:
@@ -115,7 +132,7 @@ class Run(WithResources, AbstractContextManager):
         verify_max_length("family", family, MAX_FAMILY_LENGTH)
         verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
 
-        self._project: str = project
+        self._project: str = input_project
         self._family: str = family
         self._run_id: str = run_id
 
@@ -123,7 +140,7 @@ class Run(WithResources, AbstractContextManager):
         self._operations_queue: OperationsQueue = OperationsQueue(
             lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
         )
-        self._backend: ApiClient = ApiClient(api_token=api_token)
+        self._backend: ApiClient = ApiClient(api_token=input_api_token)
 
         if not resume:
             self._create_run(

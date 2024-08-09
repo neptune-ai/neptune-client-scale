@@ -15,3 +15,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for Forking ([#9](https://github.com/neptune-ai/neptune-client-scale/pull/9))
 - Added support for Experiments ([#9](https://github.com/neptune-ai/neptune-client-scale/pull/9))
 - Added support for Run resume ([#9](https://github.com/neptune-ai/neptune-client-scale/pull/9))
+- Added support for env variables for project and api token ([#11](https://github.com/neptune-ai/neptune-client-scale/pull/11))
