@@ -13,13 +13,13 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.core.message_builder import MessageBuilder
+from neptune_scale.core.metadata_splitter import MetadataSplitter
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_empty():
     # given
-    builder = MessageBuilder(
+    builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
         step=1,
@@ -45,7 +45,7 @@ def test_empty():
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_fields():
     # given
-    builder = MessageBuilder(
+    builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
         step=1,
@@ -89,7 +89,7 @@ def test_fields():
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_metrics():
     # given
-    builder = MessageBuilder(
+    builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
         step=1,
@@ -123,7 +123,7 @@ def test_metrics():
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_tags():
     # given
-    builder = MessageBuilder(
+    builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
         step=1,
@@ -167,3 +167,101 @@ def test_tags():
             },
         ),
     )
+
+
+@freeze_time("2024-07-30 12:12:12.000022")
+def test_splitting():
+    # given
+    max_size = 1024
+    timestamp = datetime.now()
+    metrics = {f"metric{v}": 7 / 9.0 * v for v in range(1000)}
+    fields = {f"field{v}": v for v in range(1000)}
+    add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
+    remove_tags = {f"remove/tag{v}": {f"value{v}"} for v in range(1000)}
+
+    # and
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=1,
+        timestamp=timestamp,
+        fields=fields,
+        metrics=metrics,
+        add_tags=add_tags,
+        remove_tags=remove_tags,
+        max_message_bytes_size=max_size,
+    )
+
+    # when
+    result = list(builder)
+
+    # then
+    assert len(result) > 0
+
+    # Every message should be smaller than max_size
+    assert all(len(op.SerializeToString()) <= max_size for op in result)
+
+    # Common metadata
+    assert all(op.project == "workspace/project" for op in result)
+    assert all(op.run_id == "run_id" for op in result)
+    assert all(op.update.step.whole == 1 for op in result)
+    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
+
+    # Check if all metrics, fields and tags are present in the result
+    assert sorted([key for op in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
+    assert sorted([key for op in result for key in op.update.assign.keys()]) == sorted(list(fields.keys()))
+    assert sorted([key for op in result for key in op.update.modify_sets.keys()]) == sorted(
+        list(add_tags.keys()) + list(remove_tags.keys())
+    )
+
+
+@freeze_time("2024-07-30 12:12:12.000022")
+def test_split_large_tags():
+    # given
+    max_size = 1024
+    timestamp = datetime.now()
+    metrics = {}
+    fields = {}
+    add_tags = {"add/tag": {f"value{v}" for v in range(1000)}}
+    remove_tags = {"remove/tag": {f"value{v}" for v in range(1000)}}
+
+    # and
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=1,
+        timestamp=timestamp,
+        fields=fields,
+        metrics=metrics,
+        add_tags=add_tags,
+        remove_tags=remove_tags,
+        max_message_bytes_size=max_size,
+    )
+
+    # when
+    result = list(builder)
+
+    # then
+    assert len(result) > 0
+
+    # Every message should be smaller than max_size
+    assert all(len(op.SerializeToString()) <= max_size for op in result)
+
+    # Common metadata
+    assert all(op.project == "workspace/project" for op in result)
+    assert all(op.run_id == "run_id" for op in result)
+    assert all(op.update.step.whole == 1 for op in result)
+    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
+
+    # Check if all StringSet values are split correctly
+    assert set([key for op in result for key in op.update.modify_sets.keys()]) == set(
+        list(add_tags.keys()) + list(remove_tags.keys())
+    )
+
+    # Check if all tags are present in the result
+    assert {tag for op in result for tag in op.update.modify_sets["add/tag"].string.values.keys()} == add_tags[
+        "add/tag"
+    ]
+    assert {tag for op in result for tag in op.update.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
+        "remove/tag"
+    ]
