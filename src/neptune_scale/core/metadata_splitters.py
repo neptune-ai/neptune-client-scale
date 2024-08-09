@@ -7,8 +7,11 @@ __all__ = (
 
 from datetime import datetime
 from typing import (
+    Any,
+    Callable,
     Iterator,
     Protocol,
+    TypeVar,
 )
 
 from more_itertools import peekable
@@ -21,6 +24,8 @@ from neptune_scale.core.serialization import (
     make_value,
     mod_tags,
 )
+
+T = TypeVar("T", bound=Any)
 
 
 class MetadataSplitter(Iterator[RunOperation], Protocol):
@@ -121,65 +126,51 @@ class SerializationBased(MetadataSplitter):
 
     def __next__(self) -> RunOperation:
         update = UpdateRunSnapshot(step=self._step, timestamp=self._timestamp)
-
-        while len(update.SerializeToString()) < self._max_update_bytes_size:
-            try:
-                field_key, field_value = self._fields.peek()
-            except StopIteration:
-                break
-
-            new_update = UpdateRunSnapshot(assign={field_key: make_value(field_value)})
-            new_update.MergeFrom(update)
-
-            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
-                break
-
-            update, _ = new_update, next(self._fields)
-
-        while len(update.SerializeToString()) < self._max_update_bytes_size:
-            try:
-                metric_key, metric_value = self._metrics.peek()
-            except StopIteration:
-                break
-
-            new_update = UpdateRunSnapshot(append={metric_key: make_value(metric_value)})
-            new_update.MergeFrom(update)
-
-            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
-                break
-
-            update, _ = new_update, next(self._metrics)
-
-        while len(update.SerializeToString()) < self._max_update_bytes_size:
-            try:
-                tag_key, tag_value = self._add_tags.peek()
-            except StopIteration:
-                break
-
-            new_update = UpdateRunSnapshot(modify_sets={tag_key: mod_tags(add=tag_value)})
-            new_update.MergeFrom(update)
-
-            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
-                break
-
-            update, _ = new_update, next(self._add_tags)
-
-        while len(update.SerializeToString()) < self._max_update_bytes_size:
-            try:
-                tag_key, tag_value = self._remove_tags.peek()
-            except StopIteration:
-                break
-
-            new_update = UpdateRunSnapshot(modify_sets={tag_key: mod_tags(remove=tag_value)})
-            new_update.MergeFrom(update)
-
-            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
-                break
-
-            update, _ = new_update, next(self._remove_tags)
+        update = self.populate(
+            update=update,
+            assets=self._fields,
+            update_producer=lambda key, value: UpdateRunSnapshot(assign={key: make_value(value)}),
+        )
+        update = self.populate(
+            update=update,
+            assets=self._metrics,
+            update_producer=lambda key, value: UpdateRunSnapshot(append={key: make_value(value)}),
+        )
+        update = self.populate(
+            update=update,
+            assets=self._add_tags,
+            update_producer=lambda key, value: UpdateRunSnapshot(modify_sets={key: mod_tags(add=value)}),
+        )
+        update = self.populate(
+            update=update,
+            assets=self._remove_tags,
+            update_producer=lambda key, value: UpdateRunSnapshot(modify_sets={key: mod_tags(remove=value)}),
+        )
 
         if not self._has_returned or update.assign or update.append or update.modify_sets:
             self._has_returned = True
             return RunOperation(project=self._project, run_id=self._run_id, update=update)
         else:
             raise StopIteration
+
+    def populate(
+        self,
+        update: UpdateRunSnapshot,
+        assets: peekable[Any],
+        update_producer: Callable[[str, T], UpdateRunSnapshot],
+    ) -> UpdateRunSnapshot:
+        while len(update.SerializeToString()) < self._max_update_bytes_size:
+            try:
+                key, value = assets.peek()
+            except StopIteration:
+                break
+
+            new_update = update_producer(key, value)
+            new_update.MergeFrom(update)
+
+            if len(new_update.SerializeToString()) > self._max_update_bytes_size:
+                break
+
+            update, _ = new_update, next(assets)
+
+        return update
