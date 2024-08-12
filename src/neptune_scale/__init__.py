@@ -164,8 +164,8 @@ class Run(WithResources, AbstractContextManager):
         return (
             self._operations_queue,
             self._backend,
-            self._errors_queue,
             self._errors_monitor,
+            self._errors_queue,
         )
 
     def close(self) -> None:

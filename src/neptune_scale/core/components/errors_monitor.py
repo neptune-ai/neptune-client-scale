@@ -1,6 +1,7 @@
 __all__ = ("ErrorsMonitor",)
 
 import logging
+import queue
 from typing import Callable
 
 from neptune_scale.core.components.abstract import Resource
@@ -21,17 +22,25 @@ class ErrorsMonitor(Daemon, Resource):
         errors_queue: ErrorsQueue,
         on_error_callback: Callable[[BaseException], None] = on_error,
     ):
-        super().__init__(name="ErrorsMonitor", sleep_time=5)
+        super().__init__(name="ErrorsMonitor", sleep_time=2)
         self._errors_queue = errors_queue
         self._on_error_callback = on_error_callback
 
     def work(self) -> None:
-        error = self._errors_queue.get(block=True, timeout=None)
-        self._on_error_callback(error)
+        try:
+            error = self._errors_queue.get(block=False)
+            if error is not None:
+                self._on_error_callback(error)
+        except KeyboardInterrupt:
+            with self._wait_condition:
+                self._wait_condition.notify_all()
+            raise
+        except queue.Empty:
+            pass
 
     def cleanup(self) -> None:
         pass
 
-    def stop(self) -> None:
+    def close(self) -> None:
         self.interrupt()
-        self.join()
+        self.join(timeout=10)
