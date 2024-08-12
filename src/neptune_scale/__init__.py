@@ -21,6 +21,8 @@ from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
 )
+from neptune_scale.core.components.errors_monitor import ErrorsMonitor
+from neptune_scale.core.components.errors_queue import ErrorsQueue
 from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
@@ -140,7 +142,11 @@ class Run(WithResources, AbstractContextManager):
         self._operations_queue: OperationsQueue = OperationsQueue(
             lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
         )
+        self._errors_queue: ErrorsQueue = ErrorsQueue()
+        self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
         self._backend: ApiClient = ApiClient(api_token=input_api_token)
+
+        self._errors_monitor.start()
 
         if not resume:
             self._create_run(
@@ -155,7 +161,12 @@ class Run(WithResources, AbstractContextManager):
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._operations_queue, self._backend
+        return (
+            self._operations_queue,
+            self._backend,
+            self._errors_monitor,
+            self._errors_queue,
+        )
 
     def close(self) -> None:
         """
