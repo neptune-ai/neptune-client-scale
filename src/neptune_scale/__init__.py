@@ -60,6 +60,7 @@ from neptune_scale.parameters import (
     MAX_FAMILY_LENGTH,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
+    MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
@@ -172,15 +173,23 @@ class Run(WithResources, AbstractContextManager):
             max_queue_size_exceeded_callback=max_queue_size_exceeded_callback,
             on_network_error_callback=on_network_error_callback,
         )
+
         self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)
         self._last_put_seq_wait: ConditionT = multiprocessing.Condition()
+
+        self._last_ack_seq: Synchronized[int] = multiprocessing.Value("i", -1)
+        self._last_ack_seq_wait: ConditionT = multiprocessing.Condition()
+
         self._sync_process = SyncProcess(
+            project=self._project,
             family=self._family,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             api_token=input_api_token,
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,
+            last_ack_seq=self._last_ack_seq,
+            last_ack_seq_wait=self._last_ack_seq_wait,
             max_queue_size=max_queue_size,
             mode=mode,
         )
@@ -198,6 +207,7 @@ class Run(WithResources, AbstractContextManager):
                 from_run_id=from_run_id,
                 from_step=from_step,
             )
+            self.wait_for_processing(verbose=False)
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -208,10 +218,9 @@ class Run(WithResources, AbstractContextManager):
         )
 
     def _close(self) -> None:
-        # TODO: Change to wait for all operations to be processed
         with self._lock:
             if self._sync_process.is_alive():
-                self.wait_for_submission()
+                self.wait_for_processing()
                 self._sync_process.terminate()
                 self._sync_process.join()
 
@@ -323,9 +332,12 @@ class Run(WithResources, AbstractContextManager):
     def wait_for_submission(self, timeout: Optional[float] = None) -> None:
         """
         Waits until all metadata is submitted to Neptune.
+
+        Args:
+            timeout: Maximum time to wait for submission
         """
         begin_time = time.time()
-        logger.info("Waiting for all operations to be processed")
+        logger.info("Waiting for all operations to be submitted")
         if timeout is None:
             logger.warning("No timeout specified. Waiting indefinitely")
 
@@ -348,21 +360,78 @@ class Run(WithResources, AbstractContextManager):
                         if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
                             last_message_printed = time.time()
                             logger.info(
-                                "Waiting. No operations processed yet. Operations to sync: %s",
+                                "Waiting. No operations were submitted yet. Operations to sync: %s",
                                 self._operations_queue.last_sequence_id + 1,
                             )
                     else:
                         if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
                             last_message_printed = time.time()
-                            logger.info("Waiting. No operations processed yet")
+                            logger.info("Waiting. No operations were submitted yet")
                 else:
                     if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
                         last_message_printed = time.time()
                         logger.info(
-                            "Waiting for remaining %d operation(s) to be synced",
+                            "Waiting until remaining %d operation(s) will be submitted",
                             last_queued_sequence_id - value + 1,
                         )
                 if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
                     break
 
-        logger.info("All operations processed")
+        logger.info("All operations were submitted")
+
+    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+        """
+        Waits until all metadata is processed by Neptune.
+
+        Args:
+            timeout: Maximum time to wait for processing.
+            verbose: Whether to print messages about the waiting process
+        """
+        begin_time = time.time()
+        if verbose:
+            logger.info("Waiting for all operations to be processed")
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        with self._lock:
+            if not self._sync_process.is_alive():
+                if verbose:
+                    logger.warning("Sync process is not running")
+                return  # No need to wait if the sync process is not running
+
+        sleep_time_wait = (
+            min(MINIMAL_WAIT_FOR_ACK_SLEEP_TIME, timeout) if timeout is not None else MINIMAL_WAIT_FOR_PUT_SLEEP_TIME
+        )
+        last_queued_sequence_id = self._operations_queue.last_sequence_id
+        last_message_printed: Optional[float] = None
+        while True:
+            with self._last_ack_seq_wait:
+                self._last_ack_seq_wait.wait(timeout=sleep_time_wait)
+                value = self._last_ack_seq.value
+                if value == -1:
+                    if self._operations_queue.last_sequence_id != -1:
+                        if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
+                            last_message_printed = time.time()
+                            if verbose:
+                                logger.info(
+                                    "Waiting. No operations were processed yet. Operations to sync: %s",
+                                    self._operations_queue.last_sequence_id + 1,
+                                )
+                    else:
+                        if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
+                            last_message_printed = time.time()
+                            if verbose:
+                                logger.info("Waiting. No operations were processed yet")
+                else:
+                    if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
+                        last_message_printed = time.time()
+                        if verbose:
+                            logger.info(
+                                "Waiting until remaining %d operation(s) will be processed",
+                                last_queued_sequence_id - value + 1,
+                            )
+                if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                    break
+
+        if verbose:
+            logger.info("All operations were processed")

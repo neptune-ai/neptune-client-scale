@@ -4,6 +4,7 @@ __all__ = ("SyncProcess",)
 
 import multiprocessing
 import queue
+import threading
 from multiprocessing import (
     Process,
     Queue,
@@ -13,8 +14,11 @@ from multiprocessing.synchronize import Condition
 from typing import (
     Any,
     Callable,
+    Generic,
+    List,
     Literal,
     Optional,
+    TypeVar,
 )
 
 import backoff
@@ -26,14 +30,16 @@ from neptune_api.errors import (
     UnableToRefreshTokenError,
     UnexpectedStatus,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import RequestId
+from neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
+    BulkRequestStatus,
+    RequestId,
+)
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
-from neptune_api.types import Response
 
 from neptune_scale.api.api_client import (
     ApiClient,
-    HostedApiClient,
-    MockedApiClient,
+    backend_factory,
 )
 from neptune_scale.core.components.abstract import (
     Resource,
@@ -42,6 +48,7 @@ from neptune_scale.core.components.abstract import (
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.core.components.status_tracking_element import StatusTrackingElement
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -54,10 +61,42 @@ from neptune_scale.exceptions import (
 from neptune_scale.parameters import (
     EXTERNAL_TO_INTERNAL_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
+    MAX_REQUESTS_STATUS_BATCH_SIZE,
     OPERATION_TIMEOUT,
     SHUTDOWN_TIMEOUT,
+    STATUS_TRACKING_THREAD_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
 )
+
+T = TypeVar("T")
+
+
+class PeekableQueue(Generic[T]):
+    def __init__(self) -> None:
+        self._lock: threading.RLock = threading.RLock()
+        self._queue: queue.Queue[T] = queue.Queue()
+
+    def put(self, element: T) -> None:
+        with self._lock:
+            self._queue.put(element)
+
+    def peek(self, max_size: int) -> Optional[List[T]]:
+        with self._lock:
+            size = self._queue.qsize()
+            if size == 0:
+                return None
+
+            items = []
+            for i in range(min(size, max_size)):
+                item = self._queue.queue[i]
+                items.append(item)
+            return items
+
+    def commit(self, n: int) -> None:
+        with self._lock:
+            size = self._queue.qsize()
+            for _ in range(min(size, n)):
+                self._queue.get()
 
 
 def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -82,10 +121,13 @@ class SyncProcess(Process):
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
         api_token: str,
+        project: str,
         family: str,
         mode: Literal["async", "disabled"],
         last_put_seq: Synchronized[int],
         last_put_seq_wait: Condition,
+        last_ack_seq: Synchronized[int],
+        last_ack_seq_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         super().__init__(name="SyncProcess")
@@ -93,21 +135,27 @@ class SyncProcess(Process):
         self._external_operations_queue: Queue[QueueElement] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._api_token: str = api_token
+        self._project: str = project
         self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
+        self._last_ack_seq: Synchronized[int] = last_ack_seq
+        self._last_ack_seq_wait: Condition = last_ack_seq_wait
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
     def run(self) -> None:
         logger.info("Data synchronization started")
         worker = SyncProcessWorker(
+            project=self._project,
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
             external_operations_queue=self._external_operations_queue,
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,
+            last_ack_seq=self._last_ack_seq,
+            last_ack_seq_wait=self._last_ack_seq_wait,
             max_queue_size=self._max_queue_size,
             mode=self._mode,
         )
@@ -126,20 +174,25 @@ class SyncProcessWorker(WithResources):
         self,
         *,
         api_token: str,
+        project: str,
         family: str,
+        mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
         external_operations_queue: multiprocessing.Queue[QueueElement],
         last_put_seq: Synchronized[int],
-        mode: Literal["async", "disabled"],
         last_put_seq_wait: Condition,
+        last_ack_seq: Synchronized[int],
+        last_ack_seq_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         self._errors_queue = errors_queue
 
         self._internal_operations_queue: queue.Queue[QueueElement] = queue.Queue(maxsize=max_queue_size)
+        self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         self._sync_thread = SyncThread(
             api_token=api_token,
             operations_queue=self._internal_operations_queue,
+            status_tracking_queue=self._status_tracking_queue,
             errors_queue=self._errors_queue,
             family=family,
             last_put_seq=last_put_seq,
@@ -151,14 +204,23 @@ class SyncProcessWorker(WithResources):
             internal=self._internal_operations_queue,
             errors_queue=self._errors_queue,
         )
+        self._status_tracking_thread = StatusTrackingThread(
+            api_token=api_token,
+            mode=mode,
+            project=project,
+            errors_queue=self._errors_queue,
+            status_tracking_queue=self._status_tracking_queue,
+            last_ack_seq=last_ack_seq,
+            last_ack_seq_wait=last_ack_seq_wait,
+        )
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread
+        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread
+        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
 
     def interrupt(self) -> None:
         for thread in self.threads:
@@ -214,24 +276,12 @@ class ExternalToInternalOperationsThread(Daemon, Resource):
                 self._errors_queue.put(e)
 
 
-def raise_for_status(response: Response[RequestId]) -> None:
-    if response.status_code == 403:
-        raise NeptuneUnauthorizedError()
-    if response.status_code != 200:
-        raise RuntimeError(f"Unexpected status code: {response.status_code}")
-
-
-def _ensure_backend_initialized(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
-    if mode == "disabled":
-        return MockedApiClient()
-    return HostedApiClient(api_token=api_token)
-
-
 class SyncThread(Daemon, WithResources):
     def __init__(
         self,
         api_token: str,
         operations_queue: queue.Queue[QueueElement],
+        status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         family: str,
         last_put_seq: Synchronized[int],
@@ -242,13 +292,14 @@ class SyncThread(Daemon, WithResources):
 
         self._api_token: str = api_token
         self._operations_queue: queue.Queue[QueueElement] = operations_queue
+        self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
-        self._backend: Optional[ApiClient] = None
         self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
         self._mode: Literal["async", "disabled"] = mode
 
+        self._backend: Optional[ApiClient] = None
         self._latest_unprocessed: Optional[QueueElement] = None
 
     def get_next(self) -> Optional[QueueElement]:
@@ -268,22 +319,32 @@ class SyncThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=OPERATION_TIMEOUT)
     @with_api_errors_handling
-    def submit(self, *, operation: RunOperation) -> None:
+    def submit(self, *, operation: RunOperation) -> Optional[RequestId]:
         if self._backend is None:
-            self._backend = _ensure_backend_initialized(api_token=self._api_token, mode=self._mode)
+            self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
         response = self._backend.submit(operation=operation, family=self._family)
         logger.debug("Server response:", response)
-        raise_for_status(response)
+
+        if response.status_code == 403:
+            raise NeptuneUnauthorizedError()
+        if response.status_code != 200:
+            raise RuntimeError(f"Unexpected status code: {response.status_code}")
+
+        return response.parsed
 
     def work(self) -> None:
         while (operation := self.get_next()) is not None:
             self._latest_unprocessed = operation
-            sequence_id, timestamp, data = operation
+            sequence_id, occured_at, data = operation
 
             try:
                 run_operation = RunOperation()
                 run_operation.ParseFromString(data)
-                self.submit(operation=run_operation)
+                request_id = self.submit(operation=run_operation)
+                if request_id:
+                    self._status_tracking_queue.put(
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
+                    )
             except NeptuneRetryableError as e:
                 self._errors_queue.put(e)
                 continue
@@ -299,3 +360,98 @@ class SyncThread(Daemon, WithResources):
             with self._last_put_seq_wait:
                 self._last_put_seq.value = sequence_id
                 self._last_put_seq_wait.notify_all()
+
+
+class StatusTrackingThread(Daemon, WithResources):
+    def __init__(
+        self,
+        api_token: str,
+        mode: Literal["async", "disabled"],
+        project: str,
+        errors_queue: ErrorsQueue,
+        status_tracking_queue: PeekableQueue[StatusTrackingElement],
+        last_ack_seq: Synchronized[int],
+        last_ack_seq_wait: Condition,
+    ) -> None:
+        super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
+
+        self._api_token: str = api_token
+        self._mode: Literal["async", "disabled"] = mode
+        self._project: str = project
+        self._errors_queue: ErrorsQueue = errors_queue
+        self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
+        self._last_ack_seq: Synchronized[int] = last_ack_seq
+        self._last_ack_seq_wait: Condition = last_ack_seq_wait
+
+        self._backend: Optional[ApiClient] = None
+
+    @property
+    def resources(self) -> tuple[Resource, ...]:
+        if self._backend is not None:
+            return (self._backend,)
+        return ()
+
+    def get_next(self) -> Optional[List[StatusTrackingElement]]:
+        try:
+            return self._status_tracking_queue.peek(max_size=MAX_REQUESTS_STATUS_BATCH_SIZE)
+        except queue.Empty:
+            return None
+
+    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=OPERATION_TIMEOUT)
+    @with_api_errors_handling
+    def check_batch(self, *, request_ids: List[str]) -> Optional[BulkRequestStatus]:
+        if self._backend is None:
+            self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
+
+        response = self._backend.check_batch(request_ids=request_ids, project=self._project)
+        logger.debug("Server response:", response)
+
+        if response.status_code == 403:
+            raise NeptuneUnauthorizedError()
+        if response.status_code != 200:
+            raise RuntimeError(f"Unexpected status code: {response.status_code}")
+
+        return response.parsed
+
+    def work(self) -> None:
+        while (batch := self.get_next()) is not None:
+            request_ids = [element.request_id for element in batch]
+            sequence_ids = [element.sequence_id for element in batch]
+
+            try:
+                response = self.check_batch(request_ids=request_ids)
+                if response is None:
+                    break
+                logger.debug("Status: %s", response)
+            except NeptuneRetryableError as e:
+                self._errors_queue.put(e)
+                break
+            except Exception as e:
+                self._errors_queue.put(e)
+                self.interrupt()
+                self._last_ack_seq_wait.notify_all()
+                break
+
+            to_commit = 0
+            sequence_id = None
+            for request_status, request_seq_id in zip(response.statuses, sequence_ids):
+                codes = [code_status.code for code_status in request_status.code_by_count]
+                if Code.UNAVAILABLE in codes:
+                    break
+
+                # TODO: Handle errors properly
+
+                to_commit += 1
+                sequence_id = request_seq_id
+
+            if to_commit > 0:
+                self._status_tracking_queue.commit(to_commit)
+
+                # Update Last ACK sequence id and notify threads in the main process
+                if sequence_id is not None:
+                    with self._last_ack_seq_wait:
+                        self._last_ack_seq.value = sequence_id
+                        self._last_ack_seq_wait.notify_all()
+            else:
+                # Sleep before retry
+                break
