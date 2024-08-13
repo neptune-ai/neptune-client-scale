@@ -24,8 +24,8 @@ class AutoCloseable(ABC):
 
 
 class Resource(AutoCloseable):
-    @abstractmethod
-    def cleanup(self) -> None: ...
+    def cleanup(self) -> None:
+        pass
 
     def flush(self) -> None:
         pass

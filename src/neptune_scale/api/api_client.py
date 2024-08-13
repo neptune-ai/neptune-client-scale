@@ -32,24 +32,28 @@ from neptune_api.models import (
     ClientConfig,
     Error,
 )
+from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import RequestId
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_api.types import Response
 
 from neptune_scale.core.components.abstract import Resource
+from neptune_scale.core.logger import logger
 
 
 class ApiClient(Resource):
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
+
+        logger.debug("Trying to connect to Neptune API")
         config, token_urls = get_config_and_token_urls(credentials=credentials)
         self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
+        logger.debug("Connected to Neptune API")
 
-    def submit(self, operation: RunOperation, family: str) -> None:
-        _ = submit_operation.sync(client=self._backend, family=family, body=operation)
-
-    def cleanup(self) -> None:
-        pass
+    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
+        return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
 
     def close(self) -> None:
+        logger.debug("Closing API client")
         self._backend.__exit__()
 
 
