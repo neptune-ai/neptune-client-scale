@@ -197,7 +197,7 @@ class Run(WithResources, AbstractContextManager):
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )
-        self._backend.submit(operation=operation)
+        self._backend.submit(operation=operation, family=self._family)
         # TODO: Enqueue on the operations queue
         # self._operations_queue.enqueue(operation=operation)
 
@@ -265,6 +265,6 @@ class Run(WithResources, AbstractContextManager):
         )
 
         for operation in splitter:
-            self._backend.submit(operation=operation)
+            self._backend.submit(operation=operation, family=self._family)
             # TODO: Enqueue on the operations queue
             # self._operations_queue.enqueue(operation=operation)

@@ -43,8 +43,8 @@ class ApiClient(Resource):
         config, token_urls = get_config_and_token_urls(credentials=credentials)
         self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
 
-    def submit(self, operation: RunOperation) -> None:
-        _ = submit_operation.sync(client=self._backend, body=operation)
+    def submit(self, operation: RunOperation, family: str) -> None:
+        _ = submit_operation.sync(client=self._backend, family=family, body=operation)
 
     def cleanup(self) -> None:
         pass
