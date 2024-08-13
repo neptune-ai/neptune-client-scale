@@ -19,7 +19,7 @@ class MockedApiClient:
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    def submit(self, operation) -> None:
+    def submit(self, operation, family) -> None:
         pass
 
     def close(self) -> None:
