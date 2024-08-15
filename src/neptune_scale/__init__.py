@@ -75,23 +75,56 @@ class Run(WithResources, AbstractContextManager):
         Initializes a run that logs the model-building metadata to Neptune.
 
         Args:
-            family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
+            family (str): Identifies related runs. All runs of the same lineage must have the same `family` value.
                 Max length: 128 characters.
-            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
-            project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
+            run_id (str): Identifier of a run. Must be unique within the project. Max length: 128 characters.
+            project (str): Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
-            api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
+            api_token (str): Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
-            resume: Whether to resume an existing run.
-            as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
-            creation_time: Custom creation time of the run.
-            from_run_id: If forking from an existing run, ID of the run to fork from.
-            from_step: If forking from an existing run, step number to fork from.
-            max_queue_size: Maximum number of operations in a queue.
-            max_queue_size_exceeded_callback: Callback function triggered when a queue is full.
-                Accepts two arguments:
-                - Maximum size of the queue.
-                - Exception that made the queue full.
+            resume (bool): If `False` (default), creates a new run. To continue an existing run, set to `True` and pass
+                the ID of an existing run to the `run_id` argument.
+                To fork a run, use `from_run_id` and `from_step` instead.
+            as_experiment (str): To mark a run as an experiment, pass an experiment ID.
+            creation_time (datetime): Custom creation time of the run.
+            from_run_id (str): To forking off an existing run, pass the ID of the run to fork from.
+            from_step (int): To fork off an existing run, pass the step number to fork from.
+            max_queue_size (int): Maximum number of operations allowed in the queue.
+            max_queue_size_exceeded_callback (Callable[[int, BaseException], None]): Callback function triggered when
+                the queue is full. The function should take two arguments:
+                1. Maximum size of the queue.
+                2. Exception that made the queue full.
+
+        Examples:
+
+            Create a new run:
+
+            ```
+            from neptune_scale import Run
+
+            with Run(
+                project="team-alpha/project-x",
+                api_token="h0dHBzOi8aHR0cHM6...Y2MifQ==",
+                family="aquarium",
+                run_id="likable-barracuda",
+            ) as run:
+                ...
+            ```
+
+            Create a forked run and mark it as an experiment:
+
+            ```
+            from neptune_scale import Run
+
+            with Run(
+                family="aquarium",
+                run_id="adventurous-barracuda",
+                as_experiment="swim-further",
+                from_run_id="likable-barracuda",
+                from_step=102,
+            ) as run:
+                ...
+            ```
         """
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
