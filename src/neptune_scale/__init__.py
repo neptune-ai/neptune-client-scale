@@ -50,6 +50,10 @@ from neptune_scale.parameters import (
 class Run(WithResources, AbstractContextManager):
     """
     Representation of tracked metadata.
+
+    Methods:
+        close(): Synchronizes all remaining data and closes the connection to Neptune.
+        log(): Logs the specified metadata to Neptune.
     """
 
     def __init__(
