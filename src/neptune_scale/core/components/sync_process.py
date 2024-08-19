@@ -290,6 +290,7 @@ class SyncThread(Daemon, WithResources):
             except Exception as e:
                 self._errors_queue.put(e)
                 self.interrupt()
+                self._last_put_seq_wait.notify_all()
                 break
 
             self._latest_unprocessed = None
