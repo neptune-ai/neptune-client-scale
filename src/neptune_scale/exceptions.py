@@ -28,20 +28,19 @@ class NeptuneOperationsQueueMaxSizeExceeded(NeptuneScaleError):
 {h1}
 ----NeptuneOperationsQueueMaxSizeExceeded--------------------------------------
 {end}
-The internal operations queue size has been exceeded. The current operations queue has reached the maximum allowed
-    size of {max_size} operations. The synchronization will block until the queue size drops below the maximum.
+The queue size for internal operations was exceeded (max allowed: {max_size}) because too much data was queued in a short time.
 
-Too much data was sent to the queue in a short time, causing the system to hit its operational limit.
+The synchronization is paused until the queue size drops below the maximum.
 
-To resolve this issue, please consider the following:
+To resolve this issue, consider the following:
     - Reduce the frequency of data being sent to the queue, or throttle the rate of operations.
-    - If appropriate, increase the queue size with `max_queue_size` parameter cautiously,
-        ensuring that memory usage remains within acceptable limits.
-    - Monitor your system’s memory consumption closely when adjusting the queue size.
+    - Cautiously increase the queue size through the `max_queue_size` argument.
+        Note: To ensure that memory usage remains within acceptable limits,
+        closely monitor your system's memory consumption.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
-Struggling with the formatting? Disable it by setting the environment variable `NEPTUNE_DISABLE_COLORS` to `True`.
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
@@ -52,7 +51,9 @@ class NeptuneUnauthorizedError(NeptuneScaleError):
 {end}
 You don't have permission to access the given resource.
 
-    - Verify that your API token is correct.
+    - Verify that your API token is correct. To find your API token:
+        - Log in to Neptune Scale and open the user menu.
+        - If your workspace uses service accounts, ask the project owner to provide the token.
 
     - Verify that the provided project name is correct.
       The correct project name should look like this: {correct}WORKSPACE_NAME/PROJECT_NAME{end}
@@ -60,11 +61,11 @@ You don't have permission to access the given resource.
           - {correct}WORKSPACE_NAME{end}: can be your username or your organization name
           - {correct}PROJECT_NAME{end}: the name specified for the project
 
-   - Ask your organization administrator to grant you the necessary privileges to the project.
+   - Ask your workspace admin to grant you the necessary privileges to the project.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
-Struggling with the formatting? Disable it by setting the environment variable `NEPTUNE_DISABLE_COLORS` to `True`.
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
@@ -74,31 +75,32 @@ class NeptuneInvalidCredentialsError(NeptuneScaleError):
 ----NeptuneInvalidCredentialsError---------------------------------------------
 {end}
 The provided API token is invalid.
-Make sure you copied and provided your API token correctly.
+Make sure you copied your API token while logged in to Neptune Scale.
+If your workspace uses service accounts, ask the project owner for the token.
 
-There are two options to add it:
-    - specify it in your code
-    - set it as an environment variable in your operating system.
+There are two options to provide the API token:
+    - Set it as an environment variable in your operating system
+    - Paste it into your Python code (not recommended)
 
-{h2}CODE{end}
-Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
-    {python}neptune_scale.Run(project='WORKSPACE_NAME/PROJECT_NAME', api_token='YOUR_API_TOKEN'){end}
-
-{h2}ENVIRONMENT VARIABLE{end} {correct}(Recommended option){end}
-or export or set an environment variable depending on your operating system:
+{h2}Environment variable{end} {correct}(Recommended){end}
+Set the NEPTUNE_API_TOKEN environment variable depending on your operating system:
 
     {correct}Linux/Unix{end}
-    In your terminal run:
+    In the terminal:
         {bash}export NEPTUNE_API_TOKEN="YOUR_API_TOKEN"{end}
 
     {correct}Windows{end}
-    In your CMD run:
-        {bash}set NEPTUNE_API_TOKEN="YOUR_API_TOKEN"{end}
+    In Command Prompt or similar:
+        {bash}setx NEPTUNE_API_TOKEN "YOUR_API_TOKEN"{end}
 
-and skip the {bold}api_token{end} argument of the {bold}Run{end} constructor:
-    {python}neptune_scale.Run(project='WORKSPACE_NAME/PROJECT_NAME'){end}
+and omit the {bold}api_token{end} argument from the {bold}Run{end} constructor:
+    {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME"){end}
+
+{h2}Option 2: Run argument{end}
+Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
+    {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME", api_token="YOUR_API_TOKEN"){end}
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
-Struggling with the formatting? Disable it by setting the environment variable `NEPTUNE_DISABLE_COLORS` to `True`.
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
