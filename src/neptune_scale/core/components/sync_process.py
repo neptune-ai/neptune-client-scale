@@ -13,6 +13,7 @@ from multiprocessing.synchronize import Condition
 from typing import (
     Any,
     Callable,
+    Literal,
 )
 
 from neptune_api.errors import (
@@ -23,7 +24,11 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import RequestId
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.types import Response
 
-from neptune_scale.api.api_client import ApiClient
+from neptune_scale.api.api_client import (
+    ApiClient,
+    HostedApiClient,
+    MockedApiClient,
+)
 from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
@@ -64,6 +69,7 @@ class SyncProcess(Process):
         errors_queue: ErrorsQueue,
         api_token: str,
         family: str,
+        mode: Literal["async", "disabled"],
         last_put_seq: Synchronized[int],
         last_put_seq_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
@@ -77,6 +83,7 @@ class SyncProcess(Process):
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
         self._max_queue_size: int = max_queue_size
+        self._mode: Literal["async", "disabled"] = mode
 
     def run(self) -> None:
         logger.info("Data synchronization started")
@@ -88,6 +95,7 @@ class SyncProcess(Process):
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,
             max_queue_size=self._max_queue_size,
+            mode=self._mode,
         )
         worker.start()
         try:
@@ -108,6 +116,7 @@ class SyncProcessWorker(WithResources):
         errors_queue: ErrorsQueue,
         external_operations_queue: multiprocessing.Queue[QueueElement],
         last_put_seq: Synchronized[int],
+        mode: Literal["async", "disabled"],
         last_put_seq_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
@@ -121,6 +130,7 @@ class SyncProcessWorker(WithResources):
             family=family,
             last_put_seq=last_put_seq,
             last_put_seq_wait=last_put_seq_wait,
+            mode=mode,
         )
         self._external_to_internal_thread = ExternalToInternalOperationsThread(
             external=external_operations_queue,
@@ -204,6 +214,7 @@ class SyncThread(Daemon, WithResources):
         family: str,
         last_put_seq: Synchronized[int],
         last_put_seq_wait: Condition,
+        mode: Literal["async", "disabled"],
     ) -> None:
         super().__init__(name="SyncThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
@@ -214,6 +225,7 @@ class SyncThread(Daemon, WithResources):
         self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
+        self._mode: str = mode
 
         self._latest_unprocessed: QueueElement | None = None
 
@@ -235,7 +247,10 @@ class SyncThread(Daemon, WithResources):
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> None:
         if self._backend is None:
-            self._backend = ApiClient(api_token=self._api_token)
+            if self._mode == "disabled":
+                self._backend = MockedApiClient()
+            else:
+                self._backend = HostedApiClient(api_token=self._api_token)
         # TODO: Backoff
         response = self._backend.submit(operation=operation, family=self._family)
         print(response)

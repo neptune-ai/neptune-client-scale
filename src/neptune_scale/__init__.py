@@ -15,7 +15,10 @@ from contextlib import AbstractContextManager
 from datetime import datetime
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition as ConditionT
-from typing import Callable
+from typing import (
+    Callable,
+    Literal,
+)
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
@@ -70,6 +73,7 @@ class Run(WithResources, AbstractContextManager):
         project: str | None = None,
         api_token: str | None = None,
         resume: bool = False,
+        mode: Literal["async", "disabled"] = "async",
         as_experiment: str | None = None,
         creation_time: datetime | None = None,
         from_run_id: str | None = None,
@@ -89,6 +93,7 @@ class Run(WithResources, AbstractContextManager):
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
             resume: Whether to resume an existing run.
+            mode: Mode of operation. If set to "disabled", the run will not log any metadata.
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
             creation_time: Custom creation time of the run.
             from_run_id: If forking from an existing run, ID of the run to fork from.
@@ -169,6 +174,7 @@ class Run(WithResources, AbstractContextManager):
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,
             max_queue_size=max_queue_size,
+            mode=mode,
         )
 
         self._errors_monitor.start()

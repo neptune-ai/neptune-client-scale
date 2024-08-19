@@ -15,10 +15,13 @@
 #
 from __future__ import annotations
 
-__all__ = ["ApiClient"]
+__all__ = ("HostedApiClient", "MockedApiClient", "ApiClient")
 
-
+import abc
+import uuid
 from dataclasses import dataclass
+from http import HTTPStatus
+from typing import Any
 
 from neptune_api import (
     AuthenticatedClient,
@@ -38,23 +41,6 @@ from neptune_api.types import Response
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.logger import logger
-
-
-class ApiClient(Resource):
-    def __init__(self, api_token: str) -> None:
-        credentials = Credentials.from_api_key(api_key=api_token)
-
-        logger.debug("Trying to connect to Neptune API")
-        config, token_urls = get_config_and_token_urls(credentials=credentials)
-        self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
-        logger.debug("Connected to Neptune API")
-
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
-        return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
-
-    def close(self) -> None:
-        logger.debug("Closing API client")
-        self._backend.__exit__()
 
 
 @dataclass
@@ -89,3 +75,33 @@ def create_auth_api_client(
         token_refreshing_endpoint=token_refreshing_urls.token_endpoint,
         api_key_exchange_callback=exchange_api_key,
     )
+
+
+class ApiClient(Resource, abc.ABC):
+    @abc.abstractmethod
+    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]: ...
+
+
+class HostedApiClient(ApiClient):
+    def __init__(self, api_token: str) -> None:
+        credentials = Credentials.from_api_key(api_key=api_token)
+
+        logger.debug("Trying to connect to Neptune API")
+        config, token_urls = get_config_and_token_urls(credentials=credentials)
+        self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
+        logger.debug("Connected to Neptune API")
+
+    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
+        return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
+
+    def close(self) -> None:
+        logger.debug("Closing API client")
+        self._backend.__exit__()
+
+
+class MockedApiClient(ApiClient):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
+        return Response(content=b"", parsed=RequestId(value=str(uuid.uuid4())), status_code=HTTPStatus.OK, headers={})

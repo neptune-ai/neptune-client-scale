@@ -1,7 +1,9 @@
 from unittest.mock import Mock
 
-from neptune_scale.core.components.errors_monitor import ErrorsMonitor
-from neptune_scale.core.components.errors_queue import ErrorsQueue
+from neptune_scale.core.components.errors_tracking import (
+    ErrorsMonitor,
+    ErrorsQueue,
+)
 
 
 def test_errors_monitor():
