@@ -18,8 +18,10 @@ from multiprocessing.synchronize import Condition as ConditionT
 from typing import (
     Callable,
     Dict,
+    List,
     Literal,
     Optional,
+    Set,
     Union,
 )
 
@@ -255,8 +257,8 @@ class Run(WithResources, AbstractContextManager):
         timestamp: Optional[datetime] = None,
         fields: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
         metrics: Optional[Dict[str, float]] = None,
-        add_tags: Optional[Dict[str, Union[list[str], set[str]]]] = None,
-        remove_tags: Optional[Dict[str, Union[list[str], set[str]]]] = None,
+        add_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        remove_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
         Logs the specified metadata to Neptune.

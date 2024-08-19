@@ -8,7 +8,11 @@ __all__ = (
 )
 
 from datetime import datetime
-from typing import Union
+from typing import (
+    List,
+    Set,
+    Union,
+)
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
@@ -18,7 +22,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 
 
-def make_value(value: Union[Value, float, str, int, bool, datetime, list[str], set[str]]) -> Value:
+def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], Set[str]]) -> Value:
     if isinstance(value, Value):
         return value
     if isinstance(value, float):

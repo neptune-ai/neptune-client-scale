@@ -1,6 +1,7 @@
 __all__ = ["kill_me"]
 
 import os
+from typing import List
 
 import psutil
 
@@ -40,7 +41,7 @@ def _kill(process: psutil.Process) -> None:
         pass
 
 
-def _get_process_children(process: psutil.Process) -> list[psutil.Process]:
+def _get_process_children(process: psutil.Process) -> List[psutil.Process]:
     try:
         return process.children(recursive=True)
     except psutil.NoSuchProcess:

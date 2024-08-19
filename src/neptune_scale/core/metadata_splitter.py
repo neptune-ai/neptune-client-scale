@@ -8,7 +8,9 @@ from typing import (
     Callable,
     Dict,
     Iterator,
+    List,
     Optional,
+    Set,
     TypeVar,
     Union,
 )
@@ -41,8 +43,8 @@ class MetadataSplitter(Iterator[RunOperation]):
         timestamp: datetime,
         fields: Dict[str, Union[float, bool, int, str, datetime, list, set]],
         metrics: Dict[str, float],
-        add_tags: Dict[str, Union[list[str], set[str]]],
-        remove_tags: Dict[str, Union[list[str], set[str]]],
+        add_tags: Dict[str, Union[List[str], Set[str]]],
+        remove_tags: Dict[str, Union[List[str], Set[str]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
