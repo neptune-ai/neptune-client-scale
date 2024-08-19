@@ -6,6 +6,9 @@ __all__ = (
     "NeptuneUnauthorizedError",
     "NeptuneInvalidCredentialsError",
     "NeptuneUnexpectedError",
+    "NeptuneConnectionLostError",
+    "NeptuneUnableToAuthenticateError",
+    "NeptuneRetryableError",
 )
 
 from typing import Any
@@ -121,3 +124,34 @@ Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` 
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason=reason)
+
+
+class NeptuneRetryableError(NeptuneScaleError):
+    pass
+
+
+class NeptuneConnectionLostError(NeptuneRetryableError):
+    message = """
+{h1}
+----NeptuneConnectionLostError-------------------------------------------------
+{end}
+The connection to the Neptune server was lost. Check if your computer is connected to the internet or whether
+    firewall settings are blocking the connection.
+
+{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
+
+
+class NeptuneUnableToAuthenticateError(NeptuneScaleError):
+    message = """
+{h1}
+----NeptuneUnableToAuthenticateError-------------------------------------------
+{end}
+The client was unable to authenticate with the Neptune server. Check if your API token is correct.
+
+{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""

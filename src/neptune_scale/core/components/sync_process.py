@@ -17,9 +17,14 @@ from typing import (
     Optional,
 )
 
+import backoff
+import httpx
 from neptune_api.errors import (
     InvalidApiTokenException,
+    UnableToDeserializeApiKeyError,
     UnableToExchangeApiKeyError,
+    UnableToRefreshTokenError,
+    UnexpectedStatus,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import RequestId
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
@@ -39,13 +44,17 @@ from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
+    NeptuneConnectionLostError,
     NeptuneInvalidCredentialsError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptuneRetryableError,
+    NeptuneUnableToAuthenticateError,
     NeptuneUnauthorizedError,
 )
 from neptune_scale.parameters import (
     EXTERNAL_TO_INTERNAL_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
+    OPERATION_TIMEOUT,
     SHUTDOWN_TIMEOUT,
     SYNC_THREAD_SLEEP_TIME,
 )
@@ -55,8 +64,12 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
-        except (InvalidApiTokenException, UnableToExchangeApiKeyError):
+        except (InvalidApiTokenException, UnableToDeserializeApiKeyError):
             raise NeptuneInvalidCredentialsError()
+        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus):
+            raise NeptuneUnableToAuthenticateError()
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError):
+            raise NeptuneConnectionLostError()
         except Exception as e:
             raise e
 
@@ -204,6 +217,14 @@ class ExternalToInternalOperationsThread(Daemon, Resource):
 def raise_for_status(response: Response[RequestId]) -> None:
     if response.status_code == 403:
         raise NeptuneUnauthorizedError()
+    if response.status_code != 200:
+        raise RuntimeError(f"Unexpected status code: {response.status_code}")
+
+
+def _ensure_backend_initialized(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
+    if mode == "disabled":
+        return MockedApiClient()
+    return HostedApiClient(api_token=api_token)
 
 
 class SyncThread(Daemon, WithResources):
@@ -226,7 +247,7 @@ class SyncThread(Daemon, WithResources):
         self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
-        self._mode: str = mode
+        self._mode: Literal["async", "disabled"] = mode
 
         self._latest_unprocessed: Optional[QueueElement] = None
 
@@ -245,16 +266,13 @@ class SyncThread(Daemon, WithResources):
             return (self._backend,)
         return ()
 
+    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=OPERATION_TIMEOUT)
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> None:
         if self._backend is None:
-            if self._mode == "disabled":
-                self._backend = MockedApiClient()
-            else:
-                self._backend = HostedApiClient(api_token=self._api_token)
-        # TODO: Backoff
+            self._backend = _ensure_backend_initialized(api_token=self._api_token, mode=self._mode)
         response = self._backend.submit(operation=operation, family=self._family)
-        print(response)
+        logger.debug("Server response:", response)
         raise_for_status(response)
 
     def work(self) -> None:
@@ -266,6 +284,9 @@ class SyncThread(Daemon, WithResources):
                 run_operation = RunOperation()
                 run_operation.ParseFromString(data)
                 self.submit(operation=run_operation)
+            except NeptuneRetryableError as e:
+                self._errors_queue.put(e)
+                continue
             except Exception as e:
                 self._errors_queue.put(e)
                 self.interrupt()

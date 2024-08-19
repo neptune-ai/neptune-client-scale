@@ -346,7 +346,7 @@ class Run(WithResources, AbstractContextManager):
                             last_message_printed = time.time()
                             logger.info(
                                 "Waiting. No operations were processed yet. Operations to sync: %s",
-                                self._operations_queue.last_sequence_id,
+                                self._operations_queue.last_sequence_id + 1,
                             )
                     else:
                         if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
@@ -356,7 +356,8 @@ class Run(WithResources, AbstractContextManager):
                     if last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY:
                         last_message_printed = time.time()
                         logger.info(
-                            "Waiting until remaining %d operations will be synced", last_queued_sequence_id - value
+                            "Waiting until remaining %d operation(s) will be synced",
+                            last_queued_sequence_id - value + 1,
                         )
                 if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
                     break

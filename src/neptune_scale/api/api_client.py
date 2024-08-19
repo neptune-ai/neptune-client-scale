@@ -18,11 +18,13 @@ from __future__ import annotations
 __all__ = ("HostedApiClient", "MockedApiClient", "ApiClient")
 
 import abc
+import os
 import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 
+from httpx import Timeout
 from neptune_api import (
     AuthenticatedClient,
     Client,
@@ -41,6 +43,8 @@ from neptune_api.types import Response
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.logger import logger
+from neptune_scale.envs import ALLOW_SELF_SIGNED_CERTIFICATE
+from neptune_scale.parameters import REQUEST_TIMEOUT
 
 
 @dataclass
@@ -55,8 +59,15 @@ class TokenRefreshingURLs:
         )
 
 
-def get_config_and_token_urls(*, credentials: Credentials) -> tuple[ClientConfig, TokenRefreshingURLs]:
-    with Client(base_url=credentials.base_url) as client:
+def get_config_and_token_urls(
+    *, credentials: Credentials, verify_ssl: bool
+) -> tuple[ClientConfig, TokenRefreshingURLs]:
+    with Client(
+        base_url=credentials.base_url,
+        follow_redirects=True,
+        verify_ssl=verify_ssl,
+        timeout=Timeout(timeout=REQUEST_TIMEOUT),
+    ) as client:
         config = get_client_config.sync(client=client)
         if config is None or isinstance(config, Error):
             raise RuntimeError(f"Failed to get client config: {config}")
@@ -66,7 +77,7 @@ def get_config_and_token_urls(*, credentials: Credentials) -> tuple[ClientConfig
 
 
 def create_auth_api_client(
-    *, credentials: Credentials, config: ClientConfig, token_refreshing_urls: TokenRefreshingURLs
+    *, credentials: Credentials, config: ClientConfig, token_refreshing_urls: TokenRefreshingURLs, verify_ssl: bool
 ) -> AuthenticatedClient:
     return AuthenticatedClient(
         base_url=credentials.base_url,
@@ -74,6 +85,9 @@ def create_auth_api_client(
         client_id=config.security.client_id,
         token_refreshing_endpoint=token_refreshing_urls.token_endpoint,
         api_key_exchange_callback=exchange_api_key,
+        follow_redirects=True,
+        verify_ssl=verify_ssl,
+        timeout=Timeout(timeout=REQUEST_TIMEOUT),
     )
 
 
@@ -86,9 +100,13 @@ class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
+        verify_ssl: bool = os.environ.get(ALLOW_SELF_SIGNED_CERTIFICATE, "False").lower() in ("false", "0")
+
         logger.debug("Trying to connect to Neptune API")
-        config, token_urls = get_config_and_token_urls(credentials=credentials)
-        self._backend = create_auth_api_client(credentials=credentials, config=config, token_refreshing_urls=token_urls)
+        config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)
+        self._backend = create_auth_api_client(
+            credentials=credentials, config=config, token_refreshing_urls=token_urls, verify_ssl=verify_ssl
+        )
         logger.debug("Connected to Neptune API")
 
     def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
