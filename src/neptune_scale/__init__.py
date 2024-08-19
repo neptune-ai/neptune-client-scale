@@ -17,7 +17,10 @@ from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition as ConditionT
 from typing import (
     Callable,
+    Dict,
     Literal,
+    Optional,
+    Union,
 )
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
@@ -70,16 +73,16 @@ class Run(WithResources, AbstractContextManager):
         *,
         family: str,
         run_id: str,
-        project: str | None = None,
-        api_token: str | None = None,
+        project: Optional[str] = None,
+        api_token: Optional[str] = None,
         resume: bool = False,
         mode: Literal["async", "disabled"] = "async",
-        as_experiment: str | None = None,
-        creation_time: datetime | None = None,
-        from_run_id: str | None = None,
-        from_step: int | float | None = None,
+        as_experiment: Optional[str] = None,
+        creation_time: Optional[datetime] = None,
+        from_run_id: Optional[str] = None,
+        from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        max_queue_size_exceeded_callback: Callable[[BaseException], None] | None = None,
+        max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -181,7 +184,7 @@ class Run(WithResources, AbstractContextManager):
         with self._lock:
             self._sync_process.start()
 
-        self._exit_func: Callable[[], None] | None = atexit.register(self._close)
+        self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
         if not resume:
             self._create_run(
@@ -224,11 +227,11 @@ class Run(WithResources, AbstractContextManager):
     def _create_run(
         self,
         creation_time: datetime,
-        as_experiment: str | None,
-        from_run_id: str | None,
-        from_step: int | float | None,
+        as_experiment: Optional[str],
+        from_run_id: Optional[str],
+        from_step: Optional[Union[int, float]],
     ) -> None:
-        fork_point: ForkPoint | None = None
+        fork_point: Optional[ForkPoint] = None
         if from_run_id is not None and from_step is not None:
             fork_point = ForkPoint(
                 parent_project=self._project, parent_run_id=from_run_id, step=make_step(number=from_step)
@@ -248,12 +251,12 @@ class Run(WithResources, AbstractContextManager):
 
     def log(
         self,
-        step: float | int | None = None,
-        timestamp: datetime | None = None,
-        fields: dict[str, float | bool | int | str | datetime | list | set] | None = None,
-        metrics: dict[str, float] | None = None,
-        add_tags: dict[str, list[str] | set[str]] | None = None,
-        remove_tags: dict[str, list[str] | set[str]] | None = None,
+        step: Optional[Union[float, int]] = None,
+        timestamp: Optional[datetime] = None,
+        fields: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        add_tags: Optional[Dict[str, Union[list[str], set[str]]]] = None,
+        remove_tags: Optional[Dict[str, Union[list[str], set[str]]]] = None,
     ) -> None:
         """
         Logs the specified metadata to Neptune.
@@ -312,7 +315,7 @@ class Run(WithResources, AbstractContextManager):
         for operation in splitter:
             self._operations_queue.enqueue(operation=operation)
 
-    def wait_for_submission(self, timeout: float | None = None) -> None:
+    def wait_for_submission(self, timeout: Optional[float] = None) -> None:
         """
         Waits until all metadata is submitted to Neptune.
         """
@@ -330,7 +333,7 @@ class Run(WithResources, AbstractContextManager):
             min(MINIMAL_WAIT_FOR_PUT_SLEEP_TIME, timeout) if timeout is not None else MINIMAL_WAIT_FOR_PUT_SLEEP_TIME
         )
         last_queued_sequence_id = self._operations_queue.last_sequence_id
-        last_message_printed: float | None = None
+        last_message_printed: Optional[float] = None
         while True:
             with self._last_put_seq_wait:
                 self._last_put_seq_wait.wait(timeout=sleep_time_wait)

@@ -14,6 +14,7 @@ from typing import (
     Any,
     Callable,
     Literal,
+    Optional,
 )
 
 from neptune_api.errors import (
@@ -158,7 +159,7 @@ class SyncProcessWorker(WithResources):
         for thread in self.threads:
             thread.start()
 
-    def join(self, timeout: int | None = None) -> None:
+    def join(self, timeout: Optional[int] = None) -> None:
         for thread in self.threads:
             thread.join(timeout=timeout)
 
@@ -175,9 +176,9 @@ class ExternalToInternalOperationsThread(Daemon, Resource):
         self._external: multiprocessing.Queue[QueueElement] = external
         self._internal: queue.Queue[QueueElement] = internal
         self._errors_queue: ErrorsQueue = errors_queue
-        self._latest_unprocessed: QueueElement | None = None
+        self._latest_unprocessed: Optional[QueueElement] = None
 
-    def get_next(self) -> QueueElement | None:
+    def get_next(self) -> Optional[QueueElement]:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 
@@ -221,15 +222,15 @@ class SyncThread(Daemon, WithResources):
         self._api_token: str = api_token
         self._operations_queue: queue.Queue[QueueElement] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
-        self._backend: ApiClient | None = None
+        self._backend: Optional[ApiClient] = None
         self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
         self._mode: str = mode
 
-        self._latest_unprocessed: QueueElement | None = None
+        self._latest_unprocessed: Optional[QueueElement] = None
 
-    def get_next(self) -> QueueElement | None:
+    def get_next(self) -> Optional[QueueElement]:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 

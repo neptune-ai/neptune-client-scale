@@ -4,7 +4,10 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 
 import multiprocessing
 import queue
-from typing import Callable
+from typing import (
+    Callable,
+    Optional,
+)
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.daemon import Daemon
@@ -21,7 +24,7 @@ class ErrorsQueue(Resource):
     def put(self, error: BaseException) -> None:
         self._errors_queue.put(error)
 
-    def get(self, block: bool = True, timeout: float | None = None) -> BaseException:
+    def get(self, block: bool = True, timeout: Optional[float] = None) -> BaseException:
         return self._errors_queue.get(block=block, timeout=timeout)
 
     def close(self) -> None:
@@ -43,8 +46,8 @@ class ErrorsMonitor(Daemon, Resource):
     def __init__(
         self,
         errors_queue: ErrorsQueue,
-        max_queue_size_exceeded_callback: Callable[[BaseException], None] | None = None,
-        on_error_callback: Callable[[BaseException], None] | None = None,
+        max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException], None]] = None,
     ):
         super().__init__(name="ErrorsMonitor", sleep_time=ERRORS_MONITOR_THREAD_SLEEP_TIME)
 
@@ -54,7 +57,7 @@ class ErrorsMonitor(Daemon, Resource):
         )
         self._on_error_callback: Callable[[BaseException], None] = on_error_callback or default_error_callback
 
-    def get_next(self) -> BaseException | None:
+    def get_next(self) -> Optional[BaseException]:
         try:
             return self._errors_queue.get(block=False)
         except queue.Empty:

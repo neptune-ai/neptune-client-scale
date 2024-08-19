@@ -7,7 +7,9 @@ from typing import (
     Any,
     Callable,
     Iterator,
+    Optional,
     TypeVar,
+    Union,
 )
 
 from more_itertools import peekable
@@ -34,12 +36,12 @@ class MetadataSplitter(Iterator[RunOperation]):
         *,
         project: str,
         run_id: str,
-        step: int | float | None,
+        step: Optional[Union[int, float]],
         timestamp: datetime,
-        fields: dict[str, float | bool | int | str | datetime | list | set],
+        fields: dict[str, Union[float, bool, int, str, datetime, list, set]],
         metrics: dict[str, float],
-        add_tags: dict[str, list[str] | set[str]],
-        remove_tags: dict[str, list[str] | set[str]],
+        add_tags: dict[str, Union[list[str], set[str]]],
+        remove_tags: dict[str, Union[list[str], set[str]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)

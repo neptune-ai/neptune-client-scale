@@ -75,6 +75,8 @@ force_grid_wrap = 2
 
 [tool.ruff]
 line-length = 120
+target-version = "py38"
+ignore = ["UP006", "UP007"]
 
 [tool.ruff.lint]
 select = ["F", "UP"]
