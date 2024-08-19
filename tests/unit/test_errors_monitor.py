@@ -16,10 +16,13 @@ def test_errors_monitor():
 
     # when
     errors_queue.put(ValueError("error1"))
+    errors_queue.flush()
+
+    # and
     errors_monitor.start()
-    errors_monitor.interrupt()
     errors_monitor.wake_up()
-    errors_monitor.join(timeout=5)
+    errors_monitor.interrupt()
+    errors_monitor.join(timeout=1)
 
     # then
     callback.assert_called()
