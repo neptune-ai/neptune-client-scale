@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import (
     Any,
     Callable,
+    Dict,
     Iterator,
     Optional,
     TypeVar,
@@ -38,10 +39,10 @@ class MetadataSplitter(Iterator[RunOperation]):
         run_id: str,
         step: Optional[Union[int, float]],
         timestamp: datetime,
-        fields: dict[str, Union[float, bool, int, str, datetime, list, set]],
-        metrics: dict[str, float],
-        add_tags: dict[str, Union[list[str], set[str]]],
-        remove_tags: dict[str, Union[list[str], set[str]]],
+        fields: Dict[str, Union[float, bool, int, str, datetime, list, set]],
+        metrics: Dict[str, float],
+        add_tags: Dict[str, Union[list[str], set[str]]],
+        remove_tags: Dict[str, Union[list[str], set[str]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
