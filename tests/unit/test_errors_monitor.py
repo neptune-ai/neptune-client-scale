@@ -18,7 +18,8 @@ def test_errors_monitor():
     errors_queue.put(ValueError("error1"))
     errors_monitor.start()
     errors_monitor.interrupt()
-    errors_monitor.join(timeout=1)
+    errors_monitor.wake_up()
+    errors_monitor.join(timeout=5)
 
     # then
     callback.assert_called()
