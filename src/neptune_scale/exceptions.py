@@ -5,6 +5,7 @@ __all__ = (
     "NeptuneOperationsQueueMaxSizeExceeded",
     "NeptuneUnauthorizedError",
     "NeptuneInvalidCredentialsError",
+    "NeptuneUnexpectedError",
 )
 
 from typing import Any
@@ -104,3 +105,19 @@ Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} ar
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
+
+
+class NeptuneUnexpectedError(NeptuneScaleError):
+    message = """
+{h1}
+----NeptuneUnexpectedError-----------------------------------------------------
+{end}
+An unexpected error occurred in Neptune Scale Client. Please contact Neptune.ai support. Raw exception name: "{reason}"
+
+{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason=reason)

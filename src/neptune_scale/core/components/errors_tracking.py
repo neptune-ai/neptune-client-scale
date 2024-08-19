@@ -13,7 +13,11 @@ from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.logger import logger
 from neptune_scale.core.process_killer import kill_me
-from neptune_scale.exceptions import NeptuneOperationsQueueMaxSizeExceeded
+from neptune_scale.exceptions import (
+    NeptuneOperationsQueueMaxSizeExceeded,
+    NeptuneScaleError,
+    NeptuneUnexpectedError,
+)
 from neptune_scale.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
 
 
@@ -67,5 +71,7 @@ class ErrorsMonitor(Daemon, Resource):
         while (error := self.get_next()) is not None:
             if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
                 self._max_queue_size_exceeded_callback(error)
-            else:
+            elif isinstance(error, NeptuneScaleError):
                 self._on_error_callback(error)
+            else:
+                self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))))

@@ -55,7 +55,7 @@ class OperationsQueue(Resource):
 
             with self._lock:
                 self._queue.put(
-                    QueueElement(self._sequence_id, monotonic(), serialized_operation),
+                    QueueElement(self._sequence_id, monotonic(), b"deadbeef" + serialized_operation),
                     block=True,
                     timeout=None,
                 )
