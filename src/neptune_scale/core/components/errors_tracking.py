@@ -64,9 +64,7 @@ class ErrorsMonitor(Daemon, Resource):
             return None
 
     def work(self) -> None:
-        print("Working")
         while (error := self.get_next()) is not None:
-            print(error)
             if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
                 self._max_queue_size_exceeded_callback(error)
             else:

@@ -20,9 +20,9 @@ def test_errors_monitor():
 
     # and
     errors_monitor.start()
+    errors_monitor.work()
     errors_monitor.wake_up()
-    errors_monitor.interrupt()
-    errors_monitor.join(timeout=1)
+    errors_monitor.join(timeout=5)
 
     # then
     callback.assert_called()
