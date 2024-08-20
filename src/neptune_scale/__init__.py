@@ -85,6 +85,7 @@ class Run(WithResources, AbstractContextManager):
         from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
         max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
+        on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -106,6 +107,7 @@ class Run(WithResources, AbstractContextManager):
             max_queue_size: Maximum number of operations in a queue.
             max_queue_size_exceeded_callback: Callback function triggered when a queue is full. Accepts the exception
                 that made the queue full.
+            on_network_error_callback: Callback function triggered when a network error occurs.
         """
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
@@ -168,6 +170,7 @@ class Run(WithResources, AbstractContextManager):
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
             max_queue_size_exceeded_callback=max_queue_size_exceeded_callback,
+            on_network_error_callback=on_network_error_callback,
         )
         self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)
         self._last_put_seq_wait: ConditionT = multiprocessing.Condition()
