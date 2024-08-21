@@ -115,9 +115,7 @@ class NeptuneUnexpectedError(NeptuneScaleError):
 {h1}
 ----NeptuneUnexpectedError-----------------------------------------------------
 {end}
-An unexpected error occurred in Neptune Scale Client. Please contact Neptune.ai support. Raw exception name: "{reason}"
-
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+An unexpected error occurred in the Neptune Scale client. For help, contact support@neptune.ai. Raw exception name: "{reason}"
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
