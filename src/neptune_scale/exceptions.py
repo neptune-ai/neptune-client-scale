@@ -133,8 +133,8 @@ class NeptuneConnectionLostError(NeptuneRetryableError):
 {h1}
 ----NeptuneConnectionLostError-------------------------------------------------
 {end}
-The connection to the Neptune server was lost. Check if your computer is connected to the internet or whether
-    firewall settings are blocking the connection.
+The connection to the Neptune server was lost. Ensure that your computer is connected to the internet and that
+    firewall settings aren't blocking the connection.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
