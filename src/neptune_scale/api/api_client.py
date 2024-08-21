@@ -34,7 +34,6 @@ from neptune_api import (
 )
 from neptune_api.api.backend import get_client_config
 from neptune_api.api.data_ingestion import (
-    check_request_status,
     check_request_status_bulk,
     submit_operation,
 )
@@ -109,9 +108,6 @@ class ApiClient(Resource, abc.ABC):
     def submit(self, operation: RunOperation, family: str) -> Response[RequestId]: ...
 
     @abc.abstractmethod
-    def check(self, request_id: str, project: str) -> Response[RequestStatus]: ...
-
-    @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
 
 
@@ -131,13 +127,6 @@ class HostedApiClient(ApiClient):
     def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
         return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
 
-    def check(self, request_id: str, project: str) -> Response[RequestStatus]:
-        return check_request_status.sync_detailed(
-            client=self._backend,
-            project_identifier=project,
-            request_id=request_id,
-        )
-
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
         return check_request_status_bulk.sync_detailed(
             client=self._backend,
@@ -156,10 +145,6 @@ class MockedApiClient(ApiClient):
 
     def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
         return Response(content=b"", parsed=RequestId(value=str(uuid.uuid4())), status_code=HTTPStatus.OK, headers={})
-
-    def check(self, request_id: str, project: str) -> Response[RequestStatus]:
-        status = RequestStatus(code_by_count=[RequestStatus.CodeByCount(count=1, code=Code.OK)])
-        return Response(content=b"", parsed=status, status_code=HTTPStatus.OK, headers={})
 
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
         response_body = BulkRequestStatus(

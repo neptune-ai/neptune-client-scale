@@ -340,7 +340,7 @@ class SyncThread(Daemon, WithResources):
     def work(self) -> None:
         while (operation := self.get_next()) is not None:
             self._latest_unprocessed = operation
-            sequence_id, occured_at, data = operation
+            sequence_id, timestamp, data = operation
 
             try:
                 run_operation = RunOperation()
