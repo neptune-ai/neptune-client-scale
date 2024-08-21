@@ -177,37 +177,3 @@ def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiCl
     if mode == "disabled":
         return MockedApiClient()
     return HostedApiClient(api_token=api_token)
-
-
-class ApiClient(Resource, abc.ABC):
-    @abc.abstractmethod
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]: ...
-
-
-class HostedApiClient(ApiClient):
-    def __init__(self, api_token: str) -> None:
-        credentials = Credentials.from_api_key(api_key=api_token)
-
-        verify_ssl: bool = os.environ.get(ALLOW_SELF_SIGNED_CERTIFICATE, "False").lower() in ("false", "0")
-
-        logger.debug("Trying to connect to Neptune API")
-        config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)
-        self._backend = create_auth_api_client(
-            credentials=credentials, config=config, token_refreshing_urls=token_urls, verify_ssl=verify_ssl
-        )
-        logger.debug("Connected to Neptune API")
-
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
-        return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
-
-    def close(self) -> None:
-        logger.debug("Closing API client")
-        self._backend.__exit__()
-
-
-class MockedApiClient(ApiClient):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
-        return Response(content=b"", parsed=RequestId(value=str(uuid.uuid4())), status_code=HTTPStatus.OK, headers={})

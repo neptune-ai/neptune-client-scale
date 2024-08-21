@@ -17,6 +17,7 @@ from typing import (
     Generic,
     List,
     Literal,
+    NamedTuple,
     Optional,
     TypeVar,
 )
@@ -48,7 +49,6 @@ from neptune_scale.core.components.abstract import (
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
-from neptune_scale.core.components.status_tracking_element import StatusTrackingElement
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -69,6 +69,11 @@ from neptune_scale.parameters import (
 )
 
 T = TypeVar("T")
+
+
+class StatusTrackingElement(NamedTuple):
+    sequence_id: int
+    request_id: str
 
 
 class PeekableQueue(Generic[T]):
