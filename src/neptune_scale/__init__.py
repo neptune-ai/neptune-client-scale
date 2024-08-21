@@ -105,8 +105,8 @@ class Run(WithResources, AbstractContextManager):
             from_run_id: If forking from an existing run, ID of the run to fork from.
             from_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
-            max_queue_size_exceeded_callback: Callback function triggered when a queue is full. Accepts the exception
-                that made the queue full.
+            max_queue_size_exceeded_callback: Callback function triggered when the queue is full. The function should take the exception
+                that made the queue full as its argument.
             on_network_error_callback: Callback function triggered when a network error occurs.
         """
         verify_type("family", family, str)
