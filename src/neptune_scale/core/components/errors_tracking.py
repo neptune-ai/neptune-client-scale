@@ -17,6 +17,7 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneScaleError,
+    NeptuneScaleWarning,
     NeptuneUnexpectedError,
 )
 from neptune_scale.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
@@ -51,6 +52,10 @@ def default_max_queue_size_exceeded_callback(error: BaseException) -> None:
     logger.warning(error)
 
 
+def default_warning_callback(error: BaseException) -> None:
+    logger.warning(error)
+
+
 class ErrorsMonitor(Daemon, Resource):
     def __init__(
         self,
@@ -58,6 +63,7 @@ class ErrorsMonitor(Daemon, Resource):
         max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
         on_error_callback: Optional[Callable[[BaseException], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException], None]] = None,
     ):
         super().__init__(name="ErrorsMonitor", sleep_time=ERRORS_MONITOR_THREAD_SLEEP_TIME)
 
@@ -69,6 +75,7 @@ class ErrorsMonitor(Daemon, Resource):
             on_network_error_callback or default_network_error_callback
         )
         self._on_error_callback: Callable[[BaseException], None] = on_error_callback or default_error_callback
+        self._on_warning_callback: Callable[[BaseException], None] = on_warning_callback or default_warning_callback
 
     def get_next(self) -> Optional[BaseException]:
         try:
@@ -82,6 +89,8 @@ class ErrorsMonitor(Daemon, Resource):
                 self._max_queue_size_exceeded_callback(error)
             elif isinstance(error, NeptuneConnectionLostError):
                 self._non_network_error_callback(error)
+            elif isinstance(error, NeptuneScaleWarning):
+                self._on_warning_callback(error)
             elif isinstance(error, NeptuneScaleError):
                 self._on_error_callback(error)
             else:

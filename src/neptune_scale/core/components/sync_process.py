@@ -14,11 +14,13 @@ from multiprocessing.synchronize import Condition
 from typing import (
     Any,
     Callable,
+    Dict,
     Generic,
     List,
     Literal,
     NamedTuple,
     Optional,
+    Type,
     TypeVar,
 )
 
@@ -32,6 +34,7 @@ from neptune_api.errors import (
     UnexpectedStatus,
 )
 from neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
@@ -52,11 +55,32 @@ from neptune_scale.core.components.queue_element import QueueElement
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
+    NeptuneFieldPathEmpty,
+    NeptuneFieldPathExceedsSizeLimit,
+    NeptuneFieldPathInvalid,
+    NeptuneFieldPathNonWritable,
+    NeptuneFieldTypeConflicting,
+    NeptuneFieldTypeUnsupported,
+    NeptuneFloatValueNanInfUnsupported,
     NeptuneInvalidCredentialsError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptuneProjectInvalidName,
+    NeptuneProjectNotFound,
     NeptuneRetryableError,
+    NeptuneRunConflicting,
+    NeptuneRunDuplicate,
+    NeptuneRunForkParentNotFound,
+    NeptuneRunInvalidCreationParameters,
+    NeptuneRunNotFound,
+    NeptuneSeriesPointDuplicate,
+    NeptuneSeriesStepNonIncreasing,
+    NeptuneSeriesStepNotAfterForkPoint,
+    NeptuneSeriesTimestampDecreasing,
+    NeptuneStringSetExceedsSizeLimit,
+    NeptuneStringValueExceedsSizeLimit,
     NeptuneUnableToAuthenticateError,
     NeptuneUnauthorizedError,
+    NeptuneUnexpectedError,
 )
 from neptune_scale.parameters import (
     EXTERNAL_TO_INTERNAL_THREAD_SLEEP_TIME,
@@ -71,9 +95,40 @@ from neptune_scale.parameters import (
 T = TypeVar("T")
 
 
+CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
+    IngestCode.OK: None,
+    IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
+    IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
+    IngestCode.RUN_NOT_FOUND: NeptuneRunNotFound,
+    IngestCode.RUN_DUPLICATE: NeptuneRunDuplicate,
+    IngestCode.RUN_CONFLICTING: NeptuneRunConflicting,
+    IngestCode.RUN_FORK_PARENT_NOT_FOUND: NeptuneRunForkParentNotFound,
+    IngestCode.RUN_INVALID_CREATION_PARAMETERS: NeptuneRunInvalidCreationParameters,
+    IngestCode.FIELD_PATH_EXCEEDS_SIZE_LIMIT: NeptuneFieldPathExceedsSizeLimit,
+    IngestCode.FIELD_PATH_EMPTY: NeptuneFieldPathEmpty,
+    IngestCode.FIELD_PATH_INVALID: NeptuneFieldPathInvalid,
+    IngestCode.FIELD_PATH_NON_WRITABLE: NeptuneFieldPathNonWritable,
+    IngestCode.FIELD_TYPE_UNSUPPORTED: NeptuneFieldTypeUnsupported,
+    IngestCode.FIELD_TYPE_CONFLICTING: NeptuneFieldTypeConflicting,
+    IngestCode.SERIES_POINT_DUPLICATE: NeptuneSeriesPointDuplicate,
+    IngestCode.SERIES_STEP_NON_INCREASING: NeptuneSeriesStepNonIncreasing,
+    IngestCode.SERIES_STEP_NOT_AFTER_FORK_POINT: NeptuneSeriesStepNotAfterForkPoint,
+    IngestCode.SERIES_TIMESTAMP_DECREASING: NeptuneSeriesTimestampDecreasing,
+    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: NeptuneFloatValueNanInfUnsupported,
+    IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
+    IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
+}
+
+
 class StatusTrackingElement(NamedTuple):
     sequence_id: int
     request_id: str
+
+
+def code_to_exception(code: IngestCode.ValueType) -> Optional[Type[Exception]]:
+    if code in CODE_TO_ERROR:
+        return CODE_TO_ERROR[code]
+    return NeptuneUnexpectedError
 
 
 class PeekableQueue(Generic[T]):
@@ -427,7 +482,6 @@ class StatusTrackingThread(Daemon, WithResources):
                 response = self.check_batch(request_ids=request_ids)
                 if response is None:
                     break
-                logger.debug("Status: %s", response)
             except NeptuneRetryableError as e:
                 self._errors_queue.put(e)
                 break
@@ -444,7 +498,10 @@ class StatusTrackingThread(Daemon, WithResources):
                 if Code.UNAVAILABLE in codes:
                     break
 
-                # TODO: Handle errors properly
+                detailed_codes = [code_status.detail for code_status in request_status.code_by_count]
+                for detailed_code in detailed_codes:
+                    if (error := code_to_exception(detailed_code)) is not None:
+                        self._errors_queue.put(error())
 
                 to_commit += 1
                 sequence_id = request_seq_id
