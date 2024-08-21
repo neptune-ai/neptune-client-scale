@@ -44,6 +44,7 @@ from neptune_api.models import (
     Error,
 )
 from neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
@@ -150,7 +151,9 @@ class MockedApiClient(ApiClient):
         response_body = BulkRequestStatus(
             statuses=list(
                 map(
-                    lambda _: RequestStatus(code_by_count=[RequestStatus.CodeByCount(count=1, code=Code.OK)]),
+                    lambda _: RequestStatus(
+                        code_by_count=[RequestStatus.CodeByCount(count=1, code=Code.OK, detail=IngestCode.OK)]
+                    ),
                     request_ids,
                 )
             )
