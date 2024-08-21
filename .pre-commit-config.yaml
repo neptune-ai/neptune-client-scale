@@ -27,7 +27,7 @@ repos:
         args: [ --config-file, pyproject.toml ]
         pass_filenames: false
         additional_dependencies:
-          - neptune-api==0.5.0
+          - neptune-api==0.6.0
           - more-itertools
           - backoff
 default_language_version:
