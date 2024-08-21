@@ -5,5 +5,5 @@ from typing import NamedTuple
 
 class QueueElement(NamedTuple):
     sequence_id: int
-    occured_at: float
+    timestamp: float
     operation: bytes
