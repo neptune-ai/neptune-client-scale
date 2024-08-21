@@ -65,5 +65,9 @@ def make_step(number: float | int, raise_on_step_precision_loss: bool = False) -
 
 
 def pb_key_size(key: str) -> int:
+    """
+    Calculates the size of the string in the protobuf message including an overhead of the length prefix (varint)
+        with an assumption of maximal string length.
+    """
     key_bin = bytes(key, "utf-8")
     return len(key_bin) + 2 + (1 if len(key_bin) > 127 else 0)
