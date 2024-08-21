@@ -147,7 +147,7 @@ class NeptuneUnableToAuthenticateError(NeptuneScaleError):
 {h1}
 ----NeptuneUnableToAuthenticateError-------------------------------------------
 {end}
-The client was unable to authenticate with the Neptune server. Check if your API token is correct.
+The client was unable to authenticate with the Neptune server. Ensure that your API token is correct.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
