@@ -112,6 +112,9 @@ class Run(WithResources, AbstractContextManager):
         if resume and from_step is not None:
             raise ValueError("`resume` and `from_step` cannot be used together.")
 
+        if max_queue_size < 1:
+            raise ValueError("`max_queue_size` must be greater than 0.")
+
         project = project or os.environ.get(PROJECT_ENV_NAME)
         verify_non_empty("project", project)
         assert project is not None  # mypy
