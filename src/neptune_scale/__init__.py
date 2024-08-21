@@ -99,7 +99,7 @@ class Run(WithResources, AbstractContextManager):
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
             resume: Whether to resume an existing run.
-            mode: Mode of operation. If set to "disabled", the run will not log any metadata.
+            mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
             creation_time: Custom creation time of the run.
             from_run_id: If forking from an existing run, ID of the run to fork from.
