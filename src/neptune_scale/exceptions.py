@@ -20,7 +20,7 @@ from neptune_scale.core.styles import (
 
 
 class NeptuneScaleError(Exception):
-    message = "An error occurred in Neptune Scale Client."
+    message = "An error occurred in the Neptune Scale client."
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
