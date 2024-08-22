@@ -306,7 +306,7 @@ class NeptuneFieldPathInvalid(NeptuneScaleError):
 {h1}
 ----NeptuneFieldPathInvalid----------------------------------------------------
 {end}
-Field Path is invalid for other reasons, like invalid UTF-8 encoding.
+Field path is invalid. To troubleshoot the problem, ensure that the UTF-8 encoding is valid.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
