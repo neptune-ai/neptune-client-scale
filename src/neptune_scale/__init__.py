@@ -376,7 +376,7 @@ class Run(WithResources, AbstractContextManager):
                     if verbose and should_print_message(last_message_printed):
                         last_message_printed = time.time()
                         logger.info(
-                            f"Waiting until remaining %d operation(s) will be {phrase}",
+                            f"Waiting for remaining %d operation(s) to be {phrase}",
                             last_queued_sequence_id - value + 1,
                         )
 
