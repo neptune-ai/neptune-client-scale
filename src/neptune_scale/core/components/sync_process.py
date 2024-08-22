@@ -249,7 +249,7 @@ class SyncProcessWorker(WithResources):
 
         self._internal_operations_queue: queue.Queue[QueueElement] = queue.Queue(maxsize=max_queue_size)
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
-        self._sync_thread = SyncThread(
+        self._sync_thread = SenderThread(
             api_token=api_token,
             operations_queue=self._internal_operations_queue,
             status_tracking_queue=self._status_tracking_queue,
@@ -336,7 +336,7 @@ class ExternalToInternalOperationsThread(Daemon, Resource):
                 self._errors_queue.put(e)
 
 
-class SyncThread(Daemon, WithResources):
+class SenderThread(Daemon, WithResources):
     def __init__(
         self,
         api_token: str,
@@ -348,7 +348,7 @@ class SyncThread(Daemon, WithResources):
         last_put_seq_wait: Condition,
         mode: Literal["async", "disabled"],
     ) -> None:
-        super().__init__(name="SyncThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
+        super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
         self._operations_queue: queue.Queue[QueueElement] = operations_queue
