@@ -319,7 +319,7 @@ class NeptuneFieldPathNonWritable(NeptuneScaleError):
 {h1}
 ----NeptuneFieldPathNonWritable------------------------------------------------
 {end}
-Field Path is non-writable. Some special sys/ fields are read-only.
+Field path is non-writable. Some special sys/ fields are read-only.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
@@ -332,7 +332,7 @@ class NeptuneFieldTypeUnsupported(NeptuneScaleError):
 {h1}
 ----NeptuneFieldTypeUnsupported------------------------------------------------
 {end}
-Field Type is not supported by the system.
+Field type is not supported by the system.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
