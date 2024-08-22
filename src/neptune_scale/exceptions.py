@@ -30,6 +30,7 @@ __all__ = (
     "NeptuneFloatValueNanInfUnsupported",
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
+    "NeptuneSynchronizationStopped",
 )
 
 from typing import Any
@@ -54,6 +55,10 @@ class NeptuneScaleWarning(Warning):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
         super().__init__(self.message.format(*args, **STYLES, **kwargs))
+
+
+class NeptuneSynchronizationStopped(NeptuneScaleError):
+    message = "Internal synchronization process was stopped."
 
 
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneScaleError):

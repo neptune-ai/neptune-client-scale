@@ -22,6 +22,8 @@ def get_logger() -> logging.Logger:
     neptune_logger.setLevel(logging.INFO)
 
     if os.environ.get(DEBUG_MODE, "False").lower() in ("true", "1"):
+        neptune_logger.setLevel(logging.DEBUG)
+
         file_handler = logging.FileHandler(NEPTUNE_DEBUG_FILE_NAME)
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(logging.Formatter(DEBUG_FORMAT))

@@ -345,21 +345,22 @@ class Run(WithResources, AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        with self._lock:
-            if not self._sync_process.is_alive():
-                if verbose:
-                    logger.warning("Sync process is not running")
-                return  # No need to wait if the sync process is not running
-
         begin_time = time.time()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
         last_queued_sequence_id = self._operations_queue.last_sequence_id
         last_print_timestamp: Optional[float] = None
 
         while True:
-            with wait_condition:
-                wait_condition.wait(timeout=wait_time)
-                value = external_value.value
+            try:
+                with self._lock:
+                    if not self._sync_process.is_alive():
+                        if verbose:
+                            logger.warning("Sync process is not running")
+                        return  # No need to wait if the sync process is not running
+
+                with wait_condition:
+                    wait_condition.wait(timeout=wait_time)
+                    value = external_value.value
 
                 if value == -1:
                     if self._operations_queue.last_sequence_id != -1:
@@ -383,9 +384,13 @@ class Run(WithResources, AbstractContextManager):
                         verbose=verbose,
                     )
 
-                # Reaching the last queued sequence ID means that all operations were submitted
-                if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
-                    break
+                    # Reaching the last queued sequence ID means that all operations were submitted
+                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                        break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
 
         if verbose:
             logger.info(f"All operations were {phrase}")
