@@ -189,7 +189,7 @@ class NeptuneProjectNotFound(NeptuneScaleError):
 {h1}
 ----NeptuneProjectNotFound-----------------------------------------------------
 {end}
-Project not found. May happen when the project is not created yet or the project name is incorrect.
+Project not found. Either the project hasn't been created yet or the name is incorrect.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
