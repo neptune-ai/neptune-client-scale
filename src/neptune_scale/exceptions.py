@@ -372,7 +372,7 @@ class NeptuneSeriesStepNonIncreasing(NeptuneScaleError):
 {h1}
 ----NeptuneSeriesStepNonIncreasing---------------------------------------------
 {end}
-The step of a series value is lesser than the most recently logged step for this series or the step is exactly the same,
+The step of a series value is smaller than the most recently logged step for this series or the step is exactly the same,
   but the value is different.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
