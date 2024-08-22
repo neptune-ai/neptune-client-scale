@@ -416,10 +416,13 @@ class SenderThread(Daemon, WithResources):
                 run_operation = RunOperation()
                 run_operation.ParseFromString(data)
                 request_id = self.submit(operation=run_operation)
-                if request_id:
-                    self._status_tracking_queue.put(
-                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
-                    )
+
+                if request_id is None:
+                    raise NeptuneUnexpectedError("Server response is empty")
+
+                self._status_tracking_queue.put(
+                    StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
+                )
                 self.commit()
             except NeptuneRetryableError as e:
                 self._errors_queue.put(e)
@@ -495,8 +498,8 @@ class StatusTrackingThread(Daemon, WithResources):
             try:
                 response = self.check_batch(request_ids=request_ids)
                 if response is None:
-                    # Sleep before retry
-                    break
+                    raise NeptuneUnexpectedError("Server response is empty")
+
             except NeptuneRetryableError as e:
                 self._errors_queue.put(e)
                 # Small give up, sleep before retry
