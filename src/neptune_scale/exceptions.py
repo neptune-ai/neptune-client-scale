@@ -386,7 +386,7 @@ class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
 {h1}
 ----NeptuneSeriesStepNotAfterForkPoint-----------------------------------------
 {end}
-The series value must be greater than the step specified in the `from_step`.
+The series value must be greater than the step specified by the `from_step` argument.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
