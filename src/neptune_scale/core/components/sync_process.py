@@ -211,7 +211,6 @@ class SyncProcess(Process):
         self._stop_event = multiprocessing.Event()
 
     def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
-        logger.info("Internal synchronization stopped due to an error")
         logger.debug("Received signal %d", signum)
         self._stop_event.set()  # Trigger the stop event
 
@@ -431,6 +430,7 @@ class SenderThread(Daemon, WithResources):
             sequence_id, timestamp, data = operation
 
             try:
+                logger.debug("Processing operation #%d with size of %d bytes", sequence_id, len(data))
                 run_operation = RunOperation()
                 run_operation.ParseFromString(data)
                 request_id = self.submit(operation=run_operation)
