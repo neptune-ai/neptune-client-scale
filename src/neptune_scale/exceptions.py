@@ -399,7 +399,7 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 {h1}
 ----NeptuneSeriesTimestampDecreasing-------------------------------------------
 {end}
-The timestamp of a series value is lesser than the most recently logged value. Identical timestamps are allowed.
+The timestamp of a series value is less than the most recently logged value. Identical timestamps are allowed.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
