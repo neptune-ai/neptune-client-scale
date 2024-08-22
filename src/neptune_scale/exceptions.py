@@ -66,7 +66,7 @@ class NeptuneOperationsQueueMaxSizeExceeded(NeptuneScaleError):
 {h1}
 ----NeptuneOperationsQueueMaxSizeExceeded--------------------------------------
 {end}
-The queue size for internal operations was exceeded (max allowed: {max_size}) because too much data was queued in a short time.
+The queue size for internal operations was exceeded because too much data was queued in a short time.
 
 The synchronization is paused until the queue size drops below the maximum.
 

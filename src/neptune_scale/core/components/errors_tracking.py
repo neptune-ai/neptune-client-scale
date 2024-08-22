@@ -4,6 +4,7 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 
 import multiprocessing
 import queue
+import time
 from typing import (
     Callable,
     Optional,
@@ -39,20 +40,21 @@ class ErrorsQueue(Resource):
         self._errors_queue.cancel_join_thread()
 
 
-def default_error_callback(error: BaseException) -> None:
+def default_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
     logger.error(error)
     kill_me()
 
 
-def default_network_error_callback(error: BaseException) -> None:
+def default_network_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
     logger.warning("Experiencing network issues. Retrying...")
 
 
-def default_max_queue_size_exceeded_callback(error: BaseException) -> None:
-    logger.warning(error)
+def default_max_queue_size_exceeded_callback(error: BaseException, last_raised_at: Optional[float]) -> None:
+    if last_raised_at is None or time.time() - last_raised_at > 5:
+        logger.warning(error)
 
 
-def default_warning_callback(error: BaseException) -> None:
+def default_warning_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
     logger.warning(error)
 
 
@@ -60,22 +62,28 @@ class ErrorsMonitor(Daemon, Resource):
     def __init__(
         self,
         errors_queue: ErrorsQueue,
-        on_queue_full_callback: Optional[Callable[[BaseException], None]] = None,
-        on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
-        on_error_callback: Optional[Callable[[BaseException], None]] = None,
-        on_warning_callback: Optional[Callable[[BaseException], None]] = None,
+        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
     ):
         super().__init__(name="ErrorsMonitor", sleep_time=ERRORS_MONITOR_THREAD_SLEEP_TIME)
 
         self._errors_queue: ErrorsQueue = errors_queue
-        self._on_queue_full_callback: Callable[[BaseException], None] = (
+        self._on_queue_full_callback: Callable[[BaseException, Optional[float]], None] = (
             on_queue_full_callback or default_max_queue_size_exceeded_callback
         )
-        self._on_network_error_callback: Callable[[BaseException], None] = (
+        self._on_network_error_callback: Callable[[BaseException, Optional[float]], None] = (
             on_network_error_callback or default_network_error_callback
         )
-        self._on_error_callback: Callable[[BaseException], None] = on_error_callback or default_error_callback
-        self._on_warning_callback: Callable[[BaseException], None] = on_warning_callback or default_warning_callback
+        self._on_error_callback: Callable[[BaseException, Optional[float]], None] = (
+            on_error_callback or default_error_callback
+        )
+        self._on_warning_callback: Callable[[BaseException, Optional[float]], None] = (
+            on_warning_callback or default_warning_callback
+        )
+
+        self._last_raised_timestamps: dict[str, float] = {}
 
     def get_next(self) -> Optional[BaseException]:
         try:
@@ -85,13 +93,16 @@ class ErrorsMonitor(Daemon, Resource):
 
     def work(self) -> None:
         while (error := self.get_next()) is not None:
+            last_raised_at = self._last_raised_timestamps.get(str(type(error)), None)
+            self._last_raised_timestamps[str(type(error))] = time.time()
+
             if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
-                self._on_queue_full_callback(error)
+                self._on_queue_full_callback(error, last_raised_at)
             elif isinstance(error, NeptuneConnectionLostError):
-                self._on_network_error_callback(error)
+                self._on_network_error_callback(error, last_raised_at)
             elif isinstance(error, NeptuneScaleWarning):
-                self._on_warning_callback(error)
+                self._on_warning_callback(error, last_raised_at)
             elif isinstance(error, NeptuneScaleError):
-                self._on_error_callback(error)
+                self._on_error_callback(error, last_raised_at)
             else:
-                self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))))
+                self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))), last_raised_at)

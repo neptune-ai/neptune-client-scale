@@ -86,10 +86,10 @@ class Run(WithResources, AbstractContextManager):
         from_run_id: Optional[str] = None,
         from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        on_queue_full_callback: Optional[Callable[[BaseException], None]] = None,
-        on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
-        on_error_callback: Optional[Callable[[BaseException], None]] = None,
-        on_warning_callback: Optional[Callable[[BaseException], None]] = None,
+        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -110,7 +110,7 @@ class Run(WithResources, AbstractContextManager):
             from_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
             on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
-                that made the queue full as its argument.
+                that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
             on_network_error_callback: Callback function triggered when a network error occurs.
             on_error_callback: The default callback function triggered when error occurs. It applies if an error
                 wasn't caught by other callbacks.
