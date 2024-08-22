@@ -267,7 +267,7 @@ class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
 {h1}
 ----NeptuneRunInvalidCreationParameters----------------------------------------
 {end}
-Invalid run creation parameters. For example, experiment id is too large.
+Invalid run creation parameters. For example, the experiment name is too large.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
