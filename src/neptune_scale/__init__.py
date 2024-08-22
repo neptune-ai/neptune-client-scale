@@ -16,6 +16,7 @@ from datetime import datetime
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition as ConditionT
 from typing import (
+    Any,
     Callable,
     Dict,
     List,
@@ -353,7 +354,7 @@ class Run(WithResources, AbstractContextManager):
         begin_time = time.time()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
         last_queued_sequence_id = self._operations_queue.last_sequence_id
-        last_message_printed: Optional[float] = None
+        last_print_timestamp: Optional[float] = None
 
         while True:
             with wait_condition:
@@ -362,23 +363,25 @@ class Run(WithResources, AbstractContextManager):
 
                 if value == -1:
                     if self._operations_queue.last_sequence_id != -1:
-                        if verbose and should_print_message(last_message_printed):
-                            last_message_printed = time.time()
-                            logger.info(
-                                f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                                self._operations_queue.last_sequence_id + 1,
-                            )
-                    else:
-                        if verbose and should_print_message(last_message_printed):
-                            last_message_printed = time.time()
-                            logger.info(f"Waiting. No operations were {phrase} yet")
-                else:
-                    if verbose and should_print_message(last_message_printed):
-                        last_message_printed = time.time()
-                        logger.info(
-                            f"Waiting for remaining %d operation(s) to be {phrase}",
-                            last_queued_sequence_id - value + 1,
+                        last_print_timestamp = print_message(
+                            f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
+                            self._operations_queue.last_sequence_id + 1,
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
                         )
+                    else:
+                        last_print_timestamp = print_message(
+                            f"Waiting. No operations were {phrase} yet",
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
+                        )
+                else:
+                    last_print_timestamp = print_message(
+                        f"Waiting for remaining %d operation(s) to be {phrase}",
+                        last_queued_sequence_id - value + 1,
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
 
                 # Reaching the last queued sequence ID means that all operations were submitted
                 if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
@@ -422,6 +425,11 @@ class Run(WithResources, AbstractContextManager):
         )
 
 
-def should_print_message(last_message_printed: Optional[float]) -> bool:
-    """Check if enough time has passed to print a message."""
-    return last_message_printed is None or time.time() - last_message_printed > STOP_MESSAGE_FREQUENCY
+def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
+    current_time = time.time()
+
+    if verbose and (last_print is None or current_time - last_print > STOP_MESSAGE_FREQUENCY):
+        logger.info(msg, *args)
+        return current_time
+
+    return last_print
