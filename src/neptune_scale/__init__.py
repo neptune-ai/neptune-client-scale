@@ -86,8 +86,10 @@ class Run(WithResources, AbstractContextManager):
         from_run_id: Optional[str] = None,
         from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
+        on_queue_full_callback: Optional[Callable[[BaseException], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException], None]] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -107,9 +109,12 @@ class Run(WithResources, AbstractContextManager):
             from_run_id: If forking from an existing run, ID of the run to fork from.
             from_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
-            max_queue_size_exceeded_callback: Callback function triggered when the queue is full. The function should take the exception
+            on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
                 that made the queue full as its argument.
             on_network_error_callback: Callback function triggered when a network error occurs.
+            on_error_callback: The default callback function triggered when error occurs. It applies if an error
+                wasn't caught by other callbacks.
+            on_warning_callback: Callback function triggered when a warning occurs.
         """
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
@@ -121,7 +126,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("from_run_id", from_run_id, (str, type(None)))
         verify_type("from_step", from_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
-        verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
+        verify_type("max_queue_size_exceeded_callback", on_queue_full_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
             raise ValueError("`resume` and `creation_time` cannot be used together.")
@@ -171,8 +176,10 @@ class Run(WithResources, AbstractContextManager):
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
-            max_queue_size_exceeded_callback=max_queue_size_exceeded_callback,
+            on_queue_full_callback=on_queue_full_callback,
             on_network_error_callback=on_network_error_callback,
+            on_error_callback=on_error_callback,
+            on_warning_callback=on_warning_callback,
         )
 
         self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)

@@ -60,7 +60,7 @@ class ErrorsMonitor(Daemon, Resource):
     def __init__(
         self,
         errors_queue: ErrorsQueue,
-        max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
+        on_queue_full_callback: Optional[Callable[[BaseException], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
         on_error_callback: Optional[Callable[[BaseException], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException], None]] = None,
@@ -68,10 +68,10 @@ class ErrorsMonitor(Daemon, Resource):
         super().__init__(name="ErrorsMonitor", sleep_time=ERRORS_MONITOR_THREAD_SLEEP_TIME)
 
         self._errors_queue: ErrorsQueue = errors_queue
-        self._max_queue_size_exceeded_callback: Callable[[BaseException], None] = (
-            max_queue_size_exceeded_callback or default_max_queue_size_exceeded_callback
+        self._on_queue_full_callback: Callable[[BaseException], None] = (
+            on_queue_full_callback or default_max_queue_size_exceeded_callback
         )
-        self._non_network_error_callback: Callable[[BaseException], None] = (
+        self._on_network_error_callback: Callable[[BaseException], None] = (
             on_network_error_callback or default_network_error_callback
         )
         self._on_error_callback: Callable[[BaseException], None] = on_error_callback or default_error_callback
@@ -86,9 +86,9 @@ class ErrorsMonitor(Daemon, Resource):
     def work(self) -> None:
         while (error := self.get_next()) is not None:
             if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
-                self._max_queue_size_exceeded_callback(error)
+                self._on_queue_full_callback(error)
             elif isinstance(error, NeptuneConnectionLostError):
-                self._non_network_error_callback(error)
+                self._on_network_error_callback(error)
             elif isinstance(error, NeptuneScaleWarning):
                 self._on_warning_callback(error)
             elif isinstance(error, NeptuneScaleError):
