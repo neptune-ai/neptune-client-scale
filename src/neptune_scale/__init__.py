@@ -392,8 +392,8 @@ class Run(WithResources, AbstractContextManager):
         Waits until all metadata is submitted to Neptune.
 
         Args:
-            timeout: Maximum time to wait for submission
-            verbose: Whether to print messages about the waiting process
+            timeout (float, optional): In seconds, the maximum time to wait for submission.
+            verbose (bool): If True (default), prints messages about the waiting process.
         """
         self._wait(
             phrase="submitted",
@@ -409,8 +409,8 @@ class Run(WithResources, AbstractContextManager):
         Waits until all metadata is processed by Neptune.
 
         Args:
-            timeout: Maximum time to wait for processing.
-            verbose: Whether to print messages about the waiting process
+            timeout (float, optional): In seconds, the maximum time to wait for processing.
+            verbose (bool): If True (default), prints messages about the waiting process.
         """
         self._wait(
             phrase="processed",
