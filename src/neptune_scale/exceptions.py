@@ -280,7 +280,7 @@ class NeptuneFieldPathExceedsSizeLimit(NeptuneScaleError):
 {h1}
 ----NeptuneFieldPathExceedsSizeLimit-------------------------------------------
 {end}
-Field Path is too long. Maximum length is 1024 bytes (not characters).
+Field path is too long. Maximum length is 1024 bytes (not characters).
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
@@ -293,7 +293,7 @@ class NeptuneFieldPathEmpty(NeptuneScaleError):
 {h1}
 ----NeptuneFieldPathEmpty------------------------------------------------------
 {end}
-Field Path is empty.
+Field path is empty.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
