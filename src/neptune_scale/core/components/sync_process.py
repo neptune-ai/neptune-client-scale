@@ -4,6 +4,7 @@ __all__ = ("SyncProcess",)
 
 import multiprocessing
 import queue
+import signal
 import threading
 from multiprocessing import (
     Process,
@@ -11,6 +12,7 @@ from multiprocessing import (
 )
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition
+from types import FrameType
 from typing import (
     Any,
     Callable,
@@ -205,8 +207,21 @@ class SyncProcess(Process):
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
+        # This flag is set when a termination signal is caught
+        self._stop_event = multiprocessing.Event()
+
+    def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
+        logger.info("Internal synchronization stopped due to an error")
+        logger.debug("Received signal %d", signum)
+        self._stop_event.set()  # Trigger the stop event
+
     def run(self) -> None:
         logger.info("Data synchronization started")
+
+        # Register signals handlers
+        signal.signal(signal.SIGTERM, self._handle_signal)
+        signal.signal(signal.SIGCHLD, self._handle_signal)
+
         worker = SyncProcessWorker(
             project=self._project,
             family=self._family,
@@ -222,13 +237,16 @@ class SyncProcess(Process):
         )
         worker.start()
         try:
-            worker.join()
+            while not self._stop_event.is_set():
+                worker.join(timeout=1)
         except KeyboardInterrupt:
+            logger.debug("Data synchronization interrupted by user")
+        finally:
+            logger.info("Data synchronization stopping")
             worker.interrupt()
             worker.wake_up()
             worker.join(timeout=SHUTDOWN_TIMEOUT)
             worker.close()
-            logger.debug("Data synchronization interrupted by user")
         logger.info("Data synchronization finished")
 
 
@@ -334,7 +352,7 @@ class InternalQueueFeederThread(Daemon, Resource):
     def work(self) -> None:
         while (operation := self.get_next()) is not None:
             try:
-                logger.debug("Copying operation #%d", operation.sequence_id)
+                logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
                 self._internal.put_nowait(operation)
                 self.commit()
             except queue.Full:
