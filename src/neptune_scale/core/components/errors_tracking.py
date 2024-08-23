@@ -16,6 +16,7 @@ from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.logger import logger
 from neptune_scale.core.process_killer import kill_me
 from neptune_scale.exceptions import (
+    NeptuneAsyncLagThresholdExceeded,
     NeptuneConnectionLostError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneScaleError,
@@ -64,6 +65,7 @@ class ErrorsMonitor(Daemon, Resource):
         self,
         errors_queue: ErrorsQueue,
         on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_async_lag_callback: Optional[Callable[[], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
@@ -74,6 +76,7 @@ class ErrorsMonitor(Daemon, Resource):
         self._on_queue_full_callback: Callable[[BaseException, Optional[float]], None] = (
             on_queue_full_callback or default_max_queue_size_exceeded_callback
         )
+        self._on_async_lag_callback: Callable[[], None] = on_async_lag_callback or (lambda: None)
         self._on_network_error_callback: Callable[[BaseException, Optional[float]], None] = (
             on_network_error_callback or default_network_error_callback
         )
@@ -106,6 +109,8 @@ class ErrorsMonitor(Daemon, Resource):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneScaleError):
                     self._on_error_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneAsyncLagThresholdExceeded):
+                    self._on_async_lag_callback()
                 else:
                     self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))), last_raised_at)
             except Exception as e:

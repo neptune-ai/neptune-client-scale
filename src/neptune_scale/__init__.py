@@ -89,6 +89,8 @@ class Run(WithResources, AbstractContextManager):
         fork_run_id: Optional[str] = None,
         fork_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
+        async_lag_threshold: Optional[float] = None,
+        on_async_lag_callback: Optional[Callable[[], None]] = None,
         on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
@@ -112,6 +114,9 @@ class Run(WithResources, AbstractContextManager):
             fork_run_id: If forking from an existing run, ID of the run to fork from.
             fork_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
+            async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
+                (in seconds). If the duration exceeds the threshold, the callback function is triggered.
+            on_async_lag_callback: Callback function triggered when the duration between the queueing and synchronization
             on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
                 that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
             on_network_error_callback: Callback function triggered when a network error occurs.
@@ -119,6 +124,7 @@ class Run(WithResources, AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
         """
+        
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -129,7 +135,12 @@ class Run(WithResources, AbstractContextManager):
         verify_type("fork_run_id", fork_run_id, (str, type(None)))
         verify_type("fork_step", fork_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
-        verify_type("max_queue_size_exceeded_callback", on_queue_full_callback, (Callable, type(None)))
+        verify_type("async_lag_threshold", async_lag_threshold, (float, type(None)))
+        verify_type("on_async_lag_callback", on_async_lag_callback, (Callable, type(None)))
+        verify_type("on_queue_full_callback", on_queue_full_callback, (Callable, type(None)))
+        verify_type("on_network_error_callback", on_network_error_callback, (Callable, type(None)))
+        verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
+        verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
             raise ValueError("`resume` and `creation_time` cannot be used together.")
