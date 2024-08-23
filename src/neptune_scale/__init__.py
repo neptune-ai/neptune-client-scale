@@ -9,6 +9,8 @@ __all__ = ["Run"]
 import atexit
 import multiprocessing
 import os
+import platform
+import signal
 import threading
 import time
 from contextlib import AbstractContextManager
@@ -86,8 +88,10 @@ class Run(WithResources, AbstractContextManager):
         from_run_id: Optional[str] = None,
         from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        max_queue_size_exceeded_callback: Optional[Callable[[BaseException], None]] = None,
-        on_network_error_callback: Optional[Callable[[BaseException], None]] = None,
+        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -107,9 +111,12 @@ class Run(WithResources, AbstractContextManager):
             from_run_id: If forking from an existing run, ID of the run to fork from.
             from_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
-            max_queue_size_exceeded_callback: Callback function triggered when the queue is full. The function should take the exception
-                that made the queue full as its argument.
+            on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
+                that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
             on_network_error_callback: Callback function triggered when a network error occurs.
+            on_error_callback: The default callback function triggered when error occurs. It applies if an error
+                wasn't caught by other callbacks.
+            on_warning_callback: Callback function triggered when a warning occurs.
         """
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
@@ -121,7 +128,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("from_run_id", from_run_id, (str, type(None)))
         verify_type("from_step", from_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
-        verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
+        verify_type("max_queue_size_exceeded_callback", on_queue_full_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
             raise ValueError("`resume` and `creation_time` cannot be used together.")
@@ -171,8 +178,10 @@ class Run(WithResources, AbstractContextManager):
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
-            max_queue_size_exceeded_callback=max_queue_size_exceeded_callback,
+            on_queue_full_callback=on_queue_full_callback,
             on_network_error_callback=on_network_error_callback,
+            on_error_callback=on_error_callback,
+            on_warning_callback=on_warning_callback,
         )
 
         self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)
@@ -201,6 +210,9 @@ class Run(WithResources, AbstractContextManager):
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
+        if platform.system() != "Windows":
+            signal.signal(signal.SIGCHLD, self._handle_signal)
+
         if not resume:
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
@@ -209,6 +221,10 @@ class Run(WithResources, AbstractContextManager):
                 from_step=from_step,
             )
             self.wait_for_processing(verbose=False)
+
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        logger.debug(f"Received signal {signum}. Closing.")
+        self.close()
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -345,21 +361,22 @@ class Run(WithResources, AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        with self._lock:
-            if not self._sync_process.is_alive():
-                if verbose:
-                    logger.warning("Sync process is not running")
-                return  # No need to wait if the sync process is not running
-
         begin_time = time.time()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
         last_queued_sequence_id = self._operations_queue.last_sequence_id
         last_print_timestamp: Optional[float] = None
 
         while True:
-            with wait_condition:
-                wait_condition.wait(timeout=wait_time)
-                value = external_value.value
+            try:
+                with self._lock:
+                    if not self._sync_process.is_alive():
+                        if verbose:
+                            logger.warning("Sync process is not running")
+                        return  # No need to wait if the sync process is not running
+
+                with wait_condition:
+                    wait_condition.wait(timeout=wait_time)
+                    value = external_value.value
 
                 if value == -1:
                     if self._operations_queue.last_sequence_id != -1:
@@ -383,9 +400,13 @@ class Run(WithResources, AbstractContextManager):
                         verbose=verbose,
                     )
 
-                # Reaching the last queued sequence ID means that all operations were submitted
-                if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
-                    break
+                    # Reaching the last queued sequence ID means that all operations were submitted
+                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                        break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
 
         if verbose:
             logger.info(f"All operations were {phrase}")

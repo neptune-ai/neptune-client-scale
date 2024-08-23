@@ -216,8 +216,13 @@ def test_resume(api_token):
     family = run_id
 
     # when
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True, mode="disabled"):
-        ...
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True, mode="disabled") as run:
+        run.log(
+            step=3.14,
+            fields={
+                "int": 1,
+            },
+        )
 
     # then
     assert True

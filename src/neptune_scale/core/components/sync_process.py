@@ -4,6 +4,7 @@ __all__ = ("SyncProcess",)
 
 import multiprocessing
 import queue
+import signal
 import threading
 from multiprocessing import (
     Process,
@@ -11,6 +12,7 @@ from multiprocessing import (
 )
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition
+from types import FrameType
 from typing import (
     Any,
     Callable,
@@ -78,17 +80,19 @@ from neptune_scale.exceptions import (
     NeptuneSeriesTimestampDecreasing,
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
+    NeptuneSynchronizationStopped,
     NeptuneUnableToAuthenticateError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
 )
 from neptune_scale.parameters import (
-    EXTERNAL_TO_INTERNAL_THREAD_SLEEP_TIME,
+    INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
+    MAX_REQUEST_RETRY_SECONDS,
     MAX_REQUESTS_STATUS_BATCH_SIZE,
-    OPERATION_TIMEOUT,
     SHUTDOWN_TIMEOUT,
     STATUS_TRACKING_THREAD_SLEEP_TIME,
+    SYNC_PROCESS_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
 )
 
@@ -204,8 +208,19 @@ class SyncProcess(Process):
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
+        # This flag is set when a termination signal is caught
+        self._stop_event = multiprocessing.Event()
+
+    def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
+        logger.debug("Received signal %d", signum)
+        self._stop_event.set()  # Trigger the stop event
+
     def run(self) -> None:
         logger.info("Data synchronization started")
+
+        # Register signals handlers
+        signal.signal(signal.SIGTERM, self._handle_signal)
+
         worker = SyncProcessWorker(
             project=self._project,
             family=self._family,
@@ -221,12 +236,17 @@ class SyncProcess(Process):
         )
         worker.start()
         try:
-            worker.join()
+            while not self._stop_event.is_set():
+                worker.join(timeout=SYNC_PROCESS_SLEEP_TIME)
         except KeyboardInterrupt:
+            logger.debug("Data synchronization interrupted by user")
+        finally:
+            logger.info("Data synchronization stopping")
             worker.interrupt()
             worker.wake_up()
             worker.join(timeout=SHUTDOWN_TIMEOUT)
             worker.close()
+        logger.info("Data synchronization finished")
 
 
 class SyncProcessWorker(WithResources):
@@ -259,7 +279,7 @@ class SyncProcessWorker(WithResources):
             last_put_seq_wait=last_put_seq_wait,
             mode=mode,
         )
-        self._external_to_internal_thread = ExternalToInternalOperationsThread(
+        self._external_to_internal_thread = InternalQueueFeederThread(
             external=external_operations_queue,
             internal=self._internal_operations_queue,
             errors_queue=self._errors_queue,
@@ -295,22 +315,24 @@ class SyncProcessWorker(WithResources):
             thread.start()
 
     def join(self, timeout: Optional[int] = None) -> None:
+        # The same timeout will be applied to each thread separately
         for thread in self.threads:
             thread.join(timeout=timeout)
 
 
-class ExternalToInternalOperationsThread(Daemon, Resource):
+class InternalQueueFeederThread(Daemon, Resource):
     def __init__(
         self,
         external: multiprocessing.Queue[QueueElement],
         internal: queue.Queue[QueueElement],
         errors_queue: ErrorsQueue,
     ) -> None:
-        super().__init__(name="ExternalToInternalOperationsThread", sleep_time=EXTERNAL_TO_INTERNAL_THREAD_SLEEP_TIME)
+        super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
         self._external: multiprocessing.Queue[QueueElement] = external
         self._internal: queue.Queue[QueueElement] = internal
         self._errors_queue: ErrorsQueue = errors_queue
+
         self._latest_unprocessed: Optional[QueueElement] = None
 
     def get_next(self) -> Optional[QueueElement]:
@@ -318,32 +340,40 @@ class ExternalToInternalOperationsThread(Daemon, Resource):
             return self._latest_unprocessed
 
         try:
-            return self._external.get_nowait()
+            self._latest_unprocessed = self._external.get_nowait()
+            return self._latest_unprocessed
         except queue.Empty:
             return None
 
-    def work(self) -> None:
-        while (operation := self.get_next()) is not None:
-            logger.debug("Copying operation #%d: %s", operation.sequence_id, operation)
+    def commit(self) -> None:
+        self._latest_unprocessed = None
 
-            self._latest_unprocessed = operation
-            try:
-                self._internal.put_nowait(operation)
-                self._latest_unprocessed = None
-            except queue.Full:
-                self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
-            except Exception as e:
-                self._errors_queue.put(e)
+    def work(self) -> None:
+        try:
+            while (operation := self.get_next()) is not None:
+                try:
+                    logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
+                    self._internal.put_nowait(operation)
+                    self.commit()
+                except queue.Full:
+                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
+                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
+                    # Sleep before retry
+                    break
+        except Exception as e:
+            self._errors_queue.put(e)
+            self.interrupt()
+            raise NeptuneSynchronizationStopped() from e
 
 
 class SenderThread(Daemon, WithResources):
     def __init__(
         self,
         api_token: str,
+        family: str,
         operations_queue: queue.Queue[QueueElement],
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
-        family: str,
         last_put_seq: Synchronized[int],
         last_put_seq_wait: Condition,
         mode: Literal["async", "disabled"],
@@ -351,10 +381,10 @@ class SenderThread(Daemon, WithResources):
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
+        self._family: str = family
         self._operations_queue: queue.Queue[QueueElement] = operations_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
-        self._family: str = family
         self._last_put_seq: Synchronized[int] = last_put_seq
         self._last_put_seq_wait: Condition = last_put_seq_wait
         self._mode: Literal["async", "disabled"] = mode
@@ -367,9 +397,13 @@ class SenderThread(Daemon, WithResources):
             return self._latest_unprocessed
 
         try:
-            return self._operations_queue.get_nowait()
+            self._latest_unprocessed = self._operations_queue.get_nowait()
+            return self._latest_unprocessed
         except queue.Empty:
             return None
+
+    def commit(self) -> None:
+        self._latest_unprocessed = None
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -377,13 +411,13 @@ class SenderThread(Daemon, WithResources):
             return (self._backend,)
         return ()
 
-    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=OPERATION_TIMEOUT)
+    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[RequestId]:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
+
         response = self._backend.submit(operation=operation, family=self._family)
-        logger.debug("Server response:", response)
 
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
@@ -393,33 +427,37 @@ class SenderThread(Daemon, WithResources):
         return response.parsed
 
     def work(self) -> None:
-        while (operation := self.get_next()) is not None:
-            self._latest_unprocessed = operation
-            sequence_id, timestamp, data = operation
+        try:
+            while (operation := self.get_next()) is not None:
+                sequence_id, timestamp, data = operation
 
-            try:
-                run_operation = RunOperation()
-                run_operation.ParseFromString(data)
-                request_id = self.submit(operation=run_operation)
-                if request_id:
+                try:
+                    logger.debug("Processing operation #%d with size of %d bytes", sequence_id, len(data))
+                    run_operation = RunOperation()
+                    run_operation.ParseFromString(data)
+                    request_id = self.submit(operation=run_operation)
+
+                    if request_id is None:
+                        raise NeptuneUnexpectedError("Server response is empty")
+
                     self._status_tracking_queue.put(
                         StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
                     )
-            except NeptuneRetryableError as e:
-                self._errors_queue.put(e)
-                continue
-            except Exception as e:
-                self._errors_queue.put(e)
-                self.interrupt()
-                self._last_put_seq_wait.notify_all()
-                break
+                    self.commit()
+                except NeptuneRetryableError as e:
+                    self._errors_queue.put(e)
+                    # Sleep before retry
+                    break
 
-            self._latest_unprocessed = None
-
-            # Update Last PUT sequence id and notify threads in the main process
-            with self._last_put_seq_wait:
-                self._last_put_seq.value = sequence_id
-                self._last_put_seq_wait.notify_all()
+                # Update Last PUT sequence id and notify threads in the main process
+                with self._last_put_seq_wait:
+                    self._last_put_seq.value = sequence_id
+                    self._last_put_seq_wait.notify_all()
+        except Exception as e:
+            self._errors_queue.put(e)
+            self._last_put_seq_wait.notify_all()
+            self.interrupt()
+            raise NeptuneSynchronizationStopped() from e
 
 
 class StatusTrackingThread(Daemon, WithResources):
@@ -457,14 +495,13 @@ class StatusTrackingThread(Daemon, WithResources):
         except queue.Empty:
             return None
 
-    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=OPERATION_TIMEOUT)
+    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
     def check_batch(self, *, request_ids: List[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
-        logger.debug("Server response:", response)
 
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
@@ -474,46 +511,46 @@ class StatusTrackingThread(Daemon, WithResources):
         return response.parsed
 
     def work(self) -> None:
-        while (batch := self.get_next()) is not None:
-            request_ids = [element.request_id for element in batch]
-            sequence_ids = [element.sequence_id for element in batch]
+        try:
+            while (batch := self.get_next()) is not None:
+                request_ids = [element.request_id for element in batch]
+                sequence_ids = [element.sequence_id for element in batch]
 
-            try:
-                response = self.check_batch(request_ids=request_ids)
-                if response is None:
-                    break
-            except NeptuneRetryableError as e:
-                self._errors_queue.put(e)
-                break
-            except Exception as e:
-                self._errors_queue.put(e)
-                self.interrupt()
-                self._last_ack_seq_wait.notify_all()
-                break
+                try:
+                    response = self.check_batch(request_ids=request_ids)
+                    if response is None:
+                        raise NeptuneUnexpectedError("Server response is empty")
 
-            to_commit = 0
-            sequence_id = None
-            for request_status, request_seq_id in zip(response.statuses, sequence_ids):
-                codes = [code_status.code for code_status in request_status.code_by_count]
-                if Code.UNAVAILABLE in codes:
+                except NeptuneRetryableError as e:
+                    self._errors_queue.put(e)
+                    # Small give up, sleep before retry
                     break
 
-                detailed_codes = [code_status.detail for code_status in request_status.code_by_count]
-                for detailed_code in detailed_codes:
-                    if (error := code_to_exception(detailed_code)) is not None:
-                        self._errors_queue.put(error())
+                operations_to_commit, processed_sequence_id = 0, None
+                for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
+                    if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
+                        # Request status not ready yet, sleep and retry
+                        break
 
-                to_commit += 1
-                sequence_id = request_seq_id
+                    for code_status in request_status.code_by_count:
+                        if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
+                            self._errors_queue.put(error())
 
-            if to_commit > 0:
-                self._status_tracking_queue.commit(to_commit)
+                    operations_to_commit, processed_sequence_id = operations_to_commit + 1, request_sequence_id
 
-                # Update Last ACK sequence id and notify threads in the main process
-                if sequence_id is not None:
-                    with self._last_ack_seq_wait:
-                        self._last_ack_seq.value = sequence_id
-                        self._last_ack_seq_wait.notify_all()
-            else:
-                # Sleep before retry
-                break
+                if operations_to_commit > 0:
+                    self._status_tracking_queue.commit(operations_to_commit)
+
+                    # Update Last ACK sequence id and notify threads in the main process
+                    if processed_sequence_id is not None:
+                        with self._last_ack_seq_wait:
+                            self._last_ack_seq.value = processed_sequence_id
+                            self._last_ack_seq_wait.notify_all()
+                else:
+                    # Sleep before retry
+                    break
+        except Exception as e:
+            self._errors_queue.put(e)
+            self.interrupt()
+            self._last_ack_seq_wait.notify_all()
+            raise NeptuneSynchronizationStopped() from e

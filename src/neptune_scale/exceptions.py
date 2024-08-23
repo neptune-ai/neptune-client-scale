@@ -30,6 +30,7 @@ __all__ = (
     "NeptuneFloatValueNanInfUnsupported",
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
+    "NeptuneSynchronizationStopped",
 )
 
 from typing import Any
@@ -56,12 +57,16 @@ class NeptuneScaleWarning(Warning):
         super().__init__(self.message.format(*args, **STYLES, **kwargs))
 
 
+class NeptuneSynchronizationStopped(NeptuneScaleError):
+    message = "Internal synchronization process was stopped."
+
+
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneScaleError):
     message = """
 {h1}
 ----NeptuneOperationsQueueMaxSizeExceeded--------------------------------------
 {end}
-The queue size for internal operations was exceeded (max allowed: {max_size}) because too much data was queued in a short time.
+The queue size for internal operations was exceeded because too much data was queued in a short time.
 
 The synchronization is paused until the queue size drops below the maximum.
 
