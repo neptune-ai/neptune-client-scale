@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - 2024-09-03
 
 ### Added
-- Added support for async lag threshold ([]())
+- Added support for async lag threshold ([#22](https://github.com/neptune-ai/neptune-client-scale/pull/22))
 
 ## [0.3.0] - 2024-09-03
 
