@@ -564,7 +564,7 @@ class StatusTrackingThread(Daemon, WithResources):
                     for code_status in request_status.code_by_count:
                         if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
                             self._errors_queue.put(error())
-                    
+
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
 
@@ -578,7 +578,7 @@ class StatusTrackingThread(Daemon, WithResources):
                         with self._last_ack_seq_wait:
                             self._last_ack_seq.value = processed_sequence_id
                             self._last_ack_seq_wait.notify_all()
-                            
+
                     # Update Last ACK timestamp and notify threads in the main process
                     if processed_timestamp is not None:
                         with self._last_ack_timestamp_wait:
