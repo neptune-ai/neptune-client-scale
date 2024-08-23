@@ -128,6 +128,7 @@ CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
 
 class StatusTrackingElement(NamedTuple):
     sequence_id: int
+    timestamp: float
     request_id: str
 
 
@@ -194,6 +195,8 @@ class SyncProcess(Process):
         last_put_seq_wait: Condition,
         last_ack_seq: Synchronized[int],
         last_ack_seq_wait: Condition,
+        last_ack_timestamp: Synchronized[float],
+        last_ack_timestamp_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         super().__init__(name="SyncProcess")
@@ -207,6 +210,8 @@ class SyncProcess(Process):
         self._last_put_seq_wait: Condition = last_put_seq_wait
         self._last_ack_seq: Synchronized[int] = last_ack_seq
         self._last_ack_seq_wait: Condition = last_ack_seq_wait
+        self._last_ack_timestamp: Synchronized[float] = last_ack_timestamp
+        self._last_ack_timestamp_wait: Condition = last_ack_timestamp_wait
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
@@ -234,6 +239,8 @@ class SyncProcess(Process):
             last_ack_seq=self._last_ack_seq,
             last_ack_seq_wait=self._last_ack_seq_wait,
             max_queue_size=self._max_queue_size,
+            last_ack_timestamp=self._last_ack_timestamp,
+            last_ack_timestamp_wait=self._last_ack_timestamp_wait,
             mode=self._mode,
         )
         worker.start()
@@ -265,6 +272,8 @@ class SyncProcessWorker(WithResources):
         last_put_seq_wait: Condition,
         last_ack_seq: Synchronized[int],
         last_ack_seq_wait: Condition,
+        last_ack_timestamp: Synchronized[float],
+        last_ack_timestamp_wait: Condition,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         self._errors_queue = errors_queue
@@ -294,6 +303,8 @@ class SyncProcessWorker(WithResources):
             status_tracking_queue=self._status_tracking_queue,
             last_ack_seq=last_ack_seq,
             last_ack_seq_wait=last_ack_seq_wait,
+            last_ack_timestamp=last_ack_timestamp,
+            last_ack_timestamp_wait=last_ack_timestamp_wait,
         )
 
     @property
@@ -449,7 +460,7 @@ class SenderThread(Daemon, WithResources):
 
                     logger.debug("Operation #%d submitted as %s", sequence_id, request_id.value)
                     self._status_tracking_queue.put(
-                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value, timestamp=timestamp)
                     )
                     self.commit()
                 except NeptuneRetryableError as e:
@@ -478,6 +489,8 @@ class StatusTrackingThread(Daemon, WithResources):
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         last_ack_seq: Synchronized[int],
         last_ack_seq_wait: Condition,
+        last_ack_timestamp: Synchronized[float],
+        last_ack_timestamp_wait: Condition,
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
@@ -488,6 +501,8 @@ class StatusTrackingThread(Daemon, WithResources):
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._last_ack_seq: Synchronized[int] = last_ack_seq
         self._last_ack_seq_wait: Condition = last_ack_seq_wait
+        self._last_ack_timestamp: Synchronized[float] = last_ack_timestamp
+        self._last_ack_timestamp_wait: Condition = last_ack_timestamp_wait
 
         self._backend: Optional[ApiClient] = None
 
@@ -528,6 +543,7 @@ class StatusTrackingThread(Daemon, WithResources):
             while (batch := self.get_next()) is not None:
                 request_ids = [element.request_id for element in batch]
                 sequence_ids = [element.sequence_id for element in batch]
+                timestamps = [element.timestamp for element in batch]
 
                 try:
                     response = self.check_batch(request_ids=request_ids)
@@ -538,8 +554,8 @@ class StatusTrackingThread(Daemon, WithResources):
                     # Small give up, sleep before retry
                     break
 
-                operations_to_commit, processed_sequence_id = 0, None
-                for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
+                operations_to_commit, processed_sequence_id, processed_timestamp = 0, None, None
+                for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
                     if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
                         logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
                         # Request status not ready yet, sleep and retry
@@ -548,8 +564,9 @@ class StatusTrackingThread(Daemon, WithResources):
                     for code_status in request_status.code_by_count:
                         if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
                             self._errors_queue.put(error())
-
-                    operations_to_commit, processed_sequence_id = operations_to_commit + 1, request_sequence_id
+                    
+                    operations_to_commit += 1
+                    processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
 
                 if operations_to_commit > 0:
                     self._status_tracking_queue.commit(operations_to_commit)
@@ -561,6 +578,12 @@ class StatusTrackingThread(Daemon, WithResources):
                         with self._last_ack_seq_wait:
                             self._last_ack_seq.value = processed_sequence_id
                             self._last_ack_seq_wait.notify_all()
+                            
+                    # Update Last ACK timestamp and notify threads in the main process
+                    if processed_timestamp is not None:
+                        with self._last_ack_timestamp_wait:
+                            self._last_ack_timestamp.value = processed_timestamp
+                            self._last_ack_timestamp_wait.notify_all()
                 else:
                     # Sleep before retry
                     break

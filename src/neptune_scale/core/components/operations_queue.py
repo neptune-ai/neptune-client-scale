@@ -4,7 +4,10 @@ __all__ = ("OperationsQueue",)
 
 from multiprocessing import Queue
 from time import monotonic
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Optional,
+)
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.queue_element import QueueElement
@@ -35,6 +38,7 @@ class OperationsQueue(Resource):
         self._max_size: int = max_size
 
         self._sequence_id: int = 0
+        self._last_timestamp: Optional[float] = None
         self._queue: Queue[QueueElement] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
 
     @property
@@ -46,6 +50,11 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._sequence_id - 1
 
+    @property
+    def last_timestamp(self) -> Optional[float]:
+        with self._lock:
+            return self._last_timestamp
+
     def enqueue(self, *, operation: RunOperation) -> None:
         try:
             serialized_operation = operation.SerializeToString()
@@ -54,9 +63,10 @@ class OperationsQueue(Resource):
                 raise ValueError(f"Operation size exceeds the maximum allowed size ({MAX_QUEUE_ELEMENT_SIZE})")
 
             with self._lock:
+                self._last_timestamp = monotonic()
                 # TODO: should we not block here, and just call the error callback if we were to block?
                 self._queue.put(
-                    QueueElement(self._sequence_id, monotonic(), serialized_operation),
+                    QueueElement(self._sequence_id, self._last_timestamp, serialized_operation),
                     block=True,
                     timeout=None,
                 )

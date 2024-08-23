@@ -40,6 +40,7 @@ from neptune_scale.core.components.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+from neptune_scale.core.components.lag_tracking import LagTracker
 from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.components.sync_process import SyncProcess
 from neptune_scale.core.logger import logger
@@ -135,7 +136,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("fork_run_id", fork_run_id, (str, type(None)))
         verify_type("fork_step", fork_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
-        verify_type("async_lag_threshold", async_lag_threshold, (float, type(None)))
+        verify_type("async_lag_threshold", async_lag_threshold, (int, float, type(None)))
         verify_type("on_async_lag_callback", on_async_lag_callback, (Callable, type(None)))
         verify_type("on_queue_full_callback", on_queue_full_callback, (Callable, type(None)))
         verify_type("on_network_error_callback", on_network_error_callback, (Callable, type(None)))
@@ -152,6 +153,14 @@ class Run(WithResources, AbstractContextManager):
             raise ValueError("`resume` and `fork_run_id` cannot be used together.")
         if resume and fork_step is not None:
             raise ValueError("`resume` and `fork_step` cannot be used together.")
+
+        if (
+            on_async_lag_callback is not None
+            and async_lag_threshold is None
+            or on_async_lag_callback is None
+            and async_lag_threshold is not None
+        ):
+            raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
 
         if max_queue_size < 1:
             raise ValueError("`max_queue_size` must be greater than 0.")
@@ -208,6 +217,9 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_seq: Synchronized[int] = multiprocessing.Value("i", -1)
         self._last_ack_seq_wait: ConditionT = multiprocessing.Condition()
 
+        self._last_ack_timestamp: Synchronized[float] = multiprocessing.Value("d", -1)
+        self._last_ack_timestamp_wait: ConditionT = multiprocessing.Condition()
+
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._family,
@@ -218,9 +230,22 @@ class Run(WithResources, AbstractContextManager):
             last_put_seq_wait=self._last_put_seq_wait,
             last_ack_seq=self._last_ack_seq,
             last_ack_seq_wait=self._last_ack_seq_wait,
+            last_ack_timestamp=self._last_ack_timestamp,
+            last_ack_timestamp_wait=self._last_ack_timestamp_wait,
             max_queue_size=max_queue_size,
             mode=mode,
         )
+        self._lag_tracker: Optional[LagTracker] = None
+        if async_lag_threshold is not None and on_async_lag_callback is not None:
+            self._lag_tracker = LagTracker(
+                errors_queue=self._errors_queue,
+                operations_queue=self._operations_queue,
+                last_ack_timestamp=self._last_ack_timestamp,
+                last_ack_timestamp_wait=self._last_ack_timestamp_wait,
+                async_lag_threshold=async_lag_threshold,
+                on_async_lag_callback=on_async_lag_callback,
+            )
+            self._lag_tracker.start()
 
         self._errors_monitor.start()
         with self._lock:
@@ -246,6 +271,13 @@ class Run(WithResources, AbstractContextManager):
 
     @property
     def resources(self) -> tuple[Resource, ...]:
+        if self._lag_tracker is not None:
+            return (
+                self._errors_queue,
+                self._operations_queue,
+                self._lag_tracker,
+                self._errors_monitor,
+            )
         return (
             self._errors_queue,
             self._operations_queue,
@@ -267,6 +299,11 @@ class Run(WithResources, AbstractContextManager):
 
             self._sync_process.terminate()
             self._sync_process.join()
+
+        if self._lag_tracker is not None:
+            self._lag_tracker.interrupt()
+            self._lag_tracker.wake_up()
+            self._lag_tracker.join()
 
         self._errors_monitor.interrupt()
 
