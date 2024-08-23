@@ -9,6 +9,7 @@ __all__ = ["Run"]
 import atexit
 import multiprocessing
 import os
+import platform
 import signal
 import threading
 import time
@@ -209,7 +210,8 @@ class Run(WithResources, AbstractContextManager):
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        signal.signal(signal.SIGCHLD, self._handle_signal)
+        if platform.system() != "Windows":
+            signal.signal(signal.SIGCHLD, self._handle_signal)
 
         if not resume:
             self._create_run(

@@ -349,20 +349,21 @@ class InternalQueueFeederThread(Daemon, Resource):
         self._latest_unprocessed = None
 
     def work(self) -> None:
-        while (operation := self.get_next()) is not None:
-            try:
-                logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
-                self._internal.put_nowait(operation)
-                self.commit()
-            except queue.Full:
-                logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
-                self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
-                # Sleep before retry
-                break
-            except Exception as e:
-                self._errors_queue.put(e)
-                self.interrupt()
-                raise NeptuneSynchronizationStopped() from e
+        try:
+            while (operation := self.get_next()) is not None:
+                try:
+                    logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
+                    self._internal.put_nowait(operation)
+                    self.commit()
+                except queue.Full:
+                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
+                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
+                    # Sleep before retry
+                    break
+        except Exception as e:
+            self._errors_queue.put(e)
+            self.interrupt()
+            raise NeptuneSynchronizationStopped() from e
 
 
 class SenderThread(Daemon, WithResources):
@@ -426,36 +427,37 @@ class SenderThread(Daemon, WithResources):
         return response.parsed
 
     def work(self) -> None:
-        while (operation := self.get_next()) is not None:
-            sequence_id, timestamp, data = operation
+        try:
+            while (operation := self.get_next()) is not None:
+                sequence_id, timestamp, data = operation
 
-            try:
-                logger.debug("Processing operation #%d with size of %d bytes", sequence_id, len(data))
-                run_operation = RunOperation()
-                run_operation.ParseFromString(data)
-                request_id = self.submit(operation=run_operation)
+                try:
+                    logger.debug("Processing operation #%d with size of %d bytes", sequence_id, len(data))
+                    run_operation = RunOperation()
+                    run_operation.ParseFromString(data)
+                    request_id = self.submit(operation=run_operation)
 
-                if request_id is None:
-                    raise NeptuneUnexpectedError("Server response is empty")
+                    if request_id is None:
+                        raise NeptuneUnexpectedError("Server response is empty")
 
-                self._status_tracking_queue.put(
-                    StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
-                )
-                self.commit()
-            except NeptuneRetryableError as e:
-                self._errors_queue.put(e)
-                # Sleep before retry
-                break
-            except Exception as e:
-                self._errors_queue.put(e)
-                self._last_put_seq_wait.notify_all()
-                self.interrupt()
-                raise NeptuneSynchronizationStopped() from e
+                    self._status_tracking_queue.put(
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
+                    )
+                    self.commit()
+                except NeptuneRetryableError as e:
+                    self._errors_queue.put(e)
+                    # Sleep before retry
+                    break
 
-            # Update Last PUT sequence id and notify threads in the main process
-            with self._last_put_seq_wait:
-                self._last_put_seq.value = sequence_id
-                self._last_put_seq_wait.notify_all()
+                # Update Last PUT sequence id and notify threads in the main process
+                with self._last_put_seq_wait:
+                    self._last_put_seq.value = sequence_id
+                    self._last_put_seq_wait.notify_all()
+        except Exception as e:
+            self._errors_queue.put(e)
+            self._last_put_seq_wait.notify_all()
+            self.interrupt()
+            raise NeptuneSynchronizationStopped() from e
 
 
 class StatusTrackingThread(Daemon, WithResources):
@@ -509,45 +511,46 @@ class StatusTrackingThread(Daemon, WithResources):
         return response.parsed
 
     def work(self) -> None:
-        while (batch := self.get_next()) is not None:
-            request_ids = [element.request_id for element in batch]
-            sequence_ids = [element.sequence_id for element in batch]
+        try:
+            while (batch := self.get_next()) is not None:
+                request_ids = [element.request_id for element in batch]
+                sequence_ids = [element.sequence_id for element in batch]
 
-            try:
-                response = self.check_batch(request_ids=request_ids)
-                if response is None:
-                    raise NeptuneUnexpectedError("Server response is empty")
+                try:
+                    response = self.check_batch(request_ids=request_ids)
+                    if response is None:
+                        raise NeptuneUnexpectedError("Server response is empty")
 
-            except NeptuneRetryableError as e:
-                self._errors_queue.put(e)
-                # Small give up, sleep before retry
-                break
-            except Exception as e:
-                self._errors_queue.put(e)
-                self.interrupt()
-                self._last_ack_seq_wait.notify_all()
-                raise NeptuneSynchronizationStopped() from e
-
-            operations_to_commit, processed_sequence_id = 0, None
-            for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
-                if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
-                    # Request status not ready yet, sleep and retry
+                except NeptuneRetryableError as e:
+                    self._errors_queue.put(e)
+                    # Small give up, sleep before retry
                     break
 
-                for code_status in request_status.code_by_count:
-                    if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
-                        self._errors_queue.put(error())
+                operations_to_commit, processed_sequence_id = 0, None
+                for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
+                    if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
+                        # Request status not ready yet, sleep and retry
+                        break
 
-                operations_to_commit, processed_sequence_id = operations_to_commit + 1, request_sequence_id
+                    for code_status in request_status.code_by_count:
+                        if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
+                            self._errors_queue.put(error())
 
-            if operations_to_commit > 0:
-                self._status_tracking_queue.commit(operations_to_commit)
+                    operations_to_commit, processed_sequence_id = operations_to_commit + 1, request_sequence_id
 
-                # Update Last ACK sequence id and notify threads in the main process
-                if processed_sequence_id is not None:
-                    with self._last_ack_seq_wait:
-                        self._last_ack_seq.value = processed_sequence_id
-                        self._last_ack_seq_wait.notify_all()
-            else:
-                # Sleep before retry
-                break
+                if operations_to_commit > 0:
+                    self._status_tracking_queue.commit(operations_to_commit)
+
+                    # Update Last ACK sequence id and notify threads in the main process
+                    if processed_sequence_id is not None:
+                        with self._last_ack_seq_wait:
+                            self._last_ack_seq.value = processed_sequence_id
+                            self._last_ack_seq_wait.notify_all()
+                else:
+                    # Sleep before retry
+                    break
+        except Exception as e:
+            self._errors_queue.put(e)
+            self.interrupt()
+            self._last_ack_seq_wait.notify_all()
+            raise NeptuneSynchronizationStopped() from e
