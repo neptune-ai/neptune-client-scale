@@ -22,6 +22,7 @@ def test_errors_monitor():
     errors_monitor.start()
     errors_monitor.work()
     errors_monitor.wake_up()
+    errors_monitor.interrupt()
     errors_monitor.join(timeout=5)
 
     # then

@@ -14,6 +14,29 @@ def api_token():
     return base64.b64encode(json.dumps({"api_address": "aa", "api_url": "bb"}).encode("utf-8")).decode("utf-8")
 
 
+# Set short timeouts on blocking operations for quicker test execution
+@pytest.fixture(autouse=True, scope="session")
+def short_timeouts():
+    import neptune_scale
+    import neptune_scale.core.components
+
+    patch = pytest.MonkeyPatch()
+    timeout = 0.05
+    for name in (
+        "MINIMAL_WAIT_FOR_PUT_SLEEP_TIME",
+        "MINIMAL_WAIT_FOR_ACK_SLEEP_TIME",
+        "STATUS_TRACKING_THREAD_SLEEP_TIME",
+        "SYNC_THREAD_SLEEP_TIME",
+        "ERRORS_MONITOR_THREAD_SLEEP_TIME",
+    ):
+        patch.setattr(neptune_scale.parameters, name, timeout)
+
+        # Not perfect, but does the trick for now. Handle direct imports.
+        for mod in (neptune_scale, neptune_scale.core.components.sync_process):
+            if hasattr(mod, name):
+                patch.setattr(mod, name, timeout)
+
+
 def test_context_manager(api_token):
     # given
     project = "workspace/project"
