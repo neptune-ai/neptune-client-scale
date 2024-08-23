@@ -220,7 +220,6 @@ class SyncProcess(Process):
 
         # Register signals handlers
         signal.signal(signal.SIGTERM, self._handle_signal)
-        signal.signal(signal.SIGCHLD, self._handle_signal)
 
         worker = SyncProcessWorker(
             project=self._project,

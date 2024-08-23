@@ -9,6 +9,7 @@ __all__ = ["Run"]
 import atexit
 import multiprocessing
 import os
+import signal
 import threading
 import time
 from contextlib import AbstractContextManager
@@ -208,6 +209,8 @@ class Run(WithResources, AbstractContextManager):
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
+        signal.signal(signal.SIGCHLD, self._handle_signal)
+
         if not resume:
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
@@ -216,6 +219,10 @@ class Run(WithResources, AbstractContextManager):
                 from_step=from_step,
             )
             self.wait_for_processing(verbose=False)
+
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        logger.debug(f"Received signal {signum}. Closing.")
+        self.close()
 
     @property
     def resources(self) -> tuple[Resource, ...]:
