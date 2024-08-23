@@ -8,6 +8,7 @@ import time
 from typing import (
     Callable,
     Optional,
+    Type,
 )
 
 from neptune_scale.core.components.abstract import Resource
@@ -83,7 +84,7 @@ class ErrorsMonitor(Daemon, Resource):
             on_warning_callback or default_warning_callback
         )
 
-        self._last_raised_timestamps: dict[str, float] = {}
+        self._last_raised_timestamps: dict[Type[BaseException], float] = {}
 
     def get_next(self) -> Optional[BaseException]:
         try:
@@ -93,8 +94,8 @@ class ErrorsMonitor(Daemon, Resource):
 
     def work(self) -> None:
         while (error := self.get_next()) is not None:
-            last_raised_at = self._last_raised_timestamps.get(str(type(error)), None)
-            self._last_raised_timestamps[str(type(error))] = time.time()
+            last_raised_at = self._last_raised_timestamps.get(type(error), None)
+            self._last_raised_timestamps[type(error)] = time.time()
 
             if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
                 self._on_queue_full_callback(error, last_raised_at)

@@ -92,6 +92,7 @@ from neptune_scale.parameters import (
     MAX_REQUESTS_STATUS_BATCH_SIZE,
     SHUTDOWN_TIMEOUT,
     STATUS_TRACKING_THREAD_SLEEP_TIME,
+    SYNC_PROCESS_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
 )
 
@@ -237,7 +238,7 @@ class SyncProcess(Process):
         worker.start()
         try:
             while not self._stop_event.is_set():
-                worker.join(timeout=1)
+                worker.join(timeout=SYNC_PROCESS_SLEEP_TIME)
         except KeyboardInterrupt:
             logger.debug("Data synchronization interrupted by user")
         finally:
