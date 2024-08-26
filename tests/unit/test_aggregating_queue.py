@@ -19,15 +19,13 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.core.components.aggregating_queue import (
-    DEFAULT_TIMEOUT,
-    AggregatingQueue,
-)
+from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.parameters import AGGREGATING_QUEUE_BLOCKING_TIMEOUT
 
 WAIT_TIME = 1.0
-WAIT_ERROR = WAIT_TIME * 0.1 + DEFAULT_TIMEOUT
-TIMEOUT = WAIT_TIME + DEFAULT_TIMEOUT + WAIT_ERROR
+WAIT_ERROR = WAIT_TIME * 0.1 + AGGREGATING_QUEUE_BLOCKING_TIMEOUT
+TIMEOUT = WAIT_TIME + AGGREGATING_QUEUE_BLOCKING_TIMEOUT + WAIT_ERROR
 
 
 from neptune_scale.core.serialization import (

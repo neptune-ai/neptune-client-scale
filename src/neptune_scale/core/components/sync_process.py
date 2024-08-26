@@ -51,6 +51,7 @@ from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
 )
+from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
@@ -87,6 +88,7 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
+    MAX_AGGREGATING_QUEUE_BATCH_SIZE,
     MAX_QUEUE_SIZE,
     MAX_REQUEST_RETRY_SECONDS,
     MAX_REQUESTS_STATUS_BATCH_SIZE,
@@ -267,7 +269,9 @@ class SyncProcessWorker(WithResources):
     ) -> None:
         self._errors_queue = errors_queue
 
-        self._internal_operations_queue: queue.Queue[QueueElement] = queue.Queue(maxsize=max_queue_size)
+        self._internal_operations_queue: AggregatingQueue = AggregatingQueue(
+            max_batch_size=MAX_AGGREGATING_QUEUE_BATCH_SIZE, queue_size=max_queue_size, block=False
+        )
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         self._sync_thread = SenderThread(
             api_token=api_token,
@@ -303,6 +307,7 @@ class SyncProcessWorker(WithResources):
         return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
 
     def interrupt(self) -> None:
+        self._internal_operations_queue.stop_blocking()
         for thread in self.threads:
             thread.interrupt()
 
@@ -324,13 +329,13 @@ class InternalQueueFeederThread(Daemon, Resource):
     def __init__(
         self,
         external: multiprocessing.Queue[QueueElement],
-        internal: queue.Queue[QueueElement],
+        internal: AggregatingQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
         self._external: multiprocessing.Queue[QueueElement] = external
-        self._internal: queue.Queue[QueueElement] = internal
+        self._internal: AggregatingQueue = internal
         self._errors_queue: ErrorsQueue = errors_queue
 
         self._latest_unprocessed: Optional[QueueElement] = None
@@ -353,11 +358,13 @@ class InternalQueueFeederThread(Daemon, Resource):
             while (operation := self.get_next()) is not None:
                 try:
                     logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
-                    self._internal.put_nowait(operation)
+                    self._internal.put(operation)
                     self.commit()
                 except queue.Full:
-                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
-                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
+                    logger.debug(
+                        "Internal queue is full (%d elements), waiting for free space", self._internal._queue_size
+                    )
+                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal._queue_size))
                     # Sleep before retry
                     break
         except Exception as e:
@@ -371,7 +378,7 @@ class SenderThread(Daemon, WithResources):
         self,
         api_token: str,
         family: str,
-        operations_queue: queue.Queue[QueueElement],
+        operations_queue: AggregatingQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         last_put_seq: Synchronized[int],
@@ -382,7 +389,7 @@ class SenderThread(Daemon, WithResources):
 
         self._api_token: str = api_token
         self._family: str = family
-        self._operations_queue: queue.Queue[QueueElement] = operations_queue
+        self._operations_queue: AggregatingQueue = operations_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._last_put_seq: Synchronized[int] = last_put_seq
@@ -397,7 +404,7 @@ class SenderThread(Daemon, WithResources):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._operations_queue.get_nowait()
+            self._latest_unprocessed = self._operations_queue.get_aggregate()
             return self._latest_unprocessed
         except queue.Empty:
             return None

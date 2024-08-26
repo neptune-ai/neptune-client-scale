@@ -15,7 +15,9 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.core.logger import logger
 from neptune_scale.core.validation import verify_type
+from neptune_scale.parameters import AGGREGATING_QUEUE_BLOCKING_TIMEOUT
 
 
 class NotSet:
@@ -24,8 +26,10 @@ class NotSet:
 
 @dataclass
 class AggregatingQueueElement:
-    sequence_id: int
-    timestamp: float
+    first_sequence_id: int
+    last_sequence_id: int
+    first_timestamp: float
+    last_timestamp: float
     key: Optional[Tuple[int, int]]
     operation: RunOperation
 
@@ -37,34 +41,27 @@ def _cast_to_queue_element(
         result = fn(*args, **kwargs)
         if result is None:
             return None
+        logger.debug(
+            f"Returning AggregatingQueueElement. Aggreagated sequence ids from {result.first_sequence_id} to {result.last_sequence_id}. "
+            f"Aggregated timestamps from {result.first_timestamp} to {result.last_timestamp}"
+        )
         return QueueElement(
-            sequence_id=result.sequence_id,
-            timestamp=result.timestamp,
+            sequence_id=result.last_sequence_id,
+            timestamp=result.last_timestamp,
             operation=result.operation.SerializeToString(),
         )
 
     return wrapper
 
 
-DEFAULT_TIMEOUT = 1.0
-
-
 class AggregatingQueue:
-    """
-    Propoerties:
-        1. The order of elements in the batch is the same as the order in which they were put.
-        2. All values in returned batch have the same key.
-        3. Values that evaluate to False after applying is_batchable_fn() are always returned as a single-element batch.
-        4. Returned batch is always of size <= batch_size.
-    """
-
     def __init__(
         self,
         max_batch_size: int,
         queue_size: Optional[int] = None,
         block: bool = True,
         batch_max_bytes: Optional[int] = None,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float = AGGREGATING_QUEUE_BLOCKING_TIMEOUT,
     ) -> None:
         verify_type("max_batch_size", max_batch_size, int)
         verify_type("queue_size", queue_size, (int, type(None)))
@@ -72,6 +69,7 @@ class AggregatingQueue:
         verify_type("batch_max_bytes", batch_max_bytes, (int, type(None)))
         verify_type("timeout", timeout, float)
 
+        self._queue_size = queue_size
         self._queue: Queue[AggregatingQueueElement] = Queue(
             maxsize=queue_size if queue_size is not None else -1
         )  # unbounded size
@@ -88,8 +86,10 @@ class AggregatingQueue:
 
         self._queue.put(
             AggregatingQueueElement(
-                sequence_id=element.sequence_id,
-                timestamp=element.timestamp,
+                first_sequence_id=element.sequence_id,
+                last_sequence_id=element.sequence_id,
+                first_timestamp=element.timestamp,
+                last_timestamp=element.timestamp,
                 key=key,
                 operation=operation,
             )
@@ -101,7 +101,7 @@ class AggregatingQueue:
             self._placeholder = None
             return placeholder
 
-        return self._queue.get(block=self._block, timeout=self._timeout)
+        return self._queue.get(timeout=self._timeout)
 
     def _should_aggregate(self, op: RunOperation) -> bool:
         return op.HasField("update")
@@ -129,8 +129,10 @@ class AggregatingQueue:
 
         # TODO make sure this is correct
         return AggregatingQueueElement(
-            sequence_id=new.sequence_id,
-            timestamp=new.timestamp,
+            first_sequence_id=old.first_sequence_id,
+            last_sequence_id=new.last_sequence_id,
+            first_timestamp=old.first_timestamp,
+            last_timestamp=new.last_timestamp,
             key=new.key,
             operation=operation,
         )
