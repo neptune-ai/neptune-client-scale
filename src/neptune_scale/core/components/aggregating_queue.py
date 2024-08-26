@@ -15,6 +15,7 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.core.validation import verify_type
 
 
 class NotSet:
@@ -65,6 +66,12 @@ class AggregatingQueue:
         batch_max_bytes: Optional[int] = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
+        verify_type("max_batch_size", max_batch_size, int)
+        verify_type("queue_size", queue_size, (int, type(None)))
+        verify_type("block", block, bool)
+        verify_type("batch_max_bytes", batch_max_bytes, (int, type(None)))
+        verify_type("timeout", timeout, float)
+
         self._queue: Queue[AggregatingQueueElement] = Queue(
             maxsize=queue_size if queue_size is not None else -1
         )  # unbounded size
