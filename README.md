@@ -66,7 +66,7 @@ __Parameters__
 | Name             | Type             | Default | Description                                                               |
 |------------------|------------------|---------|---------------------------------------------------------------------------|
 | `family`         | `str`            | -       | Identifies related runs. All runs of the same lineage must have the same `family` value, i.e forking is only possible within the same family. Max length: 128 characters. |
-| `run_id`         | `str`            | -  | Identifier of the run. Must be unique within the project. Max length: 128 characters. |
+| `run_id`         | `str`            | -       | Identifier of the run. Must be unique within the project. Max length: 128 characters. |
 | `project`        | `str`, optional  | `None`  | Name of a project in the form `workspace-name/project-name`. If `None`, the value of the `NEPTUNE_PROJECT` environment variable is used. |
 | `api_token`      | `str`, optional  | `None`  | Your Neptune API token (or a service account's API token). If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, avoid placing it in source code. Instead, save it as an environment variable. |
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `from_run_id` and `from_step` instead. |
@@ -74,7 +74,7 @@ __Parameters__
 | `as_experiment`  | `str`, optional  | `None` | Name of the experiment to associate the run with. |
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
 | `from_run_id`    | `str`, optional  | `None` | If forking off an existing run, ID of the run to fork from. |
-| `from_step`      | `int`, optional  | - | If forking off an existing run, step number to fork from. |
+| `from_step`      | `int`, optional  | `None` | If forking off an existing run, step number to fork from. |
 | `max_queue_size` | `int`, optional  | `None` | Maximum number of operations allowed in the queue. |
 | `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function should take two arguments: (1) Exception that made the queue full. (2) Optional timestamp: When the exception was last raised. |
 | `on_network_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a network error occurs. |
