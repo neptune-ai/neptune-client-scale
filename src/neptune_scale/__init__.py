@@ -340,22 +340,38 @@ class Run(WithResources, AbstractContextManager):
         remove_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
-        Logs the specified metadata to Neptune.
+        Logs the specified metadata to a Neptune run.
+
+        You can log metrics, tags, and configurations. Pass the metadata as a dictionary {key: value} with
+
+        - key: path to where the metadata should be stored in the run.
+        - value: the piece of metadata to log.
+
+        For example, log(fields={"parameters/learning_rate": 0.001})
+        In the field path, each forward slash "/" nests the field under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used.
+            step: Index of the log entry. Must be increasing.
+                If None, the highest of the already logged indexes is used.
             timestamp: Time of logging the metadata.
-            fields: Dictionary of fields to log.
-            metrics: Dictionary of metrics to log.
-            add_tags: Dictionary of tags to add to the run.
-            remove_tags: Dictionary of tags to remove from the run.
+            fields: Dictionary of configs or other values to log. Independent of the step value.
+                Available types: float, integer, Boolean, string, and datetime.
+                To log multiple values at once, pass multiple dictionaries.
+            metrics: Dictionary of metrics to log. Each metric value is associated with a step.
+                To log multiple metrics at once, pass multiple dictionaries.
+                Each metric is represented as a series of float values in the run.
+            add_tags: Dictionary of tags to add to the run, as a list of strings. Independent of the step value.
+            remove_tags: Dictionary of tags to remove from the run, as a list of strings. Independent of the step value.
 
         Examples:
             ```
+            >>> from neptune_scale import Run
             >>> with Run(...) as run:
-            ...     run.log(step=1, fields={"parameters/learning_rate": 0.001})
-            ...     run.log(step=2, add_tags={"sys/group_tags": ["group1", "group2"]})
-            ...     run.log(step=3, metrics={"metrics/loss": 0.1})
+            ...     run.log(fields={"parameters/learning_rate": 0.001})
+            ...     run.log(add_tags={"sys/tags": ["tag1", "tag2"]})
+            ...     run.log(step=1, metrics={"loss": 0.11, "acc": 0.81})
+            >>> run.log(step=2, metrics={"loss": 0.09, "acc": 0.82})
             ```
 
         """
