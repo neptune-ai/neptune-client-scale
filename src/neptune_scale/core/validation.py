@@ -8,14 +8,18 @@ __all__ = (
     "verify_collection_type",
 )
 
-from typing import Any
+from typing import (
+    Any,
+    Type,
+    Union,
+)
 
 
-def get_type_name(var_type: type | tuple) -> str:
+def get_type_name(var_type: Union[Type, tuple]) -> str:
     return var_type.__name__ if hasattr(var_type, "__name__") else str(var_type)
 
 
-def verify_type(var_name: str, var: Any, expected_type: type | tuple) -> None:
+def verify_type(var_name: str, var: Any, expected_type: Union[Type, tuple]) -> None:
     try:
         if isinstance(expected_type, tuple):
             type_name = " or ".join(get_type_name(t) for t in expected_type)
@@ -48,7 +52,7 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
         raise ValueError(f"{var_name} is not in expected format, should be 'workspace-name/project-name")
 
 
-def verify_collection_type(var_name: str, var: list | set | tuple, expected_type: type | tuple) -> None:
+def verify_collection_type(var_name: str, var: Union[list, set, tuple], expected_type: Union[type, tuple]) -> None:
     verify_type(var_name, var, (list, set, tuple))
 
     for value in var:

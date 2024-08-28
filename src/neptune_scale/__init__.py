@@ -6,24 +6,43 @@ from __future__ import annotations
 
 __all__ = ["Run"]
 
+import atexit
+import multiprocessing
 import os
+import platform
+import signal
 import threading
+import time
 from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Callable
+from multiprocessing.sharedctypes import Synchronized
+from multiprocessing.synchronize import Condition as ConditionT
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Union,
+)
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.api_client import ApiClient
 from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
 )
-from neptune_scale.core.components.errors_monitor import ErrorsMonitor
-from neptune_scale.core.components.errors_queue import ErrorsQueue
+from neptune_scale.core.components.errors_tracking import (
+    ErrorsMonitor,
+    ErrorsQueue,
+)
 from neptune_scale.core.components.operations_queue import OperationsQueue
+from neptune_scale.core.components.sync_process import SyncProcess
+from neptune_scale.core.logger import logger
 from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
     datetime_to_proto,
@@ -44,16 +63,21 @@ from neptune_scale.parameters import (
     MAX_FAMILY_LENGTH,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
+    MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
+    MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
+    STOP_MESSAGE_FREQUENCY,
 )
 
 
 class Run(WithResources, AbstractContextManager):
     """
-    Representation of tracked metadata.
+    Representation of experiment tracking metadata logged with neptune.ai.
 
     Methods:
         close(): Synchronizes all remaining data and closes the connection to Neptune.
         log(): Logs the specified metadata to Neptune.
+        wait_for_submission(): Waits until all metadata is submitted to Neptune for processing.
+        wait_for_processing(): Waits until all metadata is processed by Neptune.
     """
 
     def __init__(
@@ -61,23 +85,27 @@ class Run(WithResources, AbstractContextManager):
         *,
         family: str,
         run_id: str,
-        project: str | None = None,
-        api_token: str | None = None,
+        project: Optional[str] = None,
+        api_token: Optional[str] = None,
         resume: bool = False,
-        as_experiment: str | None = None,
-        creation_time: datetime | None = None,
-        from_run_id: str | None = None,
-        from_step: int | float | None = None,
+        mode: Literal["async", "disabled"] = "async",
+        as_experiment: Optional[str] = None,
+        creation_time: Optional[datetime] = None,
+        from_run_id: Optional[str] = None,
+        from_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        max_queue_size_exceeded_callback: Callable[[int, BaseException], None] | None = None,
+        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
     ) -> None:
         """
-        Initializes a run that logs the model-building metadata to Neptune.
+        Initializes a Neptune run that logs model-building metadata.
 
         Args:
-            family (str): Identifies related runs. All runs of the same lineage must have the same `family` value.
-                Max length: 128 characters.
-            run_id (str): Identifier of a run. Must be unique within the project. Max length: 128 characters.
+            family (str): Identifies related runs. All runs of the same lineage must have the same `family` value, i.e.
+                forking is only possible within the same family. Max length: 128 characters.
+            run_id (str): Identifier of the run. Must be unique within the project. Max length: 128 characters.
             project (str): Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
             api_token (str): Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
@@ -85,15 +113,20 @@ class Run(WithResources, AbstractContextManager):
             resume (bool): If `False` (default), creates a new run. To continue an existing run, set to `True` and pass
                 the ID of an existing run to the `run_id` argument.
                 To fork a run, use `from_run_id` and `from_step` instead.
-            as_experiment (str): To mark a run as an experiment, pass an experiment ID.
+            mode ("async" or "disabled"): Mode of operation. If set to "disabled", the run doesn't log any metadata.
+            as_experiment (str): Name of the experiment to associate the run with.
             creation_time (datetime): Custom creation time of the run.
-            from_run_id (str): To forking off an existing run, pass the ID of the run to fork from.
-            from_step (int): To fork off an existing run, pass the step number to fork from.
+            from_run_id (str): If forking off an existing run, ID of the run to fork from.
+            from_step (int): If forking off an existing run, step number to fork from.
             max_queue_size (int): Maximum number of operations allowed in the queue.
-            max_queue_size_exceeded_callback (Callable[[int, BaseException], None]): Callback function triggered when
+            on_queue_full_callback (Callable[[BaseException, Optional[float]], None]): Callback function triggered when
                 the queue is full. The function should take two arguments:
-                1. Maximum size of the queue.
-                2. Exception that made the queue full.
+                - Exception that made the queue full.
+                - (Optional) Timestamp of the last time the exception was raised.
+            on_network_error_callback: Callback function triggered when a network error occurs.
+            on_error_callback: The default callback function triggered when an error occurs. Applies if an error
+                wasn't caught by other callbacks.
+            on_warning_callback: Callback function triggered when a warning occurs.
 
         Examples:
 
@@ -114,14 +147,23 @@ class Run(WithResources, AbstractContextManager):
             Create a forked run and mark it as an experiment:
 
             ```
-            from neptune_scale import Run
-
             with Run(
                 family="aquarium",
                 run_id="adventurous-barracuda",
                 as_experiment="swim-further",
                 from_run_id="likable-barracuda",
                 from_step=102,
+            ) as run:
+                ...
+            ```
+
+            Continue a run:
+
+            ```
+            with Run(
+                family="aquarium",
+                run_id="likable-barracuda",  # run with this ID already exists
+                resume=True,
             ) as run:
                 ...
             ```
@@ -136,7 +178,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("from_run_id", from_run_id, (str, type(None)))
         verify_type("from_step", from_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
-        verify_type("max_queue_size_exceeded_callback", max_queue_size_exceeded_callback, (Callable, type(None)))
+        verify_type("max_queue_size_exceeded_callback", on_queue_full_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
             raise ValueError("`resume` and `creation_time` cannot be used together.")
@@ -148,6 +190,9 @@ class Run(WithResources, AbstractContextManager):
             raise ValueError("`resume` and `from_run_id` cannot be used together.")
         if resume and from_step is not None:
             raise ValueError("`resume` and `from_step` cannot be used together.")
+
+        if max_queue_size < 1:
+            raise ValueError("`max_queue_size` must be greater than 0.")
 
         project = project or os.environ.get(PROJECT_ENV_NAME)
         verify_non_empty("project", project)
@@ -177,13 +222,46 @@ class Run(WithResources, AbstractContextManager):
 
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(
-            lock=self._lock, max_size=max_queue_size, max_size_exceeded_callback=max_queue_size_exceeded_callback
+            lock=self._lock,
+            max_size=max_queue_size,
         )
         self._errors_queue: ErrorsQueue = ErrorsQueue()
-        self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
-        self._backend: ApiClient = ApiClient(api_token=input_api_token)
+        self._errors_monitor = ErrorsMonitor(
+            errors_queue=self._errors_queue,
+            on_queue_full_callback=on_queue_full_callback,
+            on_network_error_callback=on_network_error_callback,
+            on_error_callback=on_error_callback,
+            on_warning_callback=on_warning_callback,
+        )
+
+        self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)
+        self._last_put_seq_wait: ConditionT = multiprocessing.Condition()
+
+        self._last_ack_seq: Synchronized[int] = multiprocessing.Value("i", -1)
+        self._last_ack_seq_wait: ConditionT = multiprocessing.Condition()
+
+        self._sync_process = SyncProcess(
+            project=self._project,
+            family=self._family,
+            operations_queue=self._operations_queue.queue,
+            errors_queue=self._errors_queue,
+            api_token=input_api_token,
+            last_put_seq=self._last_put_seq,
+            last_put_seq_wait=self._last_put_seq_wait,
+            last_ack_seq=self._last_ack_seq,
+            last_ack_seq_wait=self._last_ack_seq_wait,
+            max_queue_size=max_queue_size,
+            mode=mode,
+        )
 
         self._errors_monitor.start()
+        with self._lock:
+            self._sync_process.start()
+
+        self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
+
+        if platform.system() != "Windows":
+            signal.signal(signal.SIGCHLD, self._handle_signal)
 
         if not resume:
             self._create_run(
@@ -192,33 +270,49 @@ class Run(WithResources, AbstractContextManager):
                 from_run_id=from_run_id,
                 from_step=from_step,
             )
+            self.wait_for_processing(verbose=False)
 
-    def __enter__(self) -> Run:
-        return self
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        logger.debug(f"Received signal {signum}. Closing.")
+        self.close()
 
     @property
     def resources(self) -> tuple[Resource, ...]:
         return (
-            self._operations_queue,
-            self._backend,
-            self._errors_monitor,
             self._errors_queue,
+            self._operations_queue,
+            self._errors_monitor,
         )
+
+    def _close(self) -> None:
+        with self._lock:
+            if self._sync_process.is_alive():
+                self.wait_for_processing()
+                self._sync_process.terminate()
+                self._sync_process.join()
+
+        self._errors_monitor.interrupt()
+        self._errors_monitor.join()
+
+        super().close()
 
     def close(self) -> None:
         """
         Stops the connection to Neptune and synchronizes all data.
         """
-        super().close()
+        if self._exit_func is not None:
+            atexit.unregister(self._exit_func)
+            self._exit_func = None
+        self._close()
 
     def _create_run(
         self,
         creation_time: datetime,
-        as_experiment: str | None,
-        from_run_id: str | None,
-        from_step: int | float | None,
+        as_experiment: Optional[str],
+        from_run_id: Optional[str],
+        from_step: Optional[Union[int, float]],
     ) -> None:
-        fork_point: ForkPoint | None = None
+        fork_point: Optional[ForkPoint] = None
         if from_run_id is not None and from_step is not None:
             fork_point = ForkPoint(
                 parent_project=self._project, parent_run_id=from_run_id, step=make_step(number=from_step)
@@ -234,18 +328,16 @@ class Run(WithResources, AbstractContextManager):
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )
-        self._backend.submit(operation=operation, family=self._family)
-        # TODO: Enqueue on the operations queue
-        # self._operations_queue.enqueue(operation=operation)
+        self._operations_queue.enqueue(operation=operation)
 
     def log(
         self,
-        step: float | int | None = None,
-        timestamp: datetime | None = None,
-        fields: dict[str, float | bool | int | str | datetime | list | set] | None = None,
-        metrics: dict[str, float] | None = None,
-        add_tags: dict[str, list[str] | set[str]] | None = None,
-        remove_tags: dict[str, list[str] | set[str]] | None = None,
+        step: Optional[Union[float, int]] = None,
+        timestamp: Optional[datetime] = None,
+        fields: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        add_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        remove_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
         Logs the specified metadata to Neptune.
@@ -302,6 +394,113 @@ class Run(WithResources, AbstractContextManager):
         )
 
         for operation in splitter:
-            self._backend.submit(operation=operation, family=self._family)
-            # TODO: Enqueue on the operations queue
-            # self._operations_queue.enqueue(operation=operation)
+            self._operations_queue.enqueue(operation=operation)
+
+    def _wait(
+        self,
+        phrase: str,
+        sleep_time: float,
+        wait_condition: ConditionT,
+        external_value: Synchronized[int],
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+    ) -> None:
+        if verbose:
+            logger.info(f"Waiting for all operations to be {phrase}")
+
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        begin_time = time.time()
+        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        last_queued_sequence_id = self._operations_queue.last_sequence_id
+        last_print_timestamp: Optional[float] = None
+
+        while True:
+            try:
+                with self._lock:
+                    if not self._sync_process.is_alive():
+                        if verbose:
+                            logger.warning("Sync process is not running")
+                        return  # No need to wait if the sync process is not running
+
+                with wait_condition:
+                    wait_condition.wait(timeout=wait_time)
+                    value = external_value.value
+
+                if value == -1:
+                    if self._operations_queue.last_sequence_id != -1:
+                        last_print_timestamp = print_message(
+                            f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
+                            self._operations_queue.last_sequence_id + 1,
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
+                        )
+                    else:
+                        last_print_timestamp = print_message(
+                            f"Waiting. No operations were {phrase} yet",
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
+                        )
+                else:
+                    last_print_timestamp = print_message(
+                        f"Waiting for remaining %d operation(s) to be {phrase}",
+                        last_queued_sequence_id - value + 1,
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+
+                    # Reaching the last queued sequence ID means that all operations were submitted
+                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                        break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
+
+        if verbose:
+            logger.info(f"All operations were {phrase}")
+
+    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+        """
+        Waits until all metadata is submitted to Neptune.
+
+        Args:
+            timeout (float, optional): In seconds, the maximum time to wait for submission.
+            verbose (bool): If True (default), prints messages about the waiting process.
+        """
+        self._wait(
+            phrase="submitted",
+            sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
+            wait_condition=self._last_put_seq_wait,
+            external_value=self._last_put_seq,
+            timeout=timeout,
+            verbose=verbose,
+        )
+
+    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+        """
+        Waits until all metadata is processed by Neptune.
+
+        Args:
+            timeout (float, optional): In seconds, the maximum time to wait for processing.
+            verbose (bool): If True (default), prints messages about the waiting process.
+        """
+        self._wait(
+            phrase="processed",
+            sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
+            wait_condition=self._last_ack_seq_wait,
+            external_value=self._last_ack_seq,
+            timeout=timeout,
+            verbose=verbose,
+        )
+
+
+def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
+    current_time = time.time()
+
+    if verbose and (last_print is None or current_time - last_print > STOP_MESSAGE_FREQUENCY):
+        logger.info(msg, *args)
+        return current_time
+
+    return last_print

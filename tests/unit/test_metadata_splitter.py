@@ -196,7 +196,7 @@ def test_splitting():
     result = list(builder)
 
     # then
-    assert len(result) > 0
+    assert len(result) > 1
 
     # Every message should be smaller than max_size
     assert all(len(op.SerializeToString()) <= max_size for op in result)
@@ -242,7 +242,7 @@ def test_split_large_tags():
     result = list(builder)
 
     # then
-    assert len(result) > 0
+    assert len(result) > 1
 
     # Every message should be smaller than max_size
     assert all(len(op.SerializeToString()) <= max_size for op in result)

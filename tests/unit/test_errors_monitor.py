@@ -1,7 +1,9 @@
 from unittest.mock import Mock
 
-from neptune_scale.core.components.errors_monitor import ErrorsMonitor
-from neptune_scale.core.components.errors_queue import ErrorsQueue
+from neptune_scale.core.components.errors_tracking import (
+    ErrorsMonitor,
+    ErrorsQueue,
+)
 
 
 def test_errors_monitor():
@@ -14,9 +16,14 @@ def test_errors_monitor():
 
     # when
     errors_queue.put(ValueError("error1"))
+    errors_queue.flush()
+
+    # and
     errors_monitor.start()
+    errors_monitor.work()
+    errors_monitor.wake_up()
     errors_monitor.interrupt()
-    errors_monitor.join(timeout=1)
+    errors_monitor.join(timeout=5)
 
     # then
     callback.assert_called()
