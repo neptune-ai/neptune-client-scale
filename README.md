@@ -78,7 +78,7 @@ __Parameters__
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
 | `from_run_id`    | `str`, optional  | `None` | If forking off an existing run, ID of the run to fork from. |
 | `from_step`      | `int`, optional  | `None` | If forking off an existing run, step number to fork from. |
-| `max_queue_size` | `int`, optional  | `None` | Maximum number of operations allowed in the queue. |
+| `max_queue_size` | `int`, optional  | 1M | Maximum number of operations queued for processing. 1 000 000 by default. You should raise this value if you see the `on_queue_full_callback` function being called. |
 | `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function should take two arguments: (1) Exception that made the queue full. (2) Optional timestamp: When the exception was last raised. |
 | `on_network_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a network error occurs. |
 | `on_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | The default callback function triggered when an unrecoverable error occurs. Applies if an error wasn't caught by other callbacks. In this callback you can choose to perform your cleanup operations and close the training script. |
@@ -131,7 +131,9 @@ with Run(
 
 ## `close()`
 
-Stops the connection to Neptune and synchronizes all data.
+Waits for all locally queued data to be processed by Neptune (see [`wait_for_processing()`](#wait_for_processing)) and closes the run.
+
+This is a blocking operation. You should call the function at the end of your script, after your model training is completed.
 
 __Examples__
 
@@ -168,7 +170,7 @@ __Parameters__
 
 | Name          | Type                                               | Default | Description                                                               |
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
-| `step`        | `Union[float, int]`, optional                      | `None`  | Index of the log entry. Must be increasing. If `None`, the highest of the already logged indexes is used. |
+| `step`        | `Union[float, int]`, optional                      | `None`  | Index of the log entry. Must be increasing. If not specified, the `log()` call increments the step starting from the highest already logged value. **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
 | `timestamp`   | `datetime`, optional                               | `None`  | Time of logging the metadata. |
 | `fields`      | `Dict[str, Union[float, bool, int, str, datetime, list, set]]`, optional  | `None` | Dictionary of configs or other values to log. Independent of the step value. Available types: float, integer, Boolean, string, and datetime. To log multiple values at once, pass multiple dictionaries. |
 | `metrics`     | `Dict[str, float]`, optional                       | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple dictionaries. |
@@ -183,17 +185,11 @@ Create a run and log some metadata:
 from neptune_scale import Run
 
 with Run(...) as run:
-    run.log(fields={"parameters/learning_rate": 0.001})
-    run.log(add_tags={"sys/tags": ["tag1", "tag2"]})
-    run.log(metrics={"loss": 0.14, "acc": 0.78})
-```
-
-You can explicitly pass the step when logging metrics:
-
-```python
-run.log(step=5, metrics={"loss": 0.09, "acc": 0.82})  # works if the previous step is no higher than 4
-run.log(metrics={"loss": 0.08, "acc": 0.86})          # step is set to "6"
-...
+    run.log(
+        fields={"parameters/learning_rate": 0.001},
+        add_tags={"sys/tags": ["tag1", "tag2"]},
+        metrics={"loss": 0.14, "acc": 0.78},
+    )
 ```
 
 Remove a tag:
@@ -203,9 +199,21 @@ with Run(...) as run:
     run.log(remove_tags={"sys/tags": "tag2"})
 ```
 
+You can pass the step when logging metrics:
+
+```python
+run.log(step=5, metrics={"loss": 0.09, "acc": 0.82})  # works if the previous step is no higher than 4
+run.log(metrics={"loss": 0.08, "acc": 0.86})          # step index is set to "6"
+...
+```
+
+**Note:** Calling `log()` without specifying the step still increments the index. To correlate logged values, make sure to send all metadata related to a step in a single `log()` call, or specify the step explicitly.
+
 ## `wait_for_submission()`
 
-Waits until all metadata is submitted to Neptune.
+Waits until all metadata is submitted to Neptune for processing.
+
+When submitted, the data is not yet saved in Neptune (see [`wait_for_processing()`](#wait_for_processing)).
 
 __Parameters__
 
@@ -230,6 +238,8 @@ with Run(...) as run:
 
 Waits until all metadata is processed by Neptune.
 
+Once the call is complete, the data is saved in Neptune.
+
 __Parameters__
 
 | Name      | Type              | Default | Description                                                               |
@@ -246,7 +256,7 @@ with Run(...) as run:
     run.log(...)
     ...
     run.wait_for_processing()
-    run.log(fields={"scores/some_score": some_score_value})  # called once queued Neptune operations have been processed
+    run.log(fields={"scores/some_score": some_score_value})  # called once submitted data has been processed
 ```
 
 ## Getting help
