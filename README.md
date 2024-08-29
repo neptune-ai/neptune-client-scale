@@ -68,10 +68,10 @@ __Parameters__
 
 | Name             | Type             | Default | Description                                                               |
 |------------------|------------------|---------|---------------------------------------------------------------------------|
-| `family`         | `str`            | -       | Identifies related runs. All runs of the same lineage must have the same `family` value, i.e forking is only possible within the same family. Max length: 128 characters. |
+| `family`         | `str`            | -       | Identifies related runs. All runs of the same lineage must have the same `family` value. That is, forking is only possible within the same family. Max length: 128 characters. |
 | `run_id`         | `str`            | -       | Identifier of the run. Must be unique within the project. Max length: 128 characters. |
 | `project`        | `str`, optional  | `None`  | Name of a project in the form `workspace-name/project-name`. If `None`, the value of the `NEPTUNE_PROJECT` environment variable is used. |
-| `api_token`      | `str`, optional  | `None`  | Your Neptune API token (or a service account's API token). If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, avoid placing it in source code. Instead, save it as an environment variable. |
+| `api_token`      | `str`, optional  | `None`  | Your Neptune API token or a service account's API token. If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, don't place it in source code. Instead, save it as an environment variable. |
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `from_run_id` and `from_step` instead. |
 | `mode`           | `Literal`, `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
 | `as_experiment`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/concepts) in the Neptune documentation. |
@@ -133,7 +133,7 @@ with Run(
 
 Waits for all locally queued data to be processed by Neptune (see [`wait_for_processing()`](#wait_for_processing)) and closes the run.
 
-This is a blocking operation. You should call the function at the end of your script, after your model training is completed.
+This is a blocking operation. Call the function at the end of your script, after your model training is completed.
 
 __Examples__
 

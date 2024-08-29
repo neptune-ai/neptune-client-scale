@@ -103,7 +103,7 @@ class Run(WithResources, AbstractContextManager):
         Initializes a Neptune run that logs model-building metadata.
 
         Args:
-            family (str): Identifies related runs. All runs of the same lineage must have the same `family` value, i.e.
+            family (str): Identifies related runs. All runs of the same lineage must have the same `family` value, that is,
                 forking is only possible within the same family. Max length: 128 characters.
             run_id (str): Identifier of the run. Must be unique within the project. Max length: 128 characters.
             project (str): Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
