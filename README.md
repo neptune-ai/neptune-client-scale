@@ -31,7 +31,10 @@ run = Run(
     run_id="SomeUniqueRunIdentifier",
 )
 
-run.log(metrics={"MetricName": metric_value})
+run.log(
+    metrics={"Metric1": metric1_value, "Metric2": metric2_value},
+    fields={"Field1": field1_value}
+)
 
 run.close()
 ```
@@ -78,7 +81,7 @@ __Parameters__
 | `max_queue_size` | `int`, optional  | `None` | Maximum number of operations allowed in the queue. |
 | `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function should take two arguments: (1) Exception that made the queue full. (2) Optional timestamp: When the exception was last raised. |
 | `on_network_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a network error occurs. |
-| `on_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | The default callback function triggered when an error occurs. Applies if an error wasn't caught by other callbacks. |
+| `on_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | The default callback function triggered when an unrecoverable error occurs. Applies if an error wasn't caught by other callbacks. In this callback you can choose to perform your cleanup operations and close the training script. |
 | `on_warning_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a warning occurs. |
 
 __Examples__
