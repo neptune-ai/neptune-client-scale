@@ -74,12 +74,14 @@ class AggregatingQueue:
             maxsize=queue_size if queue_size is not None else -1
         )  # unbounded size
         self._max_batch_size = max_batch_size
-        self._placeholder: Optional[AggregatingQueueElement] = None
+        self._last_unprocessed: Optional[AggregatingQueueElement] = None
         self._block = block
         self._timeout = timeout
         self._batch_max_bytes = batch_max_bytes if batch_max_bytes is not None else float("inf")
 
     def put(self, element: QueueElement) -> None:
+        # TODO: consider adding `step` to QueueElement to avoid deserializing protobufs just
+        #       to compare steps
         operation = RunOperation()
         operation.ParseFromString(element.operation)
         key = self._make_key(operation)
@@ -96,9 +98,9 @@ class AggregatingQueue:
         )
 
     def _get(self) -> AggregatingQueueElement:
-        if self._placeholder is not None:
-            placeholder = self._placeholder
-            self._placeholder = None
+        if self._last_unprocessed is not None:
+            placeholder = self._last_unprocessed
+            self._last_unprocessed = None
             return placeholder
 
         return self._queue.get(timeout=self._timeout)
@@ -150,7 +152,7 @@ class AggregatingQueue:
         current_key: Union[Type[NotSet], Optional[Tuple[int, int]]] = NotSet
         while merged < self._max_batch_size:
             try:
-                element = self._get()  # after this line, the placeholder is None
+                element = self._get()  # after this line, self._last_unprocessed is None
                 if current_key is NotSet:
                     current_key = element.key
             except Empty:
@@ -160,15 +162,13 @@ class AggregatingQueue:
                     break
 
             if not self._should_aggregate(element.operation):
-                current_key = NotSet
                 if not aggregate:
                     return element
                 else:
-                    self._placeholder = element
+                    self._last_unprocessed = element
                     return aggregate
             elif element.key != current_key:
-                self._placeholder = element
-                current_key = element.key
+                self._last_unprocessed = element
                 return aggregate
             else:
                 if aggregate is None:
@@ -177,7 +177,7 @@ class AggregatingQueue:
                 else:
                     new_aggregate = self._merge_element(aggregate, element)
                     if new_aggregate.operation.ByteSize() > self._batch_max_bytes:
-                        self._placeholder = element
+                        self._last_unprocessed = element
                         return aggregate
                     else:
                         aggregate = new_aggregate
