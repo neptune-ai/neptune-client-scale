@@ -110,7 +110,7 @@ class AggregatingQueue:
         if self._should_aggregate(value):
             step = value.update.step
             if step is not None:
-                return 0, hash((value.update.step.whole, value.update.step.micro))
+                return 0, hash((step.whole, step.micro))
             else:
                 return 1, 0
         else:
