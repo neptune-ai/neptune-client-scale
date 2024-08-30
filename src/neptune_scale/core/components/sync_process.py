@@ -64,6 +64,7 @@ from neptune_scale.exceptions import (
     NeptuneFieldTypeConflicting,
     NeptuneFieldTypeUnsupported,
     NeptuneFloatValueNanInfUnsupported,
+    NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
@@ -84,6 +85,7 @@ from neptune_scale.exceptions import (
     NeptuneUnableToAuthenticateError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
+    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
@@ -421,8 +423,13 @@ class SenderThread(Daemon, WithResources):
 
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
+
         if response.status_code != 200:
-            raise RuntimeError(f"Unexpected status code: {response.status_code}")
+            logger.error("HTTP response error: %s", response.status_code)
+            if response.status_code // 100 == 5:
+                raise NeptuneInternalServerError()
+            else:
+                raise NeptuneUnexpectedResponseError()
 
         return response.parsed
 
