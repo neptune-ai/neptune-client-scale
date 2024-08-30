@@ -512,8 +512,13 @@ class StatusTrackingThread(Daemon, WithResources):
 
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
+
         if response.status_code != 200:
-            raise RuntimeError(f"Unexpected status code: {response.status_code}")
+            logger.error("HTTP response error: %s", response.status_code)
+            if response.status_code // 100 == 5:
+                raise NeptuneInternalServerError()
+            else:
+                raise NeptuneUnexpectedResponseError()
 
         return response.parsed
 
@@ -527,7 +532,6 @@ class StatusTrackingThread(Daemon, WithResources):
                     response = self.check_batch(request_ids=request_ids)
                     if response is None:
                         raise NeptuneUnexpectedError("Server response is empty")
-
                 except NeptuneRetryableError as e:
                     self._errors_queue.put(e)
                     # Small give up, sleep before retry
