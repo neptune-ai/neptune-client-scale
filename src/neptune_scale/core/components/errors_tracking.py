@@ -97,13 +97,17 @@ class ErrorsMonitor(Daemon, Resource):
             last_raised_at = self._last_raised_timestamps.get(type(error), None)
             self._last_raised_timestamps[type(error)] = time.time()
 
-            if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
-                self._on_queue_full_callback(error, last_raised_at)
-            elif isinstance(error, NeptuneConnectionLostError):
-                self._on_network_error_callback(error, last_raised_at)
-            elif isinstance(error, NeptuneScaleWarning):
-                self._on_warning_callback(error, last_raised_at)
-            elif isinstance(error, NeptuneScaleError):
-                self._on_error_callback(error, last_raised_at)
-            else:
-                self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))), last_raised_at)
+            try:
+                if isinstance(error, NeptuneOperationsQueueMaxSizeExceeded):
+                    self._on_queue_full_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneConnectionLostError):
+                    self._on_network_error_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneScaleWarning):
+                    self._on_warning_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneScaleError):
+                    self._on_error_callback(error, last_raised_at)
+                else:
+                    self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))), last_raised_at)
+            except Exception as e:
+                # Don't let user errors kill the process
+                logger.error(f"An exception occurred in user callback function: {e}")
