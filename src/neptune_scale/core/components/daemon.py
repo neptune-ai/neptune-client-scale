@@ -4,6 +4,8 @@ import abc
 import threading
 from enum import Enum
 
+from ..logger import logger
+
 
 class Daemon(threading.Thread):
     class DaemonState(Enum):
@@ -21,6 +23,7 @@ class Daemon(threading.Thread):
         self._wait_condition = threading.Condition()
 
     def interrupt(self) -> None:
+        logger.debug(f"Thread {self} interrupted.")
         with self._wait_condition:
             self._state = Daemon.DaemonState.INTERRUPTED
             self._wait_condition.notify_all()
@@ -79,6 +82,8 @@ class Daemon(threading.Thread):
             with self._wait_condition:
                 self._state = Daemon.DaemonState.STOPPED
                 self._wait_condition.notify_all()
+
+            logger.debug(f"Thread {self} is finished.")
 
     @abc.abstractmethod
     def work(self) -> None: ...

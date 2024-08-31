@@ -169,6 +169,10 @@ class Run(WithResources, AbstractContextManager):
         verify_max_length("family", family, MAX_FAMILY_LENGTH)
         verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
 
+        # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
+        # new data should be logged.
+        self._is_closing = False
+
         self._project: str = input_project
         self._family: str = family
         self._run_id: str = run_id
@@ -226,8 +230,8 @@ class Run(WithResources, AbstractContextManager):
             self.wait_for_processing(verbose=False)
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
-        logger.debug(f"Received signal {signum}. Closing.")
-        self.close()
+        logger.debug(f"Received signal {signum}. Terminating.")
+        self.terminate()
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -237,26 +241,55 @@ class Run(WithResources, AbstractContextManager):
             self._errors_monitor,
         )
 
-    def _close(self) -> None:
+    def _close(self, *, wait: bool = True) -> None:
         with self._lock:
-            if self._sync_process.is_alive():
+            if self._is_closing:
+                return
+
+            self._is_closing = True
+
+            logger.debug(f"Run is closing, wait={wait}")
+
+        if self._sync_process.is_alive():
+            if wait:
                 self.wait_for_processing()
-                self._sync_process.terminate()
-                self._sync_process.join()
+
+            self._sync_process.terminate()
+            self._sync_process.join()
 
         self._errors_monitor.interrupt()
-        self._errors_monitor.join()
+
+        # Don't call join() if being called from the error thread, as this will
+        # result in a "cannot join current thread" exception.
+        if threading.current_thread() != self._errors_monitor:
+            self._errors_monitor.join()
 
         super().close()
 
-    def close(self) -> None:
+    def terminate(self) -> None:
         """
-        Stops the connection to Neptune and synchronizes all data.
+        Terminates the run, closing the connection and aborting all synchronization mechanisms.
+        This method is usually used in error callbacks to stop the Run from interfering with
+        the training process in case of an unrecoverable error.
         """
+
+        logger.info("Terminating Run.")
+
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
             self._exit_func = None
-        self._close()
+        self._close(wait=False)
+
+    def close(self) -> None:
+        """
+        Closes the connection to Neptune and waits for data synchronization to be completed.
+        This is a regular way to finalize a Run.
+        """
+
+        if self._exit_func is not None:
+            atexit.unregister(self._exit_func)
+            self._exit_func = None
+        self._close(wait=True)
 
     def _create_run(
         self,
@@ -312,6 +345,13 @@ class Run(WithResources, AbstractContextManager):
             ```
 
         """
+
+        # Don't log anything after we've been stopped. This allows continuing the training script
+        # after a non-recoverable error happened.
+        with self._lock:
+            if self._is_closing:
+                return
+
         verify_type("step", step, (float, int, type(None)))
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("fields", fields, (dict, type(None)))
@@ -335,6 +375,7 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
         verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
 
+        # TODO: move this to a separate process or thread, to make the .log call as lightweight as possible
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
@@ -354,7 +395,7 @@ class Run(WithResources, AbstractContextManager):
         phrase: str,
         sleep_time: float,
         wait_condition: ConditionT,
-        external_value: Synchronized[int],
+        wait_value: Synchronized[int],
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
@@ -374,12 +415,13 @@ class Run(WithResources, AbstractContextManager):
                 with self._lock:
                     if not self._sync_process.is_alive():
                         if verbose:
+                            # TODO: error out here?
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
                 with wait_condition:
                     wait_condition.wait(timeout=wait_time)
-                    value = external_value.value
+                    value = wait_value.value
 
                 if value == -1:
                     if self._operations_queue.last_sequence_id != -1:
@@ -426,7 +468,7 @@ class Run(WithResources, AbstractContextManager):
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
             wait_condition=self._last_put_seq_wait,
-            external_value=self._last_put_seq,
+            wait_value=self._last_put_seq,
             timeout=timeout,
             verbose=verbose,
         )
@@ -443,7 +485,7 @@ class Run(WithResources, AbstractContextManager):
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
             wait_condition=self._last_ack_seq_wait,
-            external_value=self._last_ack_seq,
+            wait_value=self._last_ack_seq,
             timeout=timeout,
             verbose=verbose,
         )

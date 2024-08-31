@@ -439,7 +439,7 @@ class SenderThread(Daemon, WithResources):
                 sequence_id, timestamp, data = operation
 
                 try:
-                    logger.debug("Processing operation #%d with size of %d bytes", sequence_id, len(data))
+                    logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(data))
                     run_operation = RunOperation()
                     run_operation.ParseFromString(data)
                     request_id = self.submit(operation=run_operation)
@@ -540,6 +540,7 @@ class StatusTrackingThread(Daemon, WithResources):
                 operations_to_commit, processed_sequence_id = 0, None
                 for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
                     if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
+                        logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
                         # Request status not ready yet, sleep and retry
                         break
 
@@ -554,6 +555,8 @@ class StatusTrackingThread(Daemon, WithResources):
 
                     # Update Last ACK sequence id and notify threads in the main process
                     if processed_sequence_id is not None:
+                        logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
+
                         with self._last_ack_seq_wait:
                             self._last_ack_seq.value = processed_sequence_id
                             self._last_ack_seq_wait.notify_all()
