@@ -407,7 +407,6 @@ class Run(WithResources, AbstractContextManager):
 
         begin_time = time.time()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
-        last_queued_sequence_id = self._operations_queue.last_sequence_id
         last_print_timestamp: Optional[float] = None
 
         while True:
@@ -419,9 +418,16 @@ class Run(WithResources, AbstractContextManager):
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
+                    # Handle the case where we get notified on `wait_condition` before we actually wait.
+                    # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
+                    if wait_value.value >= self._operations_queue.last_sequence_id:
+                        break
+
                 with wait_condition:
                     wait_condition.wait(timeout=wait_time)
                     value = wait_value.value
+
+                last_queued_sequence_id = self._operations_queue.last_sequence_id
 
                 if value == -1:
                     if self._operations_queue.last_sequence_id != -1:

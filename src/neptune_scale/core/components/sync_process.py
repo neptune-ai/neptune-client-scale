@@ -447,6 +447,7 @@ class SenderThread(Daemon, WithResources):
                     if request_id is None:
                         raise NeptuneUnexpectedError("Server response is empty")
 
+                    logger.debug("Operation #%d submitted as %s", sequence_id, request_id.value)
                     self._status_tracking_queue.put(
                         StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value)
                     )
