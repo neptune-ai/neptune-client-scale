@@ -414,7 +414,7 @@ class Run(WithResources, AbstractContextManager):
             try:
                 with self._lock:
                     if not self._sync_process.is_alive():
-                        if verbose:
+                        if verbose and not self._is_closing:
                             # TODO: error out here?
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
