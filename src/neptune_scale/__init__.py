@@ -437,14 +437,14 @@ class Run(WithResources, AbstractContextManager):
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
-                else:
+                elif value < last_queued_sequence_id:
                     last_print_timestamp = print_message(
                         f"Waiting for remaining %d operation(s) to be {phrase}",
                         last_queued_sequence_id - value + 1,
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
-
+                else:
                     # Reaching the last queued sequence ID means that all operations were submitted
                     if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
                         break
