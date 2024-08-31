@@ -60,6 +60,7 @@ from neptune_scale.envs import (
     PROJECT_ENV_NAME,
 )
 from neptune_scale.parameters import (
+    MAX_EXPERIMENT_NAME_LENGTH,
     MAX_FAMILY_LENGTH,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
@@ -158,8 +159,10 @@ class Run(WithResources, AbstractContextManager):
         verify_non_empty("run_id", run_id)
         if as_experiment is not None:
             verify_non_empty("as_experiment", as_experiment)
+            verify_max_length("as_experiment", as_experiment, MAX_EXPERIMENT_NAME_LENGTH)
         if from_run_id is not None:
             verify_non_empty("from_run_id", from_run_id)
+            verify_max_length("from_run_id", from_run_id, MAX_RUN_ID_LENGTH)
 
         verify_project_qualified_name("project", project)
 
