@@ -52,7 +52,7 @@ jobs:
           path: dist
 
       - name: Install package
-        run: pip install --force-reinstall --pre -f ./dist neptune_scale
+        run: pip install --force-reinstall --pre -f ./dist neptune_client_scale
 
       - name: List dependencies
         run: pip list
