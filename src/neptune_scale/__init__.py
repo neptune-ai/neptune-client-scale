@@ -84,10 +84,10 @@ class Run(WithResources, AbstractContextManager):
         api_token: Optional[str] = None,
         resume: bool = False,
         mode: Literal["async", "disabled"] = "async",
-        as_experiment: Optional[str] = None,
+        experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
-        from_run_id: Optional[str] = None,
-        from_step: Optional[Union[int, float]] = None,
+        fork_run_id: Optional[str] = None,
+        fork_step: Optional[Union[int, float]] = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
         on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
@@ -107,10 +107,10 @@ class Run(WithResources, AbstractContextManager):
                 variable is used.
             resume: Whether to resume an existing run.
             mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
-            as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
+            experiment_name: If creating a run as an experiment, name (ID) of the experiment to be associated with the run.
             creation_time: Custom creation time of the run.
-            from_run_id: If forking from an existing run, ID of the run to fork from.
-            from_step: If forking from an existing run, step number to fork from.
+            fork_run_id: If forking from an existing run, ID of the run to fork from.
+            fork_step: If forking from an existing run, step number to fork from.
             max_queue_size: Maximum number of operations in a queue.
             on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
                 that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
@@ -124,23 +124,23 @@ class Run(WithResources, AbstractContextManager):
         verify_type("resume", resume, bool)
         verify_type("project", project, (str, type(None)))
         verify_type("api_token", api_token, (str, type(None)))
-        verify_type("as_experiment", as_experiment, (str, type(None)))
+        verify_type("experiment_name", experiment_name, (str, type(None)))
         verify_type("creation_time", creation_time, (datetime, type(None)))
-        verify_type("from_run_id", from_run_id, (str, type(None)))
-        verify_type("from_step", from_step, (int, float, type(None)))
+        verify_type("fork_run_id", fork_run_id, (str, type(None)))
+        verify_type("fork_step", fork_step, (int, float, type(None)))
         verify_type("max_queue_size", max_queue_size, int)
         verify_type("max_queue_size_exceeded_callback", on_queue_full_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
             raise ValueError("`resume` and `creation_time` cannot be used together.")
-        if resume and as_experiment is not None:
-            raise ValueError("`resume` and `as_experiment` cannot be used together.")
-        if (from_run_id is not None and from_step is None) or (from_run_id is None and from_step is not None):
-            raise ValueError("`from_run_id` and `from_step` must be used together.")
-        if resume and from_run_id is not None:
-            raise ValueError("`resume` and `from_run_id` cannot be used together.")
-        if resume and from_step is not None:
-            raise ValueError("`resume` and `from_step` cannot be used together.")
+        if resume and experiment_name is not None:
+            raise ValueError("`resume` and `experiment_name` cannot be used together.")
+        if (fork_run_id is not None and fork_step is None) or (fork_run_id is None and fork_step is not None):
+            raise ValueError("`fork_run_id` and `fork_step` must be used together.")
+        if resume and fork_run_id is not None:
+            raise ValueError("`resume` and `fork_run_id` cannot be used together.")
+        if resume and fork_step is not None:
+            raise ValueError("`resume` and `fork_step` cannot be used together.")
 
         if max_queue_size < 1:
             raise ValueError("`max_queue_size` must be greater than 0.")
@@ -157,12 +157,12 @@ class Run(WithResources, AbstractContextManager):
 
         verify_non_empty("family", family)
         verify_non_empty("run_id", run_id)
-        if as_experiment is not None:
-            verify_non_empty("as_experiment", as_experiment)
-            verify_max_length("as_experiment", as_experiment, MAX_EXPERIMENT_NAME_LENGTH)
-        if from_run_id is not None:
-            verify_non_empty("from_run_id", from_run_id)
-            verify_max_length("from_run_id", from_run_id, MAX_RUN_ID_LENGTH)
+        if experiment_name is not None:
+            verify_non_empty("experiment_name", experiment_name)
+            verify_max_length("experiment_name", experiment_name, MAX_EXPERIMENT_NAME_LENGTH)
+        if fork_run_id is not None:
+            verify_non_empty("fork_run_id", fork_run_id)
+            verify_max_length("fork_run_id", fork_run_id, MAX_RUN_ID_LENGTH)
 
         verify_project_qualified_name("project", project)
 
@@ -223,9 +223,9 @@ class Run(WithResources, AbstractContextManager):
         if not resume:
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
-                as_experiment=as_experiment,
-                from_run_id=from_run_id,
-                from_step=from_step,
+                experiment_name=experiment_name,
+                fork_run_id=fork_run_id,
+                fork_step=fork_step,
             )
             self.wait_for_processing(verbose=False)
 
@@ -294,14 +294,14 @@ class Run(WithResources, AbstractContextManager):
     def _create_run(
         self,
         creation_time: datetime,
-        as_experiment: Optional[str],
-        from_run_id: Optional[str],
-        from_step: Optional[Union[int, float]],
+        experiment_name: Optional[str],
+        fork_run_id: Optional[str],
+        fork_step: Optional[Union[int, float]],
     ) -> None:
         fork_point: Optional[ForkPoint] = None
-        if from_run_id is not None and from_step is not None:
+        if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
-                parent_project=self._project, parent_run_id=from_run_id, step=make_step(number=from_step)
+                parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
             )
 
         operation = RunOperation(
@@ -310,7 +310,7 @@ class Run(WithResources, AbstractContextManager):
             create=CreateRun(
                 family=self._family,
                 fork_point=fork_point,
-                experiment_id=as_experiment,
+                experiment_id=experiment_name,
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )

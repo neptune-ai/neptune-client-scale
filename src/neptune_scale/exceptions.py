@@ -275,7 +275,7 @@ class NeptuneRunConflicting(NeptuneScaleError):
 {h1}
 ----NeptuneRunConflicting------------------------------------------------------
 {end}
-Run with specified `run_id` already exists, but has different creation parameters (`family` or `from_run_id`).
+Run with specified `run_id` already exists, but has different creation parameters (`family` or `fork_run_id`).
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
@@ -420,7 +420,7 @@ class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
 {h1}
 ----NeptuneSeriesStepNotAfterForkPoint-----------------------------------------
 {end}
-The series value must be greater than the step specified by the `from_step` argument.
+The series value must be greater than the step specified by the `fork_step` argument.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
