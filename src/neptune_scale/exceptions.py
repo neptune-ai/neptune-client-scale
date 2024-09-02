@@ -10,6 +10,8 @@ __all__ = (
     "NeptuneConnectionLostError",
     "NeptuneUnableToAuthenticateError",
     "NeptuneRetryableError",
+    "NeptuneUnexpectedResponseError",
+    "NeptuneInternalServerError",
     "NeptuneProjectNotFound",
     "NeptuneProjectInvalidName",
     "NeptuneRunNotFound",
@@ -169,6 +171,33 @@ class NeptuneConnectionLostError(NeptuneRetryableError):
 {end}
 The connection to the Neptune server was lost. Ensure that your computer is connected to the internet and that
     firewall settings aren't blocking the connection.
+
+{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
+
+
+class NeptuneUnexpectedResponseError(NeptuneRetryableError):
+    message = """
+{h1}
+----NeptuneUnexpectedResponseError-------------------------------------------------
+{end}
+The Neptune server returned an unexpected response. This is a temporary problem.
+If the problem persists, please contact us.
+
+{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
+
+
+class NeptuneInternalServerError(NeptuneRetryableError):
+    message = """
+{h1}
+----NeptuneInternalServerError-------------------------------------------------
+{end}
+We have encountered an internal server error. If the problem persists, please contact us.
 
 {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
 
