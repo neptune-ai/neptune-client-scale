@@ -38,9 +38,10 @@ def verify_non_empty(var_name: str, var: Any) -> None:
         raise ValueError(f"{var_name} must not be empty")
 
 
-def verify_max_length(var_name: str, var: Any, max_length: int) -> None:
-    if len(var) > max_length:
-        raise ValueError(f"{var_name} must not exceed {max_length} characters")
+def verify_max_length(var_name: str, var: str, max_length: int) -> None:
+    byte_len = len(var.encode("utf8"))
+    if byte_len > max_length:
+        raise ValueError(f"{var_name} must not exceed {max_length} bytes, got {byte_len} bytes.")
 
 
 def verify_project_qualified_name(var_name: str, var: Any) -> None:
