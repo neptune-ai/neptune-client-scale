@@ -139,10 +139,10 @@ def test_metadata(api_token):
             metrics={
                 "metric": 1.0,
             },
-            add_tags={
+            string_sets_add={
                 "tags": ["tag1"],
             },
-            remove_tags={
+            string_sets_remove={
                 "group_tags": ["tag2"],
             },
         )
