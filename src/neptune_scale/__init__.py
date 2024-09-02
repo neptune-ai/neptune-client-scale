@@ -99,8 +99,8 @@ class Run(WithResources, AbstractContextManager):
 
         Args:
             family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
-                Max length: 128 characters.
-            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 characters.
+                Max length: 128 bytes.
+            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes.
             project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
@@ -108,6 +108,7 @@ class Run(WithResources, AbstractContextManager):
             resume: Whether to resume an existing run.
             mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
+                Max length: 730 bytes.
             creation_time: Custom creation time of the run.
             from_run_id: If forking from an existing run, ID of the run to fork from.
             from_step: If forking from an existing run, step number to fork from.
