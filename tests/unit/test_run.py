@@ -129,7 +129,7 @@ def test_metadata(api_token):
         run.log(
             step=1,
             timestamp=datetime.now(),
-            fields={
+            configs={
                 "int": 1,
                 "string": "test",
                 "float": 3.14,
@@ -139,10 +139,10 @@ def test_metadata(api_token):
             metrics={
                 "metric": 1.0,
             },
-            string_sets_add={
+            tags_add={
                 "tags": ["tag1"],
             },
-            string_sets_remove={
+            tags_remove={
                 "group_tags": ["tag2"],
             },
         )
@@ -161,7 +161,7 @@ def test_log_without_step(api_token):
     with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
         run.log(
             timestamp=datetime.now(),
-            fields={
+            configs={
                 "int": 1,
             },
         )
@@ -181,7 +181,7 @@ def test_log_step_float(api_token):
         run.log(
             step=3.14,
             timestamp=datetime.now(),
-            fields={
+            configs={
                 "int": 1,
             },
         )
@@ -200,7 +200,7 @@ def test_log_no_timestamp(api_token):
     with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
         run.log(
             step=3.14,
-            fields={
+            configs={
                 "int": 1,
             },
         )
@@ -219,7 +219,7 @@ def test_resume(api_token):
     with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True, mode="disabled") as run:
         run.log(
             step=3.14,
-            fields={
+            configs={
                 "int": 1,
             },
         )
