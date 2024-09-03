@@ -120,7 +120,7 @@ class Run(WithResources, AbstractContextManager):
             from_step (int): If forking off an existing run, step number to fork from.
             max_queue_size (int): Maximum number of operations allowed in the queue.
             on_queue_full_callback (Callable[[BaseException, Optional[float]], None]): Callback function triggered when
-                the queue is full. The function should take two arguments:
+                the queue is full. The function takes two arguments:
                 - Exception that made the queue full.
                 - (Optional) Timestamp of the last time the exception was raised.
             on_network_error_callback: Callback function triggered when a network error occurs.

@@ -3,6 +3,8 @@
 > [!NOTE]
 > This package only works with the `3.0` version of neptune.ai called Neptune Scale, which is in beta.
 >
+> It's supported on Linux and MacOS.
+>
 > You can't use the Scale client with the stable Neptune `2.x` versions currently available to SaaS and self-hosting customers. For the Python client corresponding to Neptune `2.x`, see https://github.com/neptune-ai/neptune-client.
 
 **What is Neptune?**
@@ -18,7 +20,7 @@ Neptune Scale supports forked experiments, with built-in mechanics for retaining
 ## Installation
 
 ```bash
-pip install neptune-client-scale
+pip install neptune-scale
 ```
 
 ## Example usage
@@ -79,7 +81,7 @@ __Parameters__
 | `from_run_id`    | `str`, optional  | `None` | If forking off an existing run, ID of the run to fork from. |
 | `from_step`      | `int`, optional  | `None` | If forking off an existing run, step number to fork from. |
 | `max_queue_size` | `int`, optional  | 1M | Maximum number of operations queued for processing. 1 000 000 by default. You should raise this value if you see the `on_queue_full_callback` function being called. |
-| `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function should take two arguments: (1) Exception that made the queue full. (2) Optional timestamp: When the exception was last raised. |
+| `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function must take as an argument the exception that made the queue full and, as an optional argument, a timestamp of when the exception was last raised. |
 | `on_network_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a network error occurs. |
 | `on_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | The default callback function triggered when an unrecoverable error occurs. Applies if an error wasn't caught by other callbacks. In this callback you can choose to perform your cleanup operations and close the training script. |
 | `on_warning_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a warning occurs. |
@@ -172,9 +174,9 @@ __Parameters__
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
 | `step`        | `Union[float, int]`, optional                      | `None`  | Index of the log entry. Must be increasing. If not specified, the `log()` call increments the step starting from the highest already logged value. **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
 | `timestamp`   | `datetime`, optional                               | `None`  | Time of logging the metadata. |
-| `fields`      | `Dict[str, Union[float, bool, int, str, datetime, list, set]]`, optional  | `None` | Dictionary of configs or other values to log. Independent of the step value. Available types: float, integer, Boolean, string, and datetime. To log multiple values at once, pass multiple dictionaries. |
-| `metrics`     | `Dict[str, float]`, optional                       | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple dictionaries. |
-| `add_tags`    | `Dict[str, Union[List[str], Set[str]]]`, optional  | `None`  | Dictionary of tags to add to the run, as a list of strings. Independent of the step value. |
+| `fields`      | `Dict[str, Union[float, bool, int, str, datetime, list, set]]`, optional  | `None` | Dictionary of configs or other values to log. Available types: float, integer, Boolean, string, and datetime. |
+| `metrics`     | `Dict[str, float]`, optional                       | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs. |
+| `add_tags`    | `Dict[str, Union[List[str], Set[str]]]`, optional  | `None`  | Dictionary of tags to add to the run, as a list of strings. |
 | `remove_tags` | `Dict[str, Union[List[str], Set[str]]]`, optional  | `None`  | Dictionary of tags to remove from the run, as a list of strings. Independent of the step value. |
 
 __Examples__
