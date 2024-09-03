@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added support for integer values when logging metric values ([#33](https://github.com/neptune-ai/neptune-client-scale/pull/33))
+- Added support for async lag threshold ([#22](https://github.com/neptune-ai/neptune-client-scale/pull/22))
 
 ## [0.3.0] - 2024-09-03
 

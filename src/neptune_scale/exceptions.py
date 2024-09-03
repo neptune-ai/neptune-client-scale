@@ -33,6 +33,7 @@ __all__ = (
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
+    "NeptuneAsyncLagThresholdExceeded",
 )
 
 from typing import Any
@@ -478,3 +479,16 @@ String Set value is too long. Maximum length is 64KB.
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
+
+
+class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
+    message = """
+    {h1}
+    ----NeptuneAsyncLagThresholdExceeded----------------------------------------
+    {end}
+    Neptune is experiencing a high delay in synchronizing data.
+
+    {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+    Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+    """
