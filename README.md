@@ -52,13 +52,13 @@ run = Run(
 )
 
 run.log_configs(
-    step=1,
     data={"learning_rate": 0.001, "batch_size": 64},
 )
 
 # inside a training loop
 for e in epoch:
     run.log_metrics(
+        step=1,
         data={"acc": 0.89, "loss": 0.17},
     )
 
