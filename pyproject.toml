@@ -17,7 +17,7 @@ psutil = "^5.0.0"
 backoff = "^2.0.0"
 
 [tool.poetry]
-name = "neptune-client-scale"
+name = "neptune-scale"
 version = "0.1.0"
 description = "A minimal client library"
 authors = ["neptune.ai <contact@neptune.ai>"]
