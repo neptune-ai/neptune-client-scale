@@ -29,13 +29,13 @@ Log in to your Neptune Scale workspace. Get your API token from your user menu.
 
 > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token.
 
-Install the neptune-client-scale package:
+Install the neptune-scale package:
 
 ```
 pip install neptune-scale
 ```
 
-In the environment where neptune-client-scale is installed, set the following environment variables to the API token and project name obtained from the Neptune beta instance:
+In the environment where neptune-scale is installed, set the following environment variables to the API token and project name obtained from the Neptune beta instance:
 
 ```
 export NEPTUNE_API_TOKEN="h0dHBzOi8aHR0cHM.4kl0jvYh3Kb8...ifQ=="
