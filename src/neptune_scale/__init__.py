@@ -316,58 +316,94 @@ class Run(WithResources, AbstractContextManager):
         )
         self._operations_queue.enqueue(operation=operation)
 
+    def log_metrics(
+        self,
+        step: Optional[Union[float, int]] = None,
+        timestamp: Optional[datetime] = None,
+        data: Optional[Dict[str, float]] = None,
+    ) -> None:
+        self.log(step=step, timestamp=timestamp, metrics=data)
+
+    def log_configs(
+        self,
+        timestamp: Optional[datetime] = None,
+        data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
+    ) -> None:
+        self.log(timestamp=timestamp, configs=data)
+
+    def add_tags(
+        self,
+        tags: Union[List[str], Set[str]],
+        timestamp: Optional[datetime] = None,
+        group_tags: bool = False,
+    ) -> None:
+        name = "sys/tags" if not group_tags else "sys/group_tags"
+        self.log(timestamp=timestamp, tags_add={name: tags})
+
+    def remove_tags(
+        self,
+        tags: Union[List[str], Set[str]],
+        timestamp: Optional[datetime] = None,
+        group_tags: bool = False,
+    ) -> None:
+        name = "sys/tags" if not group_tags else "sys/group_tags"
+        self.log(timestamp=timestamp, tags_remove={name: tags})
+
     def log(
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        fields: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
+        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
         metrics: Optional[Dict[str, float]] = None,
-        add_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
-        remove_tags: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        tags_add: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
         Logs the specified metadata to Neptune.
 
         Args:
-            step: Index of the log entry, must be increasing. If None, the highest of the already logged indexes is used.
+            step: Index of the log entry, must be increasing for a given metric.
+                  If None, the highest of the already logged steps in a given metric is used.
+                  Step applies only to the `metrics` argument, and is not relevant for configs and tags.
             timestamp: Time of logging the metadata.
-            fields: Dictionary of fields to log.
+            configs: Dictionary of configs to log.
             metrics: Dictionary of metrics to log.
-            add_tags: Dictionary of tags to add to the run.
-            remove_tags: Dictionary of tags to remove from the run.
+            tags_add: Dictionary of items to add to a field of String Set type
+            tags_remove: Dictionary of tags to remove from a field of String Set type
 
         Examples:
             ```
             >>> with Run(...) as run:
-            ...     run.log(step=1, fields={"parameters/learning_rate": 0.001})
-            ...     run.log(step=2, add_tags={"sys/group_tags": ["group1", "group2"]})
+            ...     run.log(step=1, configs={"parameters/learning_rate": 0.001})
+            ...     run.log(step=2, tags_add={"sys/group_tags": ["group1", "group2"]})
             ...     run.log(step=3, metrics={"metrics/loss": 0.1})
+            ...     run.log(tags_remove={"sys/group_tags": ["group2"]})
             ```
 
         """
 
         verify_type("step", step, (float, int, type(None)))
         verify_type("timestamp", timestamp, (datetime, type(None)))
-        verify_type("fields", fields, (dict, type(None)))
+        verify_type("configs", configs, (dict, type(None)))
         verify_type("metrics", metrics, (dict, type(None)))
-        verify_type("add_tags", add_tags, (dict, type(None)))
-        verify_type("remove_tags", remove_tags, (dict, type(None)))
+        verify_type("tags_add", tags_add, (dict, type(None)))
+        verify_type("tags_remove", tags_remove, (dict, type(None)))
 
         timestamp = datetime.now() if timestamp is None else timestamp
-        fields = {} if fields is None else fields
+        configs = {} if configs is None else configs
         metrics = {} if metrics is None else metrics
-        add_tags = {} if add_tags is None else add_tags
-        remove_tags = {} if remove_tags is None else remove_tags
+        tags_add = {} if tags_add is None else tags_add
+        tags_remove = {} if tags_remove is None else tags_remove
 
-        verify_collection_type("`fields` keys", list(fields.keys()), str)
+        verify_collection_type("`configs` keys", list(configs.keys()), str)
         verify_collection_type("`metrics` keys", list(metrics.keys()), str)
-        verify_collection_type("`add_tags` keys", list(add_tags.keys()), str)
-        verify_collection_type("`remove_tags` keys", list(remove_tags.keys()), str)
+        verify_collection_type("`tags_add` keys", list(tags_add.keys()), str)
+        verify_collection_type("`tags_remove` keys", list(tags_remove.keys()), str)
 
-        verify_collection_type("`fields` values", list(fields.values()), (float, bool, int, str, datetime, list, set))
+        verify_collection_type("`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set))
         verify_collection_type("`metrics` values", list(metrics.values()), float)
-        verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
-        verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
+        verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set))
+        verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -381,10 +417,10 @@ class Run(WithResources, AbstractContextManager):
             run_id=self._run_id,
             step=step,
             timestamp=timestamp,
-            fields=fields,
+            fields=configs,
             metrics=metrics,
-            add_tags=add_tags,
-            remove_tags=remove_tags,
+            add_tags=tags_add,
+            remove_tags=tags_remove,
         )
 
         for operation in splitter:
