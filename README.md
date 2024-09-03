@@ -222,7 +222,7 @@ with Run(...) as run:
 
 Logs the specified metrics to a Neptune run.
 
-You can log metrics representing a series of float values. Pass the metadata as a dictionary `{key: value}` with
+You can log metrics representing a series of numeric values. Pass the metadata as a dictionary `{key: value}` with
 
 - `key`: path to where the metadata should be stored in the run.
 - `value`: the piece of metadata to log.
@@ -231,11 +231,11 @@ For example, `{"metrics/accuracy": 0.89}`. In the field path, each forward slash
 
 __Parameters__
 
-| Name          | Type                                               | Default | Description                                                               |
-|---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
-| `step`        | `Union[float, int]`, optional                      | `None`  | Index of the log entry. Must be increasing. If not specified, the `log_metrics()` call increments the step starting from the highest already logged value. **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
-| `timestamp`   | `datetime`, optional                               | `None`  | Time of logging the metadata. |
-| `data`     | `Dict[str, float]`, optional                       | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs. |
+| Name        | Type                                     | Default | Description                                                                                                                                                                                                                                                          |
+|-------------|------------------------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `step`      | `Union[float, int]`, optional            | `None`  | Index of the log entry. Must be increasing. If not specified, the `log_metrics()` call increments the step starting from the highest already logged value. **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
+| `timestamp` | `datetime`, optional                     | `None`  | Time of logging the metadata.                                                                                                                                                                                                                                        |
+| `data`      | `Dict[str, Union[float, int]]`, optional | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs.                                                                                                                           |
 
 __Examples__
 
