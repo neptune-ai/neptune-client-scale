@@ -108,7 +108,6 @@ class Run(WithResources, AbstractContextManager):
             resume: Whether to resume an existing run.
             mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
             as_experiment: If creating a run as an experiment, ID of an experiment to be associated with the run.
-                Max length: 730 bytes.
             creation_time: Custom creation time of the run.
             from_run_id: If forking from an existing run, ID of the run to fork from.
             from_step: If forking from an existing run, step number to fork from.
@@ -347,12 +346,6 @@ class Run(WithResources, AbstractContextManager):
 
         """
 
-        # Don't log anything after we've been stopped. This allows continuing the training script
-        # after a non-recoverable error happened.
-        with self._lock:
-            if self._is_closing:
-                return
-
         verify_type("step", step, (float, int, type(None)))
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("fields", fields, (dict, type(None)))
@@ -375,6 +368,12 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`metrics` values", list(metrics.values()), float)
         verify_collection_type("`add_tags` values", list(add_tags.values()), (list, set))
         verify_collection_type("`remove_tags` values", list(remove_tags.values()), (list, set))
+
+        # Don't log anything after we've been stopped. This allows continuing the training script
+        # after a non-recoverable error happened. Note we don't to use self._lock in this check,
+        # to keep the common path faster, because the benefit of locking here is minimal.
+        if self._is_closing:
+            return
 
         # TODO: move this to a separate process or thread, to make the .log call as lightweight as possible
         splitter: MetadataSplitter = MetadataSplitter(
