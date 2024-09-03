@@ -125,7 +125,7 @@ class Run(WithResources, AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
         """
-        
+
         verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -368,7 +368,7 @@ class Run(WithResources, AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        data: Optional[Dict[str, float]] = None,
+        data: Optional[Dict[str, Union[float, int]]] = None,
     ) -> None:
         self.log(step=step, timestamp=timestamp, metrics=data)
 
@@ -402,7 +402,7 @@ class Run(WithResources, AbstractContextManager):
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
         configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
-        metrics: Optional[Dict[str, float]] = None,
+        metrics: Optional[Dict[str, Union[float, int]]] = None,
         tags_add: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
         tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
@@ -449,7 +449,7 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`tags_remove` keys", list(tags_remove.keys()), str)
 
         verify_collection_type("`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set))
-        verify_collection_type("`metrics` values", list(metrics.values()), float)
+        verify_collection_type("`metrics` values", list(metrics.values()), (float, int))
         verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set))
         verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set))
 

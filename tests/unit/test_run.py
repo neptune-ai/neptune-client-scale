@@ -137,7 +137,8 @@ def test_metadata(api_token):
                 "datetime": datetime.now(),
             },
             metrics={
-                "metric": 1.0,
+                "metric": 3.14,
+                "metric2": 5,
             },
             tags_add={
                 "tags": ["tag1"],
