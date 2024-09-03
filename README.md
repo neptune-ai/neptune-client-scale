@@ -56,9 +56,9 @@ run.log_configs(
 )
 
 # inside a training loop
-for e in epoch:
+for step in range(100):
     run.log_metrics(
-        step=1,
+        step=step,
         data={"acc": 0.89, "loss": 0.17},
     )
 
