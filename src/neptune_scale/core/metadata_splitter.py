@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ("MetadataSplitter",)
 
 from datetime import datetime
+from itertools import starmap
 from typing import (
     Any,
     Callable,
@@ -52,7 +53,7 @@ class MetadataSplitter(Iterator[RunOperation]):
         self._project = project
         self._run_id = run_id
         self._fields = peekable(fields.items())
-        self._metrics = peekable(metrics.items())
+        self._metrics = peekable(starmap(lambda k, v: (k, float(v)), metrics.items()))
         self._add_tags = peekable(add_tags.items())
         self._remove_tags = peekable(remove_tags.items())
 
