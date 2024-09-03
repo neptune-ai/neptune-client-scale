@@ -4,7 +4,7 @@ import abc
 import threading
 from enum import Enum
 
-from ..logger import logger
+from neptune_scale.core.logger import logger
 
 
 class Daemon(threading.Thread):
