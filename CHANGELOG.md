@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - 2024-09-03
 
 ### Added
-- Added support for integer values when logging metric values
+- Added support for integer values when logging metric values ([#33](https://github.com/neptune-ai/neptune-client-scale/pull/33))
 
 ## [0.3.0] - 2024-09-03
 
