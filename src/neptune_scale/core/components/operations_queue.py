@@ -54,6 +54,7 @@ class OperationsQueue(Resource):
                 raise ValueError(f"Operation size exceeds the maximum allowed size ({MAX_QUEUE_ELEMENT_SIZE})")
 
             with self._lock:
+                # TODO: should we not block here, and just call the error callback if we were to block?
                 self._queue.put(
                     QueueElement(self._sequence_id, monotonic(), serialized_operation),
                     block=True,
