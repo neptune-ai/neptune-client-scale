@@ -3,8 +3,6 @@
 > [!NOTE]
 > This package only works with the `3.0` version of neptune.ai called Neptune Scale, which is in beta.
 >
-> It's supported on Linux and MacOS.
->
 > You can't use the Scale client with the stable Neptune `2.x` versions currently available to SaaS and self-hosting customers. For the Python client corresponding to Neptune `2.x`, see https://github.com/neptune-ai/neptune-client.
 
 **What is Neptune?**
@@ -29,7 +27,7 @@ pip install neptune-scale
 1. Create a project, or find an existing project you want to send the run metadata to.
 1. Get your API token from your user menu in the bottom left corner.
 
-    > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token.
+    > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, go to the workspace settings in the top right corner.
 
 1. In the environment where neptune-scale is installed, set the following environment variables to the API token and project name:
 
@@ -54,7 +52,8 @@ run = Run(
 )
 
 run.log_configs(
-    data={"learning_rate": 0.001, "batch_size": 64}
+    step=1,
+    data={"learning_rate": 0.001, "batch_size": 64},
 )
 
 # inside a training loop
@@ -102,7 +101,7 @@ __Parameters__
 | `project`        | `str`, optional  | `None`  | Name of a project in the form `workspace-name/project-name`. If `None`, the value of the `NEPTUNE_PROJECT` environment variable is used. |
 | `api_token`      | `str`, optional  | `None`  | Your Neptune API token or a service account's API token. If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, don't place it in source code. Instead, save it as an environment variable. |
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `fork_run_id` and `fork_step` instead. |
-| `mode`           | `Literal`, `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
+| `mode`           | `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
 | `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/experiments) in the Neptune documentation. |
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
 | `fork_run_id`    | `str`, optional  | `None` | If forking off an existing run, ID of the run to fork from. |
@@ -201,7 +200,7 @@ __Parameters__
 | Name          | Type                                               | Default | Description                                                               |
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
 | `timestamp`   | `datetime`, optional                               | `None`  | Time of logging the metadata. |
-| `data`      | `Dict[str, Union[float, bool, int, str, datetime, list, set]]`, optional  | `None` | Dictionary of configs or other values to log. Available types: float, integer, Boolean, string, and datetime. |
+| `data`      | `Dict[str, Union[float, bool, int, str, datetime]]`, optional  | `None` | Dictionary of configs or other values to log. Available types: float, integer, Boolean, string, and datetime. |
 
 __Examples__
 
@@ -247,6 +246,7 @@ from neptune_scale import Run
 
 with Run(...) as run:
     run.log_metrics(
+        step=1.2,
         data={"loss": 0.14, "acc": 0.78},
     )
 ```
