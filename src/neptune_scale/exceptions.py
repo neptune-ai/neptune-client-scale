@@ -482,4 +482,13 @@ Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` 
 
 
 class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
-    message = "Async lag threshold exceeded."
+    message = """
+    {h1}
+    ----NeptuneAsyncLagThresholdExceeded----------------------------------------
+    {end}
+    Neptune is experiencing a high delay in synchronizing data.
+
+    {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+
+    Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+    """
