@@ -262,7 +262,7 @@ def test_assign_experiment(api_token):
         api_token=api_token,
         family=family,
         run_id=run_id,
-        as_experiment="experiment_id",
+        experiment_name="experiment_id",
         mode="disabled",
     ):
         ...
@@ -283,8 +283,8 @@ def test_forking(api_token):
         api_token=api_token,
         family=family,
         run_id=run_id,
-        from_run_id="parent-run-id",
-        from_step=3.14,
+        fork_run_id="parent-run-id",
+        fork_step=3.14,
         mode="disabled",
     ):
         ...
