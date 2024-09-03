@@ -102,7 +102,7 @@ __Parameters__
 | `api_token`      | `str`, optional  | `None`  | Your Neptune API token or a service account's API token. If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, don't place it in source code. Instead, save it as an environment variable. |
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `fork_run_id` and `fork_step` instead. |
 | `mode`           | `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
-| `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/experiments) in the Neptune documentation. Max length: 730 bytes. |
+| `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/experiments) in the Neptune documentation. |
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
 | `fork_run_id`    | `str`, optional  | `None` | The ID of the run to fork from. |
 | `fork_step`      | `int`, optional  | `None` | The step number to fork from. |
