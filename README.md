@@ -104,8 +104,8 @@ __Parameters__
 | `mode`           | `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
 | `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/experiments) in the Neptune documentation. Max length: 730 bytes. |
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
-| `fork_run_id`    | `str`, optional  | `None` | If forking off an existing run, ID of the run to fork from. |
-| `fork_step`      | `int`, optional  | `None` | If forking off an existing run, step number to fork from. |
+| `fork_run_id`    | `str`, optional  | `None` | The ID of the run to fork from. |
+| `fork_step`      | `int`, optional  | `None` | The step number to fork from. |
 | `max_queue_size` | `int`, optional  | 1M | Maximum number of operations queued for processing. 1 000 000 by default. You should raise this value if you see the `on_queue_full_callback` function being called. |
 | `on_queue_full_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when the queue is full. The function must take as an argument the exception that made the queue full and, as an optional argument, a timestamp of when the exception was last raised. |
 | `on_network_error_callback` | `Callable[[BaseException, Optional[float]], None]`, optional | `None` | Callback function triggered when a network error occurs. |
