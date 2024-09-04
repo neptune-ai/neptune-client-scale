@@ -2,8 +2,12 @@ from __future__ import annotations
 
 __all__ = ("AggregatingQueue",)
 
-from queue import Queue
+from queue import (
+    Empty,
+    Queue,
+)
 from threading import RLock
+from typing import Optional
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.queue_element import QueueElement
@@ -26,6 +30,7 @@ class AggregatingQueue(Resource):
 
         self._queue: Queue[QueueElement] = Queue(maxsize=max_queue_size)
         self._lock: RLock = RLock()
+        self._latest_unprocessed: Optional[QueueElement] = None
 
     @property
     def maxsize(self) -> int:
@@ -35,6 +40,19 @@ class AggregatingQueue(Resource):
         with self._lock:
             self._queue.put_nowait(element)
 
+    def _get_next(self) -> Optional[QueueElement]:
+        if self._latest_unprocessed is not None:
+            return self._latest_unprocessed
+
+        try:
+            self._latest_unprocessed = self._queue.get_nowait()
+            return self._latest_unprocessed
+        except Empty:
+            return None
+
     def get_nowait(self) -> QueueElement:
         with self._lock:
-            return self._queue.get_nowait()
+            element = self._get_next()
+            if element is None:
+                raise Empty
+            return element
