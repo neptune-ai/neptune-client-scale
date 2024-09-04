@@ -199,7 +199,6 @@ __Parameters__
 
 | Name          | Type                                               | Default | Description                                                               |
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
-| `timestamp`   | `datetime`, optional                               | `None`  | Time of logging the metadata. |
 | `data`      | `Dict[str, Union[float, bool, int, str, datetime]]`, optional  | `None` | Dictionary of configs or other values to log. Available types: float, integer, Boolean, string, and datetime. |
 
 __Examples__
@@ -264,7 +263,6 @@ __Parameters__
 | Name          | Type                                         | Default | Description                                                               |
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
 | `tags`        | `Union[List[str], Set[str]]`                 | - | List or set of tags to add to the run. |
-| `timestamp`   | `datetime`, optional                         | `None`  | Time of logging the metadata. |
 | `group_tags`  | `bool`, optional                             | `False`  | Add group tags instead of regular tags. |
 
 __Example__
@@ -283,7 +281,6 @@ __Parameters__
 | Name          | Type                                         | Default | Description                                                               |
 |---------------|----------------------------------------------------|---------|---------------------------------------------------------------------------|
 | `tags`        | `Union[List[str], Set[str]]`                 | - | List or set of tags to remove from the run. |
-| `timestamp`   | `datetime`, optional                         | `None`  | Time of logging. |
 | `group_tags`  | `bool`, optional                             | `False`  | Remove group tags instead of regular tags. |
 
 __Example__

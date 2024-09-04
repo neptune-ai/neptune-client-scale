@@ -372,30 +372,16 @@ class Run(WithResources, AbstractContextManager):
     ) -> None:
         self.log(step=step, timestamp=timestamp, metrics=data)
 
-    def log_configs(
-        self,
-        timestamp: Optional[datetime] = None,
-        data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
-    ) -> None:
-        self.log(timestamp=timestamp, configs=data)
+    def log_configs(self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None) -> None:
+        self.log(configs=data)
 
-    def add_tags(
-        self,
-        tags: Union[List[str], Set[str]],
-        timestamp: Optional[datetime] = None,
-        group_tags: bool = False,
-    ) -> None:
+    def add_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
         name = "sys/tags" if not group_tags else "sys/group_tags"
-        self.log(timestamp=timestamp, tags_add={name: tags})
+        self.log(tags_add={name: tags})
 
-    def remove_tags(
-        self,
-        tags: Union[List[str], Set[str]],
-        timestamp: Optional[datetime] = None,
-        group_tags: bool = False,
-    ) -> None:
+    def remove_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
         name = "sys/tags" if not group_tags else "sys/group_tags"
-        self.log(timestamp=timestamp, tags_remove={name: tags})
+        self.log(tags_remove={name: tags})
 
     def log(
         self,
