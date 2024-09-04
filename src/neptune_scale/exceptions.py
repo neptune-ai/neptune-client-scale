@@ -79,7 +79,7 @@ To resolve this issue, consider the following:
         Note: To ensure that memory usage remains within acceptable limits,
         closely monitor your system's memory consumption.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -104,7 +104,7 @@ You don't have permission to access the given resource.
 
    - Ask your workspace admin to grant you the necessary privileges to the project.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -141,7 +141,7 @@ and omit the {bold}api_token{end} argument from the {bold}Run{end} constructor:
 Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
     {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME", api_token="YOUR_API_TOKEN"){end}
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -173,7 +173,7 @@ class NeptuneConnectionLostError(NeptuneRetryableError):
 The connection to the Neptune server was lost. Ensure that your computer is connected to the internet and that
     firewall settings aren't blocking the connection.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -187,7 +187,7 @@ class NeptuneUnexpectedResponseError(NeptuneRetryableError):
 The Neptune server returned an unexpected response. This is a temporary problem.
 If the problem persists, please contact us.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -200,7 +200,7 @@ class NeptuneInternalServerError(NeptuneRetryableError):
 {end}
 We have encountered an internal server error. If the problem persists, please contact us.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -213,7 +213,7 @@ class NeptuneUnableToAuthenticateError(NeptuneScaleError):
 {end}
 The client was unable to authenticate with the Neptune server. Ensure that your API token is correct.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -226,7 +226,7 @@ class NeptuneProjectNotFound(NeptuneScaleError):
 {end}
 Project not found. Either the project hasn't been created yet or the name is incorrect.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -239,7 +239,7 @@ class NeptuneProjectInvalidName(NeptuneScaleError):
 {end}
 Project name is either empty or too long.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -252,7 +252,7 @@ class NeptuneRunNotFound(NeptuneScaleError):
 {end}
 Run not found. May happen when the run is not yet created.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -265,7 +265,7 @@ class NeptuneRunDuplicate(NeptuneScaleWarning):
 {end}
 Identical run already exists.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -278,7 +278,7 @@ class NeptuneRunConflicting(NeptuneScaleError):
 {end}
 Run with specified `run_id` already exists, but has different creation parameters (`family` or `fork_run_id`).
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -291,7 +291,7 @@ class NeptuneRunForkParentNotFound(NeptuneScaleWarning):
 {end}
 Missing fork parent run.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -304,7 +304,7 @@ class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
 {end}
 Invalid run creation parameters. For example, the experiment name is too large.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -317,7 +317,7 @@ class NeptuneFieldPathExceedsSizeLimit(NeptuneScaleError):
 {end}
 Field path is too long. Maximum length is 1024 bytes (not characters).
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -330,7 +330,7 @@ class NeptuneFieldPathEmpty(NeptuneScaleError):
 {end}
 Field path is empty.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -343,7 +343,7 @@ class NeptuneFieldPathInvalid(NeptuneScaleError):
 {end}
 Field path is invalid. To troubleshoot the problem, ensure that the UTF-8 encoding is valid.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -356,7 +356,7 @@ class NeptuneFieldPathNonWritable(NeptuneScaleError):
 {end}
 Field path is non-writable. Some special sys/ fields are read-only.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -369,7 +369,7 @@ class NeptuneFieldTypeUnsupported(NeptuneScaleError):
 {end}
 Field type is not supported by the system.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -383,7 +383,7 @@ class NeptuneFieldTypeConflicting(NeptuneScaleError):
 Field type is different from the one that was previously logged for this series.
 Once a field type is set, it cannot be changed.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -396,7 +396,7 @@ class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
 {end}
 The exact same data point was already logged for this series.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -410,7 +410,7 @@ class NeptuneSeriesStepNonIncreasing(NeptuneScaleError):
 The step of a series value is smaller than the most recently logged step for this series or the step is exactly the same,
   but the value is different.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -423,7 +423,7 @@ class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
 {end}
 The series value must be greater than the step specified by the `fork_step` argument.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -436,7 +436,7 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 {end}
 The timestamp of a series value is less than the most recently logged value. Identical timestamps are allowed.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -449,7 +449,7 @@ class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
 {end}
 Unsupported value type for float64 field or float64 series. Applies to Inf and NaN values.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -462,7 +462,7 @@ class NeptuneStringValueExceedsSizeLimit(NeptuneScaleError):
 {end}
 String value is too long. Maximum length is 64KB.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -475,7 +475,7 @@ class NeptuneStringSetExceedsSizeLimit(NeptuneScaleError):
 {end}
 String Set value is too long. Maximum length is 64KB.
 
-{correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+{correct}Need help?{end}-> Contact support@neptune.ai
 
 Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
@@ -488,7 +488,7 @@ class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
     {end}
     Neptune is experiencing a high delay in synchronizing data.
 
-    {correct}Need help?{end}-> https://docs.neptune.ai/getting_help
+    {correct}Need help?{end}-> Contact support@neptune.ai
 
     Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
     """
