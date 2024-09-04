@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<<<<<<< Updated upstream
 ### Changes
 - Removed `timestamp` parameter from `add_tags()`, `remove_tags()` and `log_configs()` methods ([#37](https://github.com/neptune-ai/neptune-client-scale/pull/37))
+=======
+### Changed
+- Performance improvements of metadata logging
+>>>>>>> Stashed changes
 
 ## [0.4.0] - 2024-09-03
 

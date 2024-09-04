@@ -51,6 +51,7 @@ from neptune_scale.core.components.abstract import (
     Resource,
     WithResources,
 )
+from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
@@ -278,7 +279,7 @@ class SyncProcessWorker(WithResources):
     ) -> None:
         self._errors_queue = errors_queue
 
-        self._internal_operations_queue: queue.Queue[QueueElement] = queue.Queue(maxsize=max_queue_size)
+        self._internal_operations_queue: AggregatingQueue = AggregatingQueue(max_queue_size=max_queue_size)
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         self._sync_thread = SenderThread(
             api_token=api_token,
@@ -337,13 +338,13 @@ class InternalQueueFeederThread(Daemon, Resource):
     def __init__(
         self,
         external: multiprocessing.Queue[QueueElement],
-        internal: queue.Queue[QueueElement],
+        internal: AggregatingQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
         self._external: multiprocessing.Queue[QueueElement] = external
-        self._internal: queue.Queue[QueueElement] = internal
+        self._internal: AggregatingQueue = internal
         self._errors_queue: ErrorsQueue = errors_queue
 
         self._latest_unprocessed: Optional[QueueElement] = None
@@ -384,7 +385,7 @@ class SenderThread(Daemon, WithResources):
         self,
         api_token: str,
         family: str,
-        operations_queue: queue.Queue[QueueElement],
+        operations_queue: AggregatingQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         last_put_seq: Synchronized[int],
@@ -395,7 +396,7 @@ class SenderThread(Daemon, WithResources):
 
         self._api_token: str = api_token
         self._family: str = family
-        self._operations_queue: queue.Queue[QueueElement] = operations_queue
+        self._operations_queue: AggregatingQueue = operations_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._last_put_seq: Synchronized[int] = last_put_seq
