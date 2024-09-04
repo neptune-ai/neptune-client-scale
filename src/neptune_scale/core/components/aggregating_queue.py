@@ -82,8 +82,8 @@ class AggregatingQueue(Resource):
             if batch is None:
                 raise Empty
 
-            assert batch_sequence_id is not None
-            assert batch_timestamp is not None
+            assert batch_sequence_id is not None  # mypy
+            assert batch_timestamp is not None  # mypy
 
             return QueueElement(
                 sequence_id=batch_sequence_id,
