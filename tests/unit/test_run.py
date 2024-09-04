@@ -152,6 +152,23 @@ def test_metadata(api_token):
     assert True
 
 
+def test_tags(api_token):
+    # given
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+        run.add_tags(["tag1"])
+        run.add_tags(["tag2"], group_tags=True)
+        run.remove_tags(["tag3"])
+        run.remove_tags(["tag4"], group_tags=True)
+
+    # and
+    assert True
+
+
 def test_log_without_step(api_token):
     # given
     project = "workspace/project"
@@ -166,6 +183,20 @@ def test_log_without_step(api_token):
                 "int": 1,
             },
         )
+
+    # and
+    assert True
+
+
+def test_log_configs(api_token):
+    # given
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+    family = run_id
+
+    # then
+    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+        run.log_configs({"int": 1})
 
     # and
     assert True
