@@ -49,6 +49,7 @@ from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
 )
+from neptune_scale.core.util import safe_signal_name
 from neptune_scale.core.validation import (
     verify_collection_type,
     verify_max_length,
@@ -266,7 +267,10 @@ class Run(WithResources, AbstractContextManager):
             self.wait_for_processing(verbose=False)
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
-        logger.debug(f"Received signal {signum}. Terminating.")
+        if not self._is_closing:
+            signame = safe_signal_name(signum)
+            logger.debug(f"Received signal {signame}. Terminating.")
+
         self.terminate()
 
     @property
@@ -321,7 +325,8 @@ class Run(WithResources, AbstractContextManager):
         the training process in case of an unrecoverable error.
         """
 
-        logger.info("Terminating Run.")
+        if not self._is_closing:
+            logger.info("Terminating Run.")
 
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
