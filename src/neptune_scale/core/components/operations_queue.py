@@ -10,7 +10,7 @@ from typing import (
 )
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.core.components.queue_element import BatchedOperations
 from neptune_scale.core.logger import logger
 from neptune_scale.core.validation import verify_type
 from neptune_scale.parameters import (
@@ -39,10 +39,10 @@ class OperationsQueue(Resource):
 
         self._sequence_id: int = 0
         self._last_timestamp: Optional[float] = None
-        self._queue: Queue[QueueElement] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
+        self._queue: Queue[BatchedOperations] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
 
     @property
-    def queue(self) -> Queue[QueueElement]:
+    def queue(self) -> Queue[BatchedOperations]:
         return self._queue
 
     @property
@@ -66,7 +66,7 @@ class OperationsQueue(Resource):
                 self._last_timestamp = monotonic()
                 # TODO: should we not block here, and just call the error callback if we were to block?
                 self._queue.put(
-                    QueueElement(self._sequence_id, self._last_timestamp, serialized_operation),
+                    BatchedOperations(self._sequence_id, self._last_timestamp, serialized_operation),
                     block=True,
                     timeout=None,
                 )

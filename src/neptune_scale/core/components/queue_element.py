@@ -1,9 +1,9 @@
-__all__ = ("QueueElement",)
+__all__ = ("BatchedOperations",)
 
 from typing import NamedTuple
 
 
-class QueueElement(NamedTuple):
+class BatchedOperations(NamedTuple):
     sequence_id: int
     timestamp: float
     operation: bytes

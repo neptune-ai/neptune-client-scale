@@ -54,7 +54,7 @@ from neptune_scale.core.components.abstract import (
 from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
-from neptune_scale.core.components.queue_element import QueueElement
+from neptune_scale.core.components.queue_element import BatchedOperations
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -202,7 +202,7 @@ class SyncProcess(Process):
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self._external_operations_queue: Queue[QueueElement] = operations_queue
+        self._external_operations_queue: Queue[BatchedOperations] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._api_token: str = api_token
         self._project: str = project
@@ -268,7 +268,7 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
-        external_operations_queue: multiprocessing.Queue[QueueElement],
+        external_operations_queue: multiprocessing.Queue[BatchedOperations],
         last_put_seq: Synchronized[int],
         last_put_seq_wait: Condition,
         last_ack_seq: Synchronized[int],
@@ -337,19 +337,19 @@ class SyncProcessWorker(WithResources):
 class InternalQueueFeederThread(Daemon, Resource):
     def __init__(
         self,
-        external: multiprocessing.Queue[QueueElement],
+        external: multiprocessing.Queue[BatchedOperations],
         internal: AggregatingQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
-        self._external: multiprocessing.Queue[QueueElement] = external
+        self._external: multiprocessing.Queue[BatchedOperations] = external
         self._internal: AggregatingQueue = internal
         self._errors_queue: ErrorsQueue = errors_queue
 
-        self._latest_unprocessed: Optional[QueueElement] = None
+        self._latest_unprocessed: Optional[BatchedOperations] = None
 
-    def get_next(self) -> Optional[QueueElement]:
+    def get_next(self) -> Optional[BatchedOperations]:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 
@@ -404,9 +404,9 @@ class SenderThread(Daemon, WithResources):
         self._mode: Literal["async", "disabled"] = mode
 
         self._backend: Optional[ApiClient] = None
-        self._latest_unprocessed: Optional[QueueElement] = None
+        self._latest_unprocessed: Optional[BatchedOperations] = None
 
-    def get_next(self) -> Optional[QueueElement]:
+    def get_next(self) -> Optional[BatchedOperations]:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 
