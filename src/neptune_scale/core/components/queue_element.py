@@ -1,6 +1,9 @@
 __all__ = ("BatchedOperations", "SingleOperation")
 
-from typing import NamedTuple
+from typing import (
+    NamedTuple,
+    Optional,
+)
 
 
 class BatchedOperations(NamedTuple):
@@ -19,7 +22,9 @@ class SingleOperation(NamedTuple):
     timestamp: float
     # Protobuf serialized (RunOperation)
     operation: bytes
-    # Size of the metadata in the operation (without project, family, run_id etc.)
-    metadata_size: int
     # Whether the operation is metadata update or not (run creation)
     is_metadata_update: bool
+    # Size of the metadata in the operation (without project, family, run_id etc.)
+    metadata_size: Optional[int]
+    # Update metadata key
+    operation_key: Optional[float]

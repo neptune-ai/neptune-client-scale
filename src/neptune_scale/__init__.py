@@ -458,7 +458,7 @@ class Run(WithResources, AbstractContextManager):
         )
 
         for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, metadata_size=metadata_size)
+            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
 
     def _wait(
         self,
