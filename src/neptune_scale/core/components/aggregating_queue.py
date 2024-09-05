@@ -90,7 +90,7 @@ class AggregatingQueue(Resource):
                     if batch_key != element.operation_key or not element.is_metadata_update:
                         break
 
-                    assert element.metadata_size is not None  # mypy
+                    assert element.metadata_size is not None  # mypy, metadata update always has metadata size
 
                     if batch_bytes + element.metadata_size > self._max_queue_element_size:
                         break
