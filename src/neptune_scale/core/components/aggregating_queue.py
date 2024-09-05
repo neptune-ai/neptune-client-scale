@@ -12,7 +12,7 @@ from typing import Optional
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import BatchedOperations
+from neptune_scale.core.components.queue_element import BatchedOperations, SingleOperation
 from neptune_scale.parameters import MAX_QUEUE_ELEMENT_SIZE
 
 
@@ -27,19 +27,19 @@ class AggregatingQueue(Resource):
         self._max_elements_in_batch = max_elements_in_batch
         self._max_queue_element_size = max_queue_element_size
 
-        self._queue: Queue[BatchedOperations] = Queue(maxsize=max_queue_size)
+        self._queue: Queue[SingleOperation] = Queue(maxsize=max_queue_size)
         self._lock: RLock = RLock()
-        self._latest_unprocessed: Optional[BatchedOperations] = None
+        self._latest_unprocessed: Optional[SingleOperation] = None
 
     @property
     def maxsize(self) -> int:
         return self._max_queue_size
 
-    def put_nowait(self, element: BatchedOperations) -> None:
+    def put_nowait(self, element: SingleOperation) -> None:
         with self._lock:
             self._queue.put_nowait(element)
 
-    def _get_next(self) -> Optional[BatchedOperations]:
+    def _get_next(self) -> Optional[SingleOperation]:
         # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE
         # We can assume that every queue element has the same project, run id and family
         if self._latest_unprocessed is not None:

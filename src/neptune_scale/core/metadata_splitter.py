@@ -13,7 +13,7 @@ from typing import (
     Optional,
     Set,
     TypeVar,
-    Union,
+    Union, Tuple,
 )
 
 from more_itertools import peekable
@@ -34,7 +34,7 @@ from neptune_scale.core.serialization import (
 T = TypeVar("T", bound=Any)
 
 
-class MetadataSplitter(Iterator[RunOperation]):
+class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
     def __init__(
         self,
         *,
@@ -72,7 +72,7 @@ class MetadataSplitter(Iterator[RunOperation]):
         self._has_returned = False
         return self
 
-    def __next__(self) -> RunOperation:
+    def __next__(self) -> Tuple[RunOperation, int]:
         size = 0
         update = UpdateRunSnapshot(
             step=self._step,
@@ -107,7 +107,7 @@ class MetadataSplitter(Iterator[RunOperation]):
 
         if not self._has_returned or update.assign or update.append or update.modify_sets:
             self._has_returned = True
-            return RunOperation(project=self._project, run_id=self._run_id, update=update)
+            return RunOperation(project=self._project, run_id=self._run_id, update=update), size
         else:
             raise StopIteration
 

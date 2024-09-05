@@ -10,7 +10,7 @@ from typing import (
 )
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import BatchedOperations
+from neptune_scale.core.components.queue_element import BatchedOperations, SingleOperation
 from neptune_scale.core.logger import logger
 from neptune_scale.core.validation import verify_type
 from neptune_scale.parameters import (
@@ -39,10 +39,10 @@ class OperationsQueue(Resource):
 
         self._sequence_id: int = 0
         self._last_timestamp: Optional[float] = None
-        self._queue: Queue[BatchedOperations] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
+        self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
 
     @property
-    def queue(self) -> Queue[BatchedOperations]:
+    def queue(self) -> Queue[SingleOperation]:
         return self._queue
 
     @property
@@ -55,8 +55,9 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation) -> None:
+    def enqueue(self, *, operation: RunOperation, metadata_size: int) -> None:
         try:
+            is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
 
             if len(serialized_operation) > MAX_QUEUE_ELEMENT_SIZE:
@@ -66,7 +67,13 @@ class OperationsQueue(Resource):
                 self._last_timestamp = monotonic()
                 # TODO: should we not block here, and just call the error callback if we were to block?
                 self._queue.put(
-                    BatchedOperations(self._sequence_id, self._last_timestamp, serialized_operation),
+                    SingleOperation(
+                        sequence_id=self._sequence_id,
+                        timestamp=self._last_timestamp,
+                        operation=serialized_operation,
+                        metadata_size=metadata_size,
+                        is_metadata_update=is_metadata_update,
+                    ),
                     block=True,
                     timeout=None,
                 )

@@ -457,8 +457,8 @@ class Run(WithResources, AbstractContextManager):
             remove_tags=tags_remove,
         )
 
-        for operation in splitter:
-            self._operations_queue.enqueue(operation=operation)
+        for operation, metadata_size in splitter:
+            self._operations_queue.enqueue(operation=operation, metadata_size=metadata_size)
 
     def _wait(
         self,
