@@ -54,7 +54,10 @@ from neptune_scale.core.components.abstract import (
 from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
-from neptune_scale.core.components.queue_element import BatchedOperations, SingleOperation
+from neptune_scale.core.components.queue_element import (
+    BatchedOperations,
+    SingleOperation,
+)
 from neptune_scale.core.logger import logger
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
