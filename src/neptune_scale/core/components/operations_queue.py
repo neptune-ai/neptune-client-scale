@@ -10,7 +10,7 @@ from typing import (
 )
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import BatchedOperations, SingleOperation
+from neptune_scale.core.components.queue_element import SingleOperation
 from neptune_scale.core.logger import logger
 from neptune_scale.core.validation import verify_type
 from neptune_scale.parameters import (
@@ -55,7 +55,7 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, metadata_size: int) -> None:
+    def enqueue(self, *, operation: RunOperation, metadata_size: Optional[int] = None) -> None:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
@@ -71,7 +71,7 @@ class OperationsQueue(Resource):
                         sequence_id=self._sequence_id,
                         timestamp=self._last_timestamp,
                         operation=serialized_operation,
-                        metadata_size=metadata_size,
+                        metadata_size=metadata_size or 0,
                         is_metadata_update=is_metadata_update,
                     ),
                     block=True,
