@@ -55,6 +55,7 @@ from neptune_scale.core.components.daemon import Daemon
 from neptune_scale.core.components.errors_tracking import ErrorsQueue
 from neptune_scale.core.components.queue_element import QueueElement
 from neptune_scale.core.logger import logger
+from neptune_scale.core.util import safe_signal_name
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneFieldPathEmpty,
@@ -219,7 +220,7 @@ class SyncProcess(Process):
         self._stop_event = multiprocessing.Event()
 
     def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
-        logger.debug("Received signal %d", signum)
+        logger.debug(f"Received signal {safe_signal_name(signum)}")
         self._stop_event.set()  # Trigger the stop event
 
     def run(self) -> None:
