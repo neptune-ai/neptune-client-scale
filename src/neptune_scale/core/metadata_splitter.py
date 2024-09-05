@@ -12,8 +12,9 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     TypeVar,
-    Union, Tuple,
+    Union,
 )
 
 from more_itertools import peekable
@@ -73,7 +74,6 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         return self
 
     def __next__(self) -> Tuple[RunOperation, int]:
-        size = 0
         update = UpdateRunSnapshot(
             step=self._step,
             timestamp=self._timestamp,
@@ -81,6 +81,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
             append={},
             modify_sets={},
         )
+        size = update.ByteSize()
 
         size = self.populate(
             assets=self._fields,
@@ -98,7 +99,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
             operation=SET_OPERATION.ADD,
             size=size,
         )
-        _ = self.populate_tags(
+        size = self.populate_tags(
             update=update,
             assets=self._remove_tags,
             operation=SET_OPERATION.REMOVE,

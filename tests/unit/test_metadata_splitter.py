@@ -37,11 +37,10 @@ def test_empty():
     assert len(result) == 1
     operation, metadata_size = result[0]
     expected_update = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0),
-        timestamp=Timestamp(seconds=1722341532, nanos=21934)
+        step=Step(whole=1, micro=0), timestamp=Timestamp(seconds=1722341532, nanos=21934)
     )
     assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
-    assert metadata_size == 0
+    assert metadata_size == expected_update.ByteSize()
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
