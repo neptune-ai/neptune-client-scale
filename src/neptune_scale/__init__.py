@@ -421,7 +421,7 @@ class Run(WithResources, AbstractContextManager):
 
         Args:
             tags: Tags to add to the run, as a list or set of strings.
-            group_tags: Add group tags instead of regular tags.
+            group_tags: To add group tags instead of regular tags, set to `True`.
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
@@ -432,7 +432,7 @@ class Run(WithResources, AbstractContextManager):
 
         Args:
             tags: Tags to remove to the run, as a list or set of strings.
-            group_tags: Remove group tags instead of regular tags.
+            group_tags: To remove group tags instead of regular tags, set to `True`.
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_remove={name: tags})
