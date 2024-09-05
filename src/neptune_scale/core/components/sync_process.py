@@ -369,7 +369,6 @@ class InternalQueueFeederThread(Daemon, Resource):
         try:
             while (operation := self.get_next()) is not None:
                 try:
-                    logger.debug("Copying operation #%d to internal queue", operation.sequence_id)
                     self._internal.put_nowait(operation)
                     self.commit()
                 except queue.Full:

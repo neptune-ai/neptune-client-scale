@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ("AggregatingQueue",)
 
+import time
 from queue import (
     Empty,
     Queue,
@@ -16,14 +17,18 @@ from neptune_scale.core.components.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.parameters import MAX_QUEUE_ELEMENT_SIZE
+from neptune_scale.core.logger import logger
+from neptune_scale.parameters import (
+    MAX_BATCH_SIZE,
+    MAX_QUEUE_ELEMENT_SIZE,
+)
 
 
 class AggregatingQueue(Resource):
     def __init__(
         self,
         max_queue_size: int,
-        max_elements_in_batch: int = 1,  # TODO: Restore default value to MAX_BATCH_SIZE
+        max_elements_in_batch: int = MAX_BATCH_SIZE,
         max_queue_element_size: int = MAX_QUEUE_ELEMENT_SIZE,
     ) -> None:
         self._max_queue_size = max_queue_size
@@ -45,75 +50,92 @@ class AggregatingQueue(Resource):
     def _get_next(self) -> Optional[SingleOperation]:
         # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE
         # We can assume that every queue element has the same project, run id and family
-        if self._latest_unprocessed is not None:
-            return self._latest_unprocessed
+        with self._lock:
+            if self._latest_unprocessed is not None:
+                return self._latest_unprocessed
 
-        try:
-            self._latest_unprocessed = self._queue.get_nowait()
-            return self._latest_unprocessed
-        except Empty:
-            return None
+            try:
+                self._latest_unprocessed = self._queue.get_nowait()
+                return self._latest_unprocessed
+            except Empty:
+                return None
 
     def commit(self) -> None:
         self._latest_unprocessed = None
 
     def get_nowait(self) -> BatchedOperations:
-        with self._lock:
-            elements_in_batch: int = 0
-            batch: Optional[RunOperation] = None
-            batch_sequence_id: Optional[int] = None
-            batch_timestamp: Optional[float] = None
-            batch_key: Optional[float] = None
-            batch_bytes: int = 0
+        start = time.process_time()
+        elements_in_batch: int = 0
+        batch: Optional[RunOperation] = None
+        batch_sequence_id: Optional[int] = None
+        batch_timestamp: Optional[float] = None
+        batch_key: Optional[float] = None
+        batch_bytes: int = 0
 
-            while (element := self._get_next()) is not None:
-                elements_in_batch += 1
+        while (element := self._get_next()) is not None:
+            elements_in_batch += 1
 
-                if elements_in_batch > self._max_elements_in_batch:
-                    break
-
-                if batch is None:
-                    batch = RunOperation()
-                    batch.ParseFromString(element.operation)
-
-                    batch_sequence_id = element.sequence_id
-                    batch_timestamp = element.timestamp
-                    batch_key = element.operation_key
-                    batch_bytes = len(element.operation)
-
-                    self.commit()
-
-                    if not element.is_metadata_update:
-                        break
-                else:
-                    if batch_key != element.operation_key or not element.is_metadata_update:
-                        break
-
-                    assert element.metadata_size is not None  # mypy, metadata update always has metadata size
-
-                    if batch_bytes + element.metadata_size > self._max_queue_element_size:
-                        break
-
-                    batch_bytes += element.metadata_size
-
-                    new_operation = RunOperation()
-                    new_operation.ParseFromString(element.operation)
-
-                    batch.MergeFrom(new_operation)
-
-                    batch_sequence_id = element.sequence_id
-                    batch_timestamp = element.timestamp
-
-                    self.commit()
+            if elements_in_batch > self._max_elements_in_batch:
+                break
 
             if batch is None:
-                raise Empty
+                batch = RunOperation()
+                batch.ParseFromString(element.operation)
 
-            assert batch_sequence_id is not None  # mypy
-            assert batch_timestamp is not None  # mypy
+                batch_sequence_id = element.sequence_id
+                batch_timestamp = element.timestamp
+                batch_key = element.operation_key
+                batch_bytes = len(element.operation)
 
-            return BatchedOperations(
-                sequence_id=batch_sequence_id,
-                timestamp=batch_timestamp,
-                operation=batch.SerializeToString(),
-            )
+                self.commit()
+
+                if not element.is_metadata_update:
+                    logger.debug("Batch closed due to first operation being run creation")
+                    break
+            else:
+                if batch_key != element.operation_key:
+                    logger.debug("Batch closed due to key mismatch")
+                    break
+
+                if not element.is_metadata_update:
+                    logger.debug("Batch closed due to next operation being run creation")
+                    break
+
+                assert element.metadata_size is not None  # mypy, metadata update always has metadata size
+
+                if batch_bytes + element.metadata_size > self._max_queue_element_size:
+                    logger.debug("Batch closed due to size limit %s", batch_bytes + element.metadata_size)
+                    break
+
+                batch_bytes += element.metadata_size
+
+                new_operation = RunOperation()
+                new_operation.ParseFromString(element.operation)
+
+                batch.MergeFrom(new_operation)
+
+                batch_sequence_id = element.sequence_id
+                batch_timestamp = element.timestamp
+
+                self.commit()
+        else:
+            logger.debug("Batch closed due to queue being empty")
+
+        if batch is None:
+            raise Empty
+
+        assert batch_sequence_id is not None  # mypy
+        assert batch_timestamp is not None  # mypy
+
+        logger.debug(
+            "Batched %d operations. Total size %d. Total time %f",
+            elements_in_batch,
+            batch_bytes,
+            time.process_time() - start,
+        )
+
+        return BatchedOperations(
+            sequence_id=batch_sequence_id,
+            timestamp=batch_timestamp,
+            operation=batch.SerializeToString(),
+        )
