@@ -12,7 +12,10 @@ from typing import Optional
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import BatchedOperations, SingleOperation
+from neptune_scale.core.components.queue_element import (
+    BatchedOperations,
+    SingleOperation,
+)
 from neptune_scale.parameters import MAX_QUEUE_ELEMENT_SIZE
 
 
@@ -60,8 +63,11 @@ class AggregatingQueue(Resource):
             batch: Optional[RunOperation] = None
             batch_sequence_id: Optional[int] = None
             batch_timestamp: Optional[float] = None
+            batch_key: Optional[float] = None
+            batch_bytes: int = 0
 
             while (element := self._get_next()) is not None:
+                print(element)
                 elements_in_batch += 1
 
                 if elements_in_batch > self._max_elements_in_batch:
@@ -70,14 +76,36 @@ class AggregatingQueue(Resource):
                 if batch is None:
                     batch = RunOperation()
                     batch.ParseFromString(element.operation)
-                    batch_sequence_id, batch_timestamp = element.sequence_id, element.timestamp
+
+                    batch_sequence_id = element.sequence_id
+                    batch_timestamp = element.timestamp
+                    batch_key = element.operation_key
+                    batch_bytes = len(element.operation)
+
                     self.commit()
+
+                    if not element.is_metadata_update:
+                        break
                 else:
-                    # TODO: Check if steps and timestamps are the same
-                    # TODO: Merge if size allows
-                    # TODO: Update batch sequence_id and timestamp
-                    pass
-                    break
+                    if batch_key != element.operation_key or not element.is_metadata_update:
+                        break
+
+                    assert element.metadata_size is not None  # mypy
+
+                    if batch_bytes + element.metadata_size > self._max_queue_element_size:
+                        break
+
+                    batch_bytes += element.metadata_size
+
+                    new_operation = RunOperation()
+                    new_operation.ParseFromString(element.operation)
+
+                    batch.MergeFrom(new_operation)
+
+                    batch_sequence_id = element.sequence_id
+                    batch_timestamp = element.timestamp
+
+                    self.commit()
 
             if batch is None:
                 raise Empty
