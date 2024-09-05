@@ -5,7 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2024-09-05
+
+### Added
+- Added docstrings to logging methods ([#40](https://github.com/neptune-ai/neptune-client-scale/pull/40))
 
 ### Changes
 - Removed `timestamp` parameter from `add_tags()`, `remove_tags()` and `log_configs()` methods ([#37](https://github.com/neptune-ai/neptune-client-scale/pull/37))
@@ -37,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial package release
 
-[unreleased]: https://github.com/neptune-ai/neptune-api/compare/0.4.0...HEAD
+[unreleased]: https://github.com/neptune-ai/neptune-api/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/neptune-ai/neptune-api/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/neptune-ai/neptune-api/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/neptune-ai/neptune-api/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/neptune-ai/neptune-api/compare/0.1.0...0.2.0
