@@ -320,6 +320,19 @@ class Run(WithResources, AbstractContextManager):
 
         Use in error callbacks to stop the run from interfering with the training process
         in case of an unrecoverable error.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            def my_error_callback(exc):
+                run.terminate()
+
+            run = Run(
+                on_error_callback=my_error_callback
+                ...,
+            )
+            ```
         """
 
         logger.info("Terminating Run.")
@@ -334,6 +347,16 @@ class Run(WithResources, AbstractContextManager):
         Closes the connection to Neptune and waits for data synchronization to be completed.
 
         Use to finalize a regular run your model-training script.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                # logging and training code
+
+                run.close()
+            ```
         """
 
         if self._exit_func is not None:
@@ -393,6 +416,18 @@ class Run(WithResources, AbstractContextManager):
             data: Dictionary of metrics to log.
                 Each metric value is associated with a step.
                 To log multiple metrics at once, pass multiple key-value pairs.
+
+
+        Examples:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_metrics(
+                    step=1.2,
+                    data={"loss": 0.14, "acc": 0.78},
+                )
+            ```
         """
         self.log(step=step, timestamp=timestamp, metrics=data)
 
@@ -412,6 +447,19 @@ class Run(WithResources, AbstractContextManager):
         Args:
             data: Dictionary of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_configs(
+                    data={
+                        "parameters/learning_rate": 0.001,
+                        "parameters/batch_size": 64,
+                    },
+                )
+            ```
         """
         self.log(configs=data)
 
@@ -422,6 +470,14 @@ class Run(WithResources, AbstractContextManager):
         Args:
             tags: Tags to add to the run, as a list or set of strings.
             group_tags: To add group tags instead of regular tags, set to `True`.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.add_tags(tags=["tag1", "tag2", "tag3"])
+            ```
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
@@ -433,6 +489,14 @@ class Run(WithResources, AbstractContextManager):
         Args:
             tags: Tags to remove to the run, as a list or set of strings.
             group_tags: To remove group tags instead of regular tags, set to `True`.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.remove_tags(tags=["tag2", "tag3"])
+            ```
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_remove={name: tags})
@@ -447,27 +511,12 @@ class Run(WithResources, AbstractContextManager):
         tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
-        Logs the specified metadata to Neptune.
+        See one of the following instead:
 
-        Args:
-            step: Index of the log entry, must be increasing for a given metric.
-                  If None, the highest of the already logged steps in a given metric is used.
-                  Step applies only to the `metrics` argument, and is not relevant for configs and tags.
-            timestamp: Time of logging the metadata.
-            configs: Dictionary of configs to log.
-            metrics: Dictionary of metrics to log.
-            tags_add: Dictionary of items to add to a field of String Set type
-            tags_remove: Dictionary of tags to remove from a field of String Set type
-
-        Examples:
-            ```
-            >>> with Run(...) as run:
-            ...     run.log(step=1, configs={"parameters/learning_rate": 0.001})
-            ...     run.log(step=2, tags_add={"sys/group_tags": ["group1", "group2"]})
-            ...     run.log(step=3, metrics={"metrics/loss": 0.1})
-            ...     run.log(tags_remove={"sys/group_tags": ["group2"]})
-            ```
-
+        - log_configs()
+        - log_metrics()
+        - add_tags()
+        - remove_tags()
         """
 
         verify_type("step", step, (float, int, type(None)))
