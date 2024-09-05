@@ -67,7 +67,6 @@ class AggregatingQueue(Resource):
             batch_bytes: int = 0
 
             while (element := self._get_next()) is not None:
-                print(element)
                 elements_in_batch += 1
 
                 if elements_in_batch > self._max_elements_in_batch:
