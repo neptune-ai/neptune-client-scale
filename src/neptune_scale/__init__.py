@@ -320,9 +320,23 @@ class Run(WithResources, AbstractContextManager):
 
     def terminate(self) -> None:
         """
-        Terminates the run, closing the connection and aborting all synchronization mechanisms.
-        This method is usually used in error callbacks to stop the Run from interfering with
-        the training process in case of an unrecoverable error.
+        Closes the connection and aborts all synchronization mechanisms.
+
+        Use in error callbacks to stop the run from interfering with the training process
+        in case of an unrecoverable error.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            def my_error_callback(exc):
+                run.terminate()
+
+            run = Run(
+                on_error_callback=my_error_callback
+                ...,
+            )
+            ```
         """
 
         if not self._is_closing:
@@ -336,7 +350,18 @@ class Run(WithResources, AbstractContextManager):
     def close(self) -> None:
         """
         Closes the connection to Neptune and waits for data synchronization to be completed.
-        This is a regular way to finalize a Run.
+
+        Use to finalize a regular run your model-training script.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                # logging and training code
+
+                run.close()
+            ```
         """
 
         if self._exit_func is not None:
@@ -375,16 +400,109 @@ class Run(WithResources, AbstractContextManager):
         timestamp: Optional[datetime] = None,
         data: Optional[Dict[str, Union[float, int]]] = None,
     ) -> None:
+        """
+        Logs the specified metrics to a Neptune run.
+
+        You can log metrics representing a series of numeric values. Pass the metadata as a dictionary {key: value} with
+
+        - key: path to where the metadata should be stored in the run.
+        - value: a float or int value to append to the series.
+
+        For example, {"metrics/accuracy": 0.89}.
+        In the field path, each forward slash "/" nests the field under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
+
+        Args:
+            step: Index of the log entry. Must be increasing.
+                If not specified, the log_metrics() call increments the step starting from the highest
+                already logged value.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp: Time of logging the metadata.
+            data: Dictionary of metrics to log.
+                Each metric value is associated with a step.
+                To log multiple metrics at once, pass multiple key-value pairs.
+
+
+        Examples:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_metrics(
+                    step=1.2,
+                    data={"loss": 0.14, "acc": 0.78},
+                )
+            ```
+        """
         self.log(step=step, timestamp=timestamp, metrics=data)
 
     def log_configs(self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None) -> None:
+        """
+        Logs the specified metadata to a Neptune run.
+
+        You can log configurations or other single values. Pass the metadata as a dictionary {key: value} with
+
+        - key: path to where the metadata should be stored in the run.
+        - value: configuration or other single value to log.
+
+        For example, {"parameters/learning_rate": 0.001}.
+        In the field path, each forward slash "/" nests the field under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
+
+        Args:
+            data: Dictionary of configs or other values to log.
+                Available types: float, integer, Boolean, string, and datetime.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_configs(
+                    data={
+                        "parameters/learning_rate": 0.001,
+                        "parameters/batch_size": 64,
+                    },
+                )
+            ```
+        """
         self.log(configs=data)
 
     def add_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+        """
+        Adds the list of tags to the run.
+
+        Args:
+            tags: Tags to add to the run, as a list or set of strings.
+            group_tags: To add group tags instead of regular tags, set to `True`.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.add_tags(tags=["tag1", "tag2", "tag3"])
+            ```
+        """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
 
     def remove_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+        """
+        Removes the specified tags from the run.
+
+        Args:
+            tags: Tags to remove to the run, as a list or set of strings.
+            group_tags: To remove group tags instead of regular tags, set to `True`.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.remove_tags(tags=["tag2", "tag3"])
+            ```
+        """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_remove={name: tags})
 
@@ -398,27 +516,12 @@ class Run(WithResources, AbstractContextManager):
         tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
     ) -> None:
         """
-        Logs the specified metadata to Neptune.
+        See one of the following instead:
 
-        Args:
-            step: Index of the log entry, must be increasing for a given metric.
-                  If None, the highest of the already logged steps in a given metric is used.
-                  Step applies only to the `metrics` argument, and is not relevant for configs and tags.
-            timestamp: Time of logging the metadata.
-            configs: Dictionary of configs to log.
-            metrics: Dictionary of metrics to log.
-            tags_add: Dictionary of items to add to a field of String Set type
-            tags_remove: Dictionary of tags to remove from a field of String Set type
-
-        Examples:
-            ```
-            >>> with Run(...) as run:
-            ...     run.log(step=1, configs={"parameters/learning_rate": 0.001})
-            ...     run.log(step=2, tags_add={"sys/group_tags": ["group1", "group2"]})
-            ...     run.log(step=3, metrics={"metrics/loss": 0.1})
-            ...     run.log(tags_remove={"sys/group_tags": ["group2"]})
-            ```
-
+        - log_configs()
+        - log_metrics()
+        - add_tags()
+        - remove_tags()
         """
 
         verify_type("step", step, (float, int, type(None)))
@@ -539,7 +642,10 @@ class Run(WithResources, AbstractContextManager):
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
-        Waits until all metadata is submitted to Neptune.
+        Waits until all metadata is submitted to Neptune for processing.
+
+        When submitted, the data is not yet saved in Neptune until fully processed.
+        See wait_for_processing().
 
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for submission.
@@ -557,6 +663,8 @@ class Run(WithResources, AbstractContextManager):
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
         Waits until all metadata is processed by Neptune.
+
+        Once the call is complete, the data is saved in Neptune.
 
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for processing.
