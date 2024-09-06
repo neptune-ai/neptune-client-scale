@@ -19,6 +19,7 @@ from neptune_scale.core.components.queue_element import (
 )
 from neptune_scale.core.logger import logger
 from neptune_scale.parameters import (
+    BATCH_WAIT_TIME_SECONDS,
     MAX_BATCH_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
 )
@@ -30,10 +31,12 @@ class AggregatingQueue(Resource):
         max_queue_size: int,
         max_elements_in_batch: int = MAX_BATCH_SIZE,
         max_queue_element_size: int = MAX_QUEUE_ELEMENT_SIZE,
+        wait_time: float = BATCH_WAIT_TIME_SECONDS,
     ) -> None:
         self._max_queue_size = max_queue_size
         self._max_elements_in_batch = max_elements_in_batch
         self._max_queue_element_size = max_queue_element_size
+        self._wait_time = wait_time
 
         self._queue: Queue[SingleOperation] = Queue(maxsize=max_queue_size)
         self._lock: RLock = RLock()
@@ -47,15 +50,15 @@ class AggregatingQueue(Resource):
         with self._lock:
             self._queue.put_nowait(element)
 
-    def _get_next(self) -> Optional[SingleOperation]:
-        # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE
+    def _get_next(self, timeout: float) -> Optional[SingleOperation]:
+        # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE because of MetadataSplitter.
         # We can assume that every queue element has the same project, run id and family
         with self._lock:
             if self._latest_unprocessed is not None:
                 return self._latest_unprocessed
 
             try:
-                self._latest_unprocessed = self._queue.get_nowait()
+                self._latest_unprocessed = self._queue.get(timeout=timeout)
                 return self._latest_unprocessed
             except Empty:
                 return None
@@ -63,7 +66,7 @@ class AggregatingQueue(Resource):
     def commit(self) -> None:
         self._latest_unprocessed = None
 
-    def get_nowait(self) -> BatchedOperations:
+    def get(self) -> BatchedOperations:
         start = time.process_time()
         elements_in_batch: int = 0
         batch: Optional[RunOperation] = None
@@ -71,12 +74,21 @@ class AggregatingQueue(Resource):
         batch_timestamp: Optional[float] = None
         batch_key: Optional[float] = None
         batch_bytes: int = 0
+        wait_remaining = self._wait_time
 
-        while (element := self._get_next()) is not None:
-            elements_in_batch += 1
+        # Pull operations off the queue until we either reach the maximum size, or
+        # the specified wait time has passed. This way we maximize the potential batch size.
+        while wait_remaining > 0:
+            t0 = time.monotonic()
 
-            if elements_in_batch > self._max_elements_in_batch:
+            if elements_in_batch >= self._max_elements_in_batch:
                 break
+
+            element = self._get_next(wait_remaining)
+            if element is None:
+                break
+
+            elements_in_batch += 1
 
             if batch is None:
                 batch = RunOperation()
@@ -89,16 +101,16 @@ class AggregatingQueue(Resource):
 
                 self.commit()
 
-                if not element.is_metadata_update:
-                    logger.debug("Batch closed due to first operation being run creation")
+                if not element.is_batchable:
+                    logger.debug("Batch closed due to first operation not being batchable")
                     break
             else:
                 if batch_key != element.operation_key:
                     logger.debug("Batch closed due to key mismatch")
                     break
 
-                if not element.is_metadata_update:
-                    logger.debug("Batch closed due to next operation being run creation")
+                if not element.is_batchable:
+                    logger.debug("Batch closed due to next operation not being batchable")
                     break
 
                 assert element.metadata_size is not None  # mypy, metadata update always has metadata size
@@ -118,10 +130,12 @@ class AggregatingQueue(Resource):
                 batch_timestamp = element.timestamp
 
                 self.commit()
-        else:
-            logger.debug("Batch closed due to queue being empty")
+
+            t1 = time.monotonic()
+            wait_remaining -= t1 - t0
 
         if batch is None:
+            logger.debug(f"Batch is empty after {self._wait_time} seconds of waiting.")
             raise Empty
 
         assert batch_sequence_id is not None  # mypy

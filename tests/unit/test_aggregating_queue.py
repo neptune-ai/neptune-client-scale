@@ -30,7 +30,7 @@ def test__simple():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update.ByteSize(),
         operation_key=None,
     )
@@ -42,7 +42,7 @@ def test__simple():
     queue.put_nowait(element=element)
 
     # then
-    assert queue.get_nowait() == BatchedOperations(
+    assert queue.get() == BatchedOperations(
         sequence_id=1,
         timestamp=element.timestamp,
         operation=element.operation,
@@ -58,7 +58,7 @@ def test__max_size_exceeded():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=0,
         operation_key=None,
     )
@@ -66,7 +66,7 @@ def test__max_size_exceeded():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=0,
         operation_key=None,
     )
@@ -92,7 +92,7 @@ def test__empty():
 
     # when
     with pytest.raises(Empty):
-        _ = queue.get_nowait()
+        _ = queue.get()
 
 
 @freeze_time("2024-09-01")
@@ -106,7 +106,7 @@ def test__batch_size_limit():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=None,
     )
@@ -114,7 +114,7 @@ def test__batch_size_limit():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=None,
     )
@@ -127,12 +127,12 @@ def test__batch_size_limit():
     queue.put_nowait(element=element2)
 
     # then
-    assert queue.get_nowait() == BatchedOperations(
+    assert queue.get() == BatchedOperations(
         sequence_id=1,
         timestamp=element1.timestamp,
         operation=element1.operation,
     )
-    assert queue.get_nowait() == BatchedOperations(
+    assert queue.get() == BatchedOperations(
         sequence_id=2,
         timestamp=element2.timestamp,
         operation=element2.operation,
@@ -154,7 +154,7 @@ def test__batching():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=None,
     )
@@ -162,7 +162,7 @@ def test__batching():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=None,
     )
@@ -175,7 +175,7 @@ def test__batching():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2
@@ -205,7 +205,7 @@ def test__not_merge_two_run_creation():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -213,7 +213,7 @@ def test__not_merge_two_run_creation():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -226,7 +226,7 @@ def test__not_merge_two_run_creation():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 1
@@ -241,7 +241,7 @@ def test__not_merge_two_run_creation():
     assert batch.create == create1
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2
@@ -271,7 +271,7 @@ def test__not_merge_run_creation_with_metadata_update():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -279,7 +279,7 @@ def test__not_merge_run_creation_with_metadata_update():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update.ByteSize(),
         operation_key=None,
     )
@@ -292,7 +292,7 @@ def test__not_merge_run_creation_with_metadata_update():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 1
@@ -307,7 +307,7 @@ def test__not_merge_run_creation_with_metadata_update():
     assert batch.create == create
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2
@@ -337,7 +337,7 @@ def test__merge_same_key():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=1.0,
     )
@@ -345,7 +345,7 @@ def test__merge_same_key():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=1.0,
     )
@@ -358,7 +358,7 @@ def test__merge_same_key():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2
@@ -389,7 +389,7 @@ def test__not_merge_two_different_steps():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -397,7 +397,7 @@ def test__not_merge_two_different_steps():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=2.0,
     )
@@ -410,7 +410,7 @@ def test__not_merge_two_different_steps():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 1
@@ -425,7 +425,7 @@ def test__not_merge_two_different_steps():
     assert batch.update == update1
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2
@@ -455,7 +455,7 @@ def test__not_merge_step_with_none():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -463,7 +463,7 @@ def test__not_merge_step_with_none():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -476,7 +476,7 @@ def test__not_merge_step_with_none():
     queue.put_nowait(element=element2)
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 1
@@ -491,7 +491,7 @@ def test__not_merge_step_with_none():
     assert batch.update == update1
 
     # when
-    result = queue.get_nowait()
+    result = queue.get()
 
     # then
     assert result.sequence_id == 2

@@ -22,8 +22,8 @@ class SingleOperation(NamedTuple):
     timestamp: float
     # Protobuf serialized (RunOperation)
     operation: bytes
-    # Whether the operation is metadata update or not (run creation)
-    is_metadata_update: bool
+    # Whether the operation is batchable. Eg. metadata updates are, while run creations are not.
+    is_batchable: bool
     # Size of the metadata in the operation (without project, family, run_id etc.)
     metadata_size: Optional[int]
     # Update metadata key
