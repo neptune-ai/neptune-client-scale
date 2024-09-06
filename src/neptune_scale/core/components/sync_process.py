@@ -417,7 +417,7 @@ class SenderThread(Daemon, WithResources):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._operations_queue.get_nowait()
+            self._latest_unprocessed = self._operations_queue.get()
             return self._latest_unprocessed
         except queue.Empty:
             return None

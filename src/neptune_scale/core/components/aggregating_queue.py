@@ -66,7 +66,7 @@ class AggregatingQueue(Resource):
     def commit(self) -> None:
         self._latest_unprocessed = None
 
-    def get_nowait(self) -> BatchedOperations:
+    def get(self) -> BatchedOperations:
         start = time.process_time()
         elements_in_batch: int = 0
         batch: Optional[RunOperation] = None
