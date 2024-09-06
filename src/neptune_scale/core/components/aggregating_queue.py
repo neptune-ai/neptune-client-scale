@@ -101,16 +101,16 @@ class AggregatingQueue(Resource):
 
                 self.commit()
 
-                if not element.is_metadata_update:
-                    logger.debug("Batch closed due to first operation being run creation")
+                if not element.is_batchable:
+                    logger.debug("Batch closed due to first operation not being batchable")
                     break
             else:
                 if batch_key != element.operation_key:
                     logger.debug("Batch closed due to key mismatch")
                     break
 
-                if not element.is_metadata_update:
-                    logger.debug("Batch closed due to next operation being run creation")
+                if not element.is_batchable:
+                    logger.debug("Batch closed due to next operation not being batchable")
                     break
 
                 assert element.metadata_size is not None  # mypy, metadata update always has metadata size

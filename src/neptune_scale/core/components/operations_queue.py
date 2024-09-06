@@ -72,7 +72,7 @@ class OperationsQueue(Resource):
                         timestamp=self._last_timestamp,
                         operation=serialized_operation,
                         metadata_size=size,
-                        is_metadata_update=is_metadata_update,
+                        is_batchable=is_metadata_update,
                         operation_key=key,
                     ),
                     block=True,

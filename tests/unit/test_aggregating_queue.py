@@ -30,7 +30,7 @@ def test__simple():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update.ByteSize(),
         operation_key=None,
     )
@@ -58,7 +58,7 @@ def test__max_size_exceeded():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=0,
         operation_key=None,
     )
@@ -66,7 +66,7 @@ def test__max_size_exceeded():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=0,
         operation_key=None,
     )
@@ -106,7 +106,7 @@ def test__batch_size_limit():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=None,
     )
@@ -114,7 +114,7 @@ def test__batch_size_limit():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=None,
     )
@@ -154,7 +154,7 @@ def test__batching():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=None,
     )
@@ -162,7 +162,7 @@ def test__batching():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=None,
     )
@@ -205,7 +205,7 @@ def test__not_merge_two_run_creation():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -213,7 +213,7 @@ def test__not_merge_two_run_creation():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -271,7 +271,7 @@ def test__not_merge_run_creation_with_metadata_update():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
@@ -279,7 +279,7 @@ def test__not_merge_run_creation_with_metadata_update():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update.ByteSize(),
         operation_key=None,
     )
@@ -337,7 +337,7 @@ def test__merge_same_key():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update1.ByteSize(),
         operation_key=1.0,
     )
@@ -345,7 +345,7 @@ def test__merge_same_key():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=True,
+        is_batchable=True,
         metadata_size=update2.ByteSize(),
         operation_key=1.0,
     )
@@ -389,7 +389,7 @@ def test__not_merge_two_different_steps():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -397,7 +397,7 @@ def test__not_merge_two_different_steps():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=2.0,
     )
@@ -455,7 +455,7 @@ def test__not_merge_step_with_none():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -463,7 +463,7 @@ def test__not_merge_step_with_none():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_metadata_update=False,
+        is_batchable=False,
         metadata_size=0,
         operation_key=None,
     )
