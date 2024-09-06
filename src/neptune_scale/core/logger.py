@@ -12,7 +12,7 @@ from neptune_scale.envs import DEBUG_MODE
 NEPTUNE_LOGGER_NAME = "neptune"
 NEPTUNE_DEBUG_FILE_NAME = "neptune.log"
 LOG_FORMAT = "{blue}%(name)s{end} :: {bold}%(levelname)s{end} :: %(message)s"
-DEBUG_FORMAT = "%(asctime)s :: %(name)s :: %(levelname)s :: %(processName)s(%(process)d):%(filename)s:%(funcName)s():%(lineno)d %(message)s"
+DEBUG_FORMAT = "%(asctime)s :: %(name)s :: %(levelname)s :: %(processName)s(%(process)d):%(threadName)s:%(filename)s:%(funcName)s():%(lineno)d %(message)s"
 
 
 def get_logger() -> logging.Logger:

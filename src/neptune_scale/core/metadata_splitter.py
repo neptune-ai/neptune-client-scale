@@ -12,6 +12,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     TypeVar,
     Union,
 )
@@ -34,7 +35,7 @@ from neptune_scale.core.serialization import (
 T = TypeVar("T", bound=Any)
 
 
-class MetadataSplitter(Iterator[RunOperation]):
+class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
     def __init__(
         self,
         *,
@@ -72,8 +73,7 @@ class MetadataSplitter(Iterator[RunOperation]):
         self._has_returned = False
         return self
 
-    def __next__(self) -> RunOperation:
-        size = 0
+    def __next__(self) -> Tuple[RunOperation, int]:
         update = UpdateRunSnapshot(
             step=self._step,
             timestamp=self._timestamp,
@@ -81,6 +81,7 @@ class MetadataSplitter(Iterator[RunOperation]):
             append={},
             modify_sets={},
         )
+        size = update.ByteSize()
 
         size = self.populate(
             assets=self._fields,
@@ -98,7 +99,7 @@ class MetadataSplitter(Iterator[RunOperation]):
             operation=SET_OPERATION.ADD,
             size=size,
         )
-        _ = self.populate_tags(
+        size = self.populate_tags(
             update=update,
             assets=self._remove_tags,
             operation=SET_OPERATION.REMOVE,
@@ -107,7 +108,7 @@ class MetadataSplitter(Iterator[RunOperation]):
 
         if not self._has_returned or update.assign or update.append or update.modify_sets:
             self._has_returned = True
-            return RunOperation(project=self._project, run_id=self._run_id, update=update)
+            return RunOperation(project=self._project, run_id=self._run_id, update=update), size
         else:
             raise StopIteration
 

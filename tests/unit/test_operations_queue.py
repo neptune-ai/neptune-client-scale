@@ -19,13 +19,13 @@ def test__enqueue():
     operation = RunOperation()
 
     # when
-    queue.enqueue(operation=operation)
+    queue.enqueue(operation=operation, size=0)
 
     # then
     assert queue._sequence_id == 1
 
     # when
-    queue.enqueue(operation=operation)
+    queue.enqueue(operation=operation, size=0)
 
     # then
     assert queue._sequence_id == 2
@@ -42,4 +42,4 @@ def test__max_element_size_exceeded():
 
     # then
     with pytest.raises(ValueError):
-        queue.enqueue(operation=operation)
+        queue.enqueue(operation=operation, size=snapshot.ByteSize())

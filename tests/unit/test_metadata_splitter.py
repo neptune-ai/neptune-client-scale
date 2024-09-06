@@ -35,11 +35,12 @@ def test_empty():
 
     # then
     assert len(result) == 1
-    assert result[0] == RunOperation(
-        project="workspace/project",
-        run_id="run_id",
-        update=UpdateRunSnapshot(step=Step(whole=1, micro=0), timestamp=Timestamp(seconds=1722341532, nanos=21934)),
+    operation, metadata_size = result[0]
+    expected_update = UpdateRunSnapshot(
+        step=Step(whole=1, micro=0), timestamp=Timestamp(seconds=1722341532, nanos=21934)
     )
+    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
+    assert metadata_size == expected_update.ByteSize()
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -68,22 +69,22 @@ def test_fields():
 
     # then
     assert len(result) == 1
-    assert result[0] == RunOperation(
-        project="workspace/project",
-        run_id="run_id",
-        update=UpdateRunSnapshot(
-            step=Step(whole=1, micro=0),
-            timestamp=Timestamp(seconds=1722341532, nanos=21934),
-            assign={
-                "some/string": Value(string="value"),
-                "some/int": Value(int64=2501),
-                "some/float": Value(float64=3.14),
-                "some/bool": Value(bool=True),
-                "some/datetime": Value(timestamp=Timestamp(seconds=1722341532, nanos=21934)),
-                "some/tags": Value(string_set=StringSet(values={"tag1", "tag2"})),
-            },
-        ),
+    operation, metadata_size = result[0]
+    expected_update = UpdateRunSnapshot(
+        step=Step(whole=1, micro=0),
+        timestamp=Timestamp(seconds=1722341532, nanos=21934),
+        assign={
+            "some/string": Value(string="value"),
+            "some/int": Value(int64=2501),
+            "some/float": Value(float64=3.14),
+            "some/bool": Value(bool=True),
+            "some/datetime": Value(timestamp=Timestamp(seconds=1722341532, nanos=21934)),
+            "some/tags": Value(string_set=StringSet(values={"tag1", "tag2"})),
+        },
     )
+    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
+    assert metadata_size >= expected_update.ByteSize()
+    assert metadata_size < operation.ByteSize()
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -107,17 +108,17 @@ def test_metrics():
 
     # then
     assert len(result) == 1
-    assert result[0] == RunOperation(
-        project="workspace/project",
-        run_id="run_id",
-        update=UpdateRunSnapshot(
-            step=Step(whole=1, micro=0),
-            timestamp=Timestamp(seconds=1722341532, nanos=21934),
-            append={
-                "some/metric": Value(float64=3.14),
-            },
-        ),
+    operation, metadata_size = result[0]
+    expected_update = UpdateRunSnapshot(
+        step=Step(whole=1, micro=0),
+        timestamp=Timestamp(seconds=1722341532, nanos=21934),
+        append={
+            "some/metric": Value(float64=3.14),
+        },
     )
+    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
+    assert metadata_size >= expected_update.ByteSize()
+    assert metadata_size < operation.ByteSize()
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -145,28 +146,28 @@ def test_tags():
 
     # then
     assert len(result) == 1
-    assert result[0] == RunOperation(
-        project="workspace/project",
-        run_id="run_id",
-        update=UpdateRunSnapshot(
-            step=Step(whole=1, micro=0),
-            timestamp=Timestamp(seconds=1722341532, nanos=21934),
-            modify_sets={
-                "some/tags": ModifySet(
-                    string=ModifyStringSet(values={"tag1": SET_OPERATION.ADD, "tag2": SET_OPERATION.ADD})
-                ),
-                "some/other_tags2": ModifySet(
-                    string=ModifyStringSet(values={"tag2": SET_OPERATION.ADD, "tag3": SET_OPERATION.ADD})
-                ),
-                "some/group_tags": ModifySet(
-                    string=ModifyStringSet(values={"tag0": SET_OPERATION.REMOVE, "tag1": SET_OPERATION.REMOVE})
-                ),
-                "some/other_tags": ModifySet(
-                    string=ModifyStringSet(values={"tag2": SET_OPERATION.REMOVE, "tag3": SET_OPERATION.REMOVE})
-                ),
-            },
-        ),
+    operation, metadata_size = result[0]
+    expected_update = UpdateRunSnapshot(
+        step=Step(whole=1, micro=0),
+        timestamp=Timestamp(seconds=1722341532, nanos=21934),
+        modify_sets={
+            "some/tags": ModifySet(
+                string=ModifyStringSet(values={"tag1": SET_OPERATION.ADD, "tag2": SET_OPERATION.ADD})
+            ),
+            "some/other_tags2": ModifySet(
+                string=ModifyStringSet(values={"tag2": SET_OPERATION.ADD, "tag3": SET_OPERATION.ADD})
+            ),
+            "some/group_tags": ModifySet(
+                string=ModifyStringSet(values={"tag0": SET_OPERATION.REMOVE, "tag1": SET_OPERATION.REMOVE})
+            ),
+            "some/other_tags": ModifySet(
+                string=ModifyStringSet(values={"tag2": SET_OPERATION.REMOVE, "tag3": SET_OPERATION.REMOVE})
+            ),
+        },
     )
+    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
+    assert metadata_size >= expected_update.ByteSize()
+    assert metadata_size < operation.ByteSize()
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -199,18 +200,18 @@ def test_splitting():
     assert len(result) > 1
 
     # Every message should be smaller than max_size
-    assert all(len(op.SerializeToString()) <= max_size for op in result)
+    assert all(len(op.SerializeToString()) <= max_size for op, _ in result)
 
     # Common metadata
-    assert all(op.project == "workspace/project" for op in result)
-    assert all(op.run_id == "run_id" for op in result)
-    assert all(op.update.step.whole == 1 for op in result)
-    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
+    assert all(op.project == "workspace/project" for op, _ in result)
+    assert all(op.run_id == "run_id" for op, _ in result)
+    assert all(op.update.step.whole == 1 for op, _ in result)
+    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
     # Check if all metrics, fields and tags are present in the result
-    assert sorted([key for op in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
-    assert sorted([key for op in result for key in op.update.assign.keys()]) == sorted(list(fields.keys()))
-    assert sorted([key for op in result for key in op.update.modify_sets.keys()]) == sorted(
+    assert sorted([key for op, _ in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
+    assert sorted([key for op, _ in result for key in op.update.assign.keys()]) == sorted(list(fields.keys()))
+    assert sorted([key for op, _ in result for key in op.update.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
 
@@ -245,23 +246,23 @@ def test_split_large_tags():
     assert len(result) > 1
 
     # Every message should be smaller than max_size
-    assert all(len(op.SerializeToString()) <= max_size for op in result)
+    assert all(len(op.SerializeToString()) <= max_size for op, _ in result)
 
     # Common metadata
-    assert all(op.project == "workspace/project" for op in result)
-    assert all(op.run_id == "run_id" for op in result)
-    assert all(op.update.step.whole == 1 for op in result)
-    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
+    assert all(op.project == "workspace/project" for op, _ in result)
+    assert all(op.run_id == "run_id" for op, _ in result)
+    assert all(op.update.step.whole == 1 for op, _ in result)
+    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
     # Check if all StringSet values are split correctly
-    assert set([key for op in result for key in op.update.modify_sets.keys()]) == set(
+    assert set([key for op, _ in result for key in op.update.modify_sets.keys()]) == set(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
 
     # Check if all tags are present in the result
-    assert {tag for op in result for tag in op.update.modify_sets["add/tag"].string.values.keys()} == add_tags[
+    assert {tag for op, _ in result for tag in op.update.modify_sets["add/tag"].string.values.keys()} == add_tags[
         "add/tag"
     ]
-    assert {tag for op in result for tag in op.update.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
+    assert {tag for op, _ in result for tag in op.update.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
         "remove/tag"
     ]
