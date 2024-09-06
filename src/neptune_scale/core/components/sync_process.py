@@ -357,7 +357,7 @@ class InternalQueueFeederThread(Daemon, Resource):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._external.get_nowait()
+            self._latest_unprocessed = self._external.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
             return self._latest_unprocessed
         except queue.Empty:
             return None
@@ -367,7 +367,11 @@ class InternalQueueFeederThread(Daemon, Resource):
 
     def work(self) -> None:
         try:
-            while (operation := self.get_next()) is not None:
+            while not self._is_interrupted():
+                operation = self.get_next()
+                if operation is None:
+                    continue
+
                 try:
                     self._internal.put_nowait(operation)
                     self.commit()
