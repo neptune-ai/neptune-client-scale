@@ -81,7 +81,7 @@ class AggregatingQueue(Resource):
         while wait_remaining > 0:
             t0 = time.monotonic()
 
-            if elements_in_batch + 1 > self._max_elements_in_batch:
+            if elements_in_batch >= self._max_elements_in_batch:
                 break
 
             element = self._get_next(wait_remaining)
