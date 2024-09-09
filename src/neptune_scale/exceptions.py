@@ -517,8 +517,10 @@ class NeptuneApiTokenNotProvided(NeptuneRetryableError):
 {h1}
 ----NeptuneApiTokenNotProvided-------------------------------------------------
 {end}
-The api token was not provided. Make sure to specify the api token in the `api_token` parameter of the `Run`
-constructor or with `NEPTUNE_API_TOKEN` environment variable.
+The Neptune API token was not provided. Make sure to specify the API token in the `api_token` parameter of the `Run`
+constructor or with the `NEPTUNE_API_TOKEN` environment variable.
+
+For instructions, see https://docs-beta.neptune.ai/api_token
 
 {correct}Need help?{end}-> Contact support@neptune.ai
 
