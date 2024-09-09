@@ -34,6 +34,8 @@ __all__ = (
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
     "NeptuneAsyncLagThresholdExceeded",
+    "NeptuneProjectNotProvided",
+    "NeptuneApiTokenNotProvided",
 )
 
 from typing import Any
@@ -492,3 +494,35 @@ class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
 
     Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
     """
+
+
+class NeptuneProjectNotProvided(NeptuneRetryableError):
+    message = """
+{h1}
+----NeptuneProjectNotProvided--------------------------------------------------
+{end}
+The project name was not provided. Make sure to specify the project name in the `project` parameter of the `Run`
+constructor or with the `NEPTUNE_PROJECT` environment variable.
+
+For instructions, see https://docs-beta.neptune.ai/setup
+
+{correct}Need help?{end}-> Contact support@neptune.ai
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
+
+
+class NeptuneApiTokenNotProvided(NeptuneRetryableError):
+    message = """
+{h1}
+----NeptuneApiTokenNotProvided-------------------------------------------------
+{end}
+The Neptune API token was not provided. Make sure to specify the API token in the `api_token` parameter of the `Run`
+constructor or with the `NEPTUNE_API_TOKEN` environment variable.
+
+For instructions, see https://docs-beta.neptune.ai/api_token
+
+{correct}Need help?{end}-> Contact support@neptune.ai
+
+Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+"""
