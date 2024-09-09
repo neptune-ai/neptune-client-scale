@@ -502,7 +502,9 @@ class NeptuneProjectNotProvided(NeptuneRetryableError):
 ----NeptuneProjectNotProvided--------------------------------------------------
 {end}
 The project name was not provided. Make sure to specify the project name in the `project` parameter of the `Run`
-constructor or with `NEPTUNE_PROJECT` environment variable.
+constructor or with the `NEPTUNE_PROJECT` environment variable.
+
+For instructions, see https://docs-beta.neptune.ai/setup
 
 {correct}Need help?{end}-> Contact support@neptune.ai
 
