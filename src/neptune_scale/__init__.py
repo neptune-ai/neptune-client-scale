@@ -61,6 +61,10 @@ from neptune_scale.envs import (
     API_TOKEN_ENV_NAME,
     PROJECT_ENV_NAME,
 )
+from neptune_scale.exceptions import (
+    NeptuneApiTokenNotProvided,
+    NeptuneProjectNotProvided,
+)
 from neptune_scale.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_FAMILY_LENGTH,
@@ -167,12 +171,14 @@ class Run(WithResources, AbstractContextManager):
             raise ValueError("`max_queue_size` must be greater than 0.")
 
         project = project or os.environ.get(PROJECT_ENV_NAME)
-        verify_non_empty("project", project)
+        if project is None:
+            raise NeptuneProjectNotProvided()
         assert project is not None  # mypy
         input_project: str = project
 
         api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        verify_non_empty("api_token", api_token)
+        if api_token is None:
+            raise NeptuneApiTokenNotProvided()
         assert api_token is not None  # mypy
         input_api_token: str = api_token
 
