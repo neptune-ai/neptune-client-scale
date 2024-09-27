@@ -265,7 +265,7 @@ class NeptuneRunDuplicate(NeptuneScaleWarning):
 {h1}
 ----NeptuneRunDuplicate--------------------------------------------------------
 {end}
-Identical run already exists.
+Identical run already exists. If you wanted to resume an existing run, include the argument `resume=True`.
 
 {correct}Need help?{end}-> Contact support@neptune.ai
 
