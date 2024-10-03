@@ -123,8 +123,7 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-
-                batch.MergeFrom(new_operation)
+                merge_run_operation(batch, new_operation)
 
                 batch_sequence_id = element.sequence_id
                 batch_timestamp = element.timestamp
@@ -153,3 +152,32 @@ class AggregatingQueue(Resource):
             timestamp=batch_timestamp,
             operation=batch.SerializeToString(),
         )
+
+
+def merge_run_operation(batch: RunOperation, operation: RunOperation) -> None:
+    """
+    Merge the `operation` into `batch`, taking into account the special case of `modify_sets`.
+
+    Protobuf merges existing map keys by simply overwriting values, instead of calling
+    `MergeFrom` on the existing value, eg: A['foo'] = B['foo'].
+
+    We want this instead:
+
+        batch = {'sys/tags': 'string': { 'values': {'foo': ADD}}}
+        operation = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
+        result = {'sys/tags': 'string': { 'values': {'foo': ADD, 'bar': ADD}}}
+
+    If we called `batch.MergeFrom(operation)` we would get an overwritten value:
+        result = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
+
+    This function ensures that the `modify_sets` are merged correctly, leaving the default
+    behaviour for all other fields.
+    """
+
+    modify_sets = operation.update.modify_sets
+    operation.update.ClearField("modify_sets")
+
+    batch.MergeFrom(operation)
+
+    for k, v in modify_sets.items():
+        batch.update.modify_sets[k].MergeFrom(v)
