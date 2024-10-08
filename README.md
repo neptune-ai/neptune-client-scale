@@ -41,31 +41,65 @@ pip install neptune-scale
 
 You're ready to start using Neptune Scale.
 
+For more help with setup, see [Get started][scale-docs] in the Neptune documentation.
+
 ## Example usage
+
+Create an experiment:
 
 ```python
 from neptune_scale import Run
 
 run = Run(
-    family="RunFamilyName",
+    experiment_name="ExperimentName",
+    family="RunFamilyName",  # must be the same for related runs
     run_id="SomeUniqueRunIdentifier",
 )
+```
 
+Then, call logging methods on the run and pass the metadata as a dictionary.
+
+Log configuration or other simple values with [`log_configs()`](#log_configs):
+
+```python
 run.log_configs(
-    data={"learning_rate": 0.001, "batch_size": 64},
+    {
+        "learning_rate": 0.001,
+        "batch_size": 64,
+    }
 )
+```
 
-# inside a training loop
+Inside a training loop or other iteration, use [`log_metrics()`](#log_metrics) to append metric values:
+
+```python
+# inside a loop
 for step in range(100):
     run.log_metrics(
         step=step,
         data={"acc": 0.89, "loss": 0.17},
     )
+```
 
+To help identify and group runs, you can apply tags:
+
+```python
 run.add_tags(tags=["tag1", "tag2"])
+```
 
+The run is stopped when exiting the context or the script finishes execution, but you can use [`close()`](#close) to stop it once logging is no longer needed:
+
+```python
 run.close()
 ```
+
+To explore your experiment, open the project in Neptune and navigate to **Runs**. For an example, [see the demo project &rarr;][demo-project]
+
+For more instructions, see the Neptune documentation:
+
+- [Quickstart][quickstart]
+- [Create an experiment][new-experiment]
+- [Log metadata][log-metadata]
 
 ## API reference
 
@@ -102,7 +136,7 @@ __Parameters__
 | `api_token`      | `str`, optional  | `None`  | Your Neptune API token or a service account's API token. If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, don't place it in source code. Instead, save it as an environment variable. |
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `fork_run_id` and `fork_step` instead. |
 | `mode`           | `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
-| `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments](https://docs-beta.neptune.ai/experiments) in the Neptune documentation. |
+| `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments][experiments] in the Neptune documentation. |
 | `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
 | `fork_run_id`    | `str`, optional  | `None` | The ID of the run to fork from. |
 | `fork_step`      | `int`, optional  | `None` | The step number to fork from. |
@@ -128,12 +162,14 @@ with Run(
     ...
 ```
 
+For help, see [Create an experiment][new-experiment] in the Neptune docs.
+
 > [!TIP]
 > Find your API token in your user menu, in the bottom-left corner of the Neptune app.
 >
 > Or, to use shared API tokens for multiple users or non-human accounts, create a service account in your workspace settings.
 
-Create a forked run and mark it as an experiment:
+To restart an experiment, create a forked run:
 
 ```python
 with Run(
@@ -364,3 +400,11 @@ run = Run(..., on_error_callback=my_error_callback)
 ## Getting help
 
 For help, contact support@neptune.ai.
+
+
+[scale-docs]: https://docs-beta.neptune.ai/setup
+[experiments]: https://docs-beta.neptune.ai/experiments
+[log-metadata]: https://docs-beta.neptune.ai/log_metadata
+[new-experiment]: https://docs-beta.neptune.ai/new_experiment
+[quickstart]: https://docs-beta.neptune.ai/quickstart
+[demo-project]: https://scale.neptune.ai/o/neptune/org/LLM-training-example/runs/compare?viewId=9d0e03d5-d0e9-4c0a-a546-f065181de1d2&dash=charts&compare=uItSQytpSbTH0c84P6iKGycQhv1rZr-qt4Z-CzEVBwD0
