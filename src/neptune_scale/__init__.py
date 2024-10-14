@@ -265,7 +265,8 @@ class Run(WithResources, AbstractContextManager):
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
         if platform.system() != "Windows":
-            signal.signal(signal.SIGCHLD, self._handle_signal)  # type: ignore [attr-defined]
+            # Ignoring the type because the signal module is not available on Windows
+            signal.signal(signal.SIGCHLD, self._handle_signal)  # type: ignore[attr-defined]  # mypy: ignore-errors
 
         if not resume:
             self._create_run(
