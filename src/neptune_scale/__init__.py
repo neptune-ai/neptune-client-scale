@@ -266,7 +266,7 @@ class Run(WithResources, AbstractContextManager):
 
         if platform.system() != "Windows":
             # Ignoring the type because the signal module is not available on Windows
-            signal.signal(signal.SIGCHLD, self._handle_signal)  # type: ignore
+            signal.signal(signal.SIGCHLD, self._handle_signal)  # type: ignore[attr-defined]
 
         if not resume:
             self._create_run(
