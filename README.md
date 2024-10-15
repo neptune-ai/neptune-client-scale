@@ -268,9 +268,9 @@ __Parameters__
 
 | Name        | Type                                     | Default | Description                                                                                                                                                                                                                                                          |
 |-------------|------------------------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `step`      | `Union[float, int]`, optional            | `None`  | Index of the log entry. Must be increasing. If not specified, the `log_metrics()` call increments the step starting from the highest already logged value. **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
+| `data`      | `Dict[str, Union[float, int]]` | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs.                                                                                                                           |
+| `step`      | `Union[float, int]`           | `None`  | Index of the log entry. Must be increasing. <br> **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
 | `timestamp` | `datetime`, optional                     | `None`  | Time of logging the metadata.                                                                                                                                                                                                                                        |
-| `data`      | `Dict[str, Union[float, int]]`, optional | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs.                                                                                                                           |
 
 __Examples__
 
@@ -281,8 +281,8 @@ from neptune_scale import Run
 
 with Run(...) as run:
     run.log_metrics(
-        step=1.2,
         data={"loss": 0.14, "acc": 0.78},
+        step=1.2,
     )
 ```
 
