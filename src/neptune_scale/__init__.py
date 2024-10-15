@@ -435,8 +435,8 @@ class Run(WithResources, AbstractContextManager):
 
             with Run(...) as run:
                 run.log_metrics(
+                    {"loss": 0.14, "acc": 0.78},
                     step=1.2,
-                    data={"loss": 0.14, "acc": 0.78},
                 )
             ```
         """
