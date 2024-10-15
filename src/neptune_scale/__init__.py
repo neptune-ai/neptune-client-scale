@@ -402,9 +402,10 @@ class Run(WithResources, AbstractContextManager):
 
     def log_metrics(
         self,
+        data: Dict[str, Union[float, int]],
+        *,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        data: Optional[Dict[str, Union[float, int]]] = None,
     ) -> None:
         """
         Logs the specified metrics to a Neptune run.
@@ -419,15 +420,14 @@ class Run(WithResources, AbstractContextManager):
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            step: Index of the log entry. Must be increasing.
-                If not specified, the log_metrics() call increments the step starting from the highest
-                already logged value.
-                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
-            timestamp: Time of logging the metadata.
             data: Dictionary of metrics to log.
                 Each metric value is associated with a step.
                 To log multiple metrics at once, pass multiple key-value pairs.
-
+            step (optional): Index of the log entry. Must be increasing.
+                If not specified, the log_metrics() call increments the step starting from the highest
+                already logged value.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (optional): Time of logging the metadata. If not specified, the current time is used.
 
         Examples:
             ```
