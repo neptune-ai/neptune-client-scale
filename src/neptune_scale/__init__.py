@@ -442,7 +442,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(step=step, timestamp=timestamp, metrics=data)
 
-    def log_configs(self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None) -> None:
+    def log_configs(self, data: Optional[Dict[str, Union[float, bool, int, str, datetime]]] = None) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
