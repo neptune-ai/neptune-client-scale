@@ -88,8 +88,6 @@ class AggregatingQueue(Resource):
             if element is None:
                 break
 
-            elements_in_batch += 1
-
             if batch is None:
                 batch = RunOperation()
                 batch.ParseFromString(element.operation)
@@ -100,6 +98,7 @@ class AggregatingQueue(Resource):
                 batch_bytes = len(element.operation)
 
                 self.commit()
+                elements_in_batch += 1
 
                 if not element.is_batchable:
                     logger.debug("Batch closed due to first operation not being batchable")
@@ -119,6 +118,7 @@ class AggregatingQueue(Resource):
                     logger.debug("Batch closed due to size limit %s", batch_bytes + element.metadata_size)
                     break
 
+                elements_in_batch += 1
                 batch_bytes += element.metadata_size
 
                 new_operation = RunOperation()
