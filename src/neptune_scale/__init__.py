@@ -516,7 +516,7 @@ class Run(WithResources, AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set]]] = None,
+        configs: Optional[Dict[str, Union[float, bool, int, str, datetime]]] = None,
         metrics: Optional[Dict[str, Union[float, int]]] = None,
         tags_add: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
         tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
