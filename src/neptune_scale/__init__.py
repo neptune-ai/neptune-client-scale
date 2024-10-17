@@ -273,6 +273,10 @@ class Run(WithResources, AbstractContextManager):
             self.wait_for_processing(verbose=False)
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
+        # We should not be concerned about SIGCHLD if it's not about our child process
+        if signum == signal.SIGCHLD and self._sync_process.is_alive():
+            return
+
         if not self._is_closing:
             signame = safe_signal_name(signum)
             logger.debug(f"Received signal {signame}. Terminating.")
