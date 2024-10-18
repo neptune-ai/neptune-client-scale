@@ -482,7 +482,8 @@ class SenderThread(Daemon, WithResources):
                     self._last_put_seq_wait.notify_all()
         except Exception as e:
             self._errors_queue.put(e)
-            self._last_put_seq_wait.notify_all()
+            with self._last_put_seq_wait:
+                self._last_put_seq_wait.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
