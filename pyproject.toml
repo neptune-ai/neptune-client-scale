@@ -24,9 +24,7 @@ authors = ["neptune.ai <contact@neptune.ai>"]
 repository = "https://github.com/neptune-ai/neptune-client-scale"
 readme = "README.md"
 license = "Apache License 2.0"
-packages = [
-    { include = "neptune_scale", from = "src" },
-]
+packages = [{ include = "neptune_scale", from = "src" }]
 include = []
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -93,4 +91,4 @@ no_implicit_optional = "True"
 check_untyped_defs = "True"
 warn_return_any = "True"
 show_error_codes = "True"
-warn_unused_ignores = "True"
+# warn_unused_ignores = "True"
