@@ -224,11 +224,7 @@ class ProcessLinkWorker(Daemon):
             return
 
         try:
-            try:
-                out = self._msg_queue.get_nowait()
-                self._conn.send(out)
-            except queue.Empty:
-                pass
+            self._send_queued_messages()
 
             # Don't block on self._conn.recv() indefinitely, so we can react to stopping the link
             if not self._conn.poll(timeout=POLL_TIMEOUT) or not self.is_running():
@@ -262,3 +258,11 @@ class ProcessLinkWorker(Daemon):
             func(*args, **kwargs)
         except Exception as e:
             logger.error(f"{self}: exception while calling user callback {func}: {e}")
+
+    def _send_queued_messages(self) -> None:
+        while True:
+            try:
+                out = self._msg_queue.get_nowait()
+                self._conn.send(out)
+            except queue.Empty:
+                return
