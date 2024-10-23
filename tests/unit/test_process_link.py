@@ -1,13 +1,15 @@
-import threading
+import multiprocessing
 import time
-from functools import partial
 from multiprocessing import (
     Condition,
     Event,
     Process,
 )
 from typing import Optional
-from unittest.mock import Mock
+from unittest.mock import (
+    Mock,
+    call,
+)
 
 import pytest
 from pytest import fixture
@@ -112,33 +114,35 @@ def test__delayed_start_timeout(link):
     assert not link.start(timeout=0.5)
 
 
-def pong_on_message_received(link, message, event):
+def pong_on_message_received(link, message):
     if message == "ping":
         link.send("pong")
     else:
         link.send("?")
-    event.set()
 
 
-def pong_worker(link):
-    event = threading.Event()
-    link.start(on_message_received=partial(pong_on_message_received, event=event))
-
+def pong_worker(link, event):
+    link.start(on_message_received=pong_on_message_received)
     assert event.wait(1)
 
 
 def test__message_passing(link):
     """Start a worker that responds to "ping" with "pong" and check if the message is passed correctly."""
 
-    event = threading.Event()
-    p = Process(target=pong_worker, args=(link,))
+    event = multiprocessing.Event()
+    p = Process(target=pong_worker, args=(link, event))
     p.start()
 
     def on_msg(_, message):
-        assert message == "pong"
-        event.set()
+        if message == "?":
+            event.set()
+
+    on_msg = Mock(side_effect=on_msg)
 
     link.start(on_message_received=on_msg)
     link.send("ping")
+    link.send("ping")
+    link.send("not-ping")
 
     assert event.wait(1)
+    on_msg.assert_has_calls([call(link, "pong"), call(link, "pong"), call(link, "?")])
