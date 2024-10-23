@@ -45,6 +45,15 @@ class ProcessLink:
         link.join() # Wait until the other side is terminated
 
     See tests/unit/test_process_link.py for more examples.
+
+    The main idea behind this is to create pipes shared between child and parent processes.
+    When any process terminates, the other one will receive errors when reading the pipe.
+
+    We could use the `signal` module (registering for SIGCHLD), but this approach has several problems:
+     - registering for SIGCHLD is not available on Windows
+     - registering for SIGCHLD is brittle, because users might register their own signal handlers, which would either
+       break our library, or user code
+     - the child process has no way to detect if the parent process dies
     """
 
     def __init__(self) -> None:
