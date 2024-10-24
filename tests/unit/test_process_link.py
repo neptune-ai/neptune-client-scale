@@ -116,8 +116,8 @@ def test__delayed_start_timeout(link):
 
 
 def pong_on_message_received(link, message):
-    if message == "ping":
-        link.send("pong")
+    if message.startswith("ping"):
+        link.send(message.replace("ping", "pong"))
     else:
         link.send("?")
 
@@ -141,12 +141,12 @@ def test_message_passing(link):
     on_msg = Mock(side_effect=on_msg)
 
     link.start(on_message_received=on_msg)
-    link.send("ping")
-    link.send("ping")
+    link.send("ping one")
+    link.send("ping two")
     link.send("not-ping")
 
     assert event.wait(1)
-    on_msg.assert_has_calls([call(link, "pong"), call(link, "pong"), call(link, "?")])
+    on_msg.assert_has_calls([call(link, "pong one"), call(link, "pong two"), call(link, "?")])
 
 
 def parent(var, event):
