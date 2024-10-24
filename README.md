@@ -76,8 +76,8 @@ Inside a training loop or other iteration, use [`log_metrics()`](#log_metrics) t
 # inside a loop
 for step in range(100):
     run.log_metrics(
-        step=step,
         data={"acc": 0.89, "loss": 0.17},
+        step=step,
     )
 ```
 

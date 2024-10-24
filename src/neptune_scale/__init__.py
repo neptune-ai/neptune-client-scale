@@ -403,6 +403,7 @@ class Run(WithResources, AbstractContextManager):
         self,
         data: Dict[str, Union[float, int]],
         step: Union[float, int],
+        *,
         timestamp: Optional[datetime] = None,
     ) -> None:
         """
