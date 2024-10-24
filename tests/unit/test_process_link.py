@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import time
 from multiprocessing import (
     Condition,
@@ -11,12 +12,11 @@ from unittest.mock import (
     call,
 )
 
+import psutil
 import pytest
 from pytest import fixture
 
 from neptune_scale.core.process_link import ProcessLink
-
-LINK_STOP_TIMEOUT = 3
 
 
 @fixture
@@ -53,7 +53,7 @@ def start_link_worker(
 
 
 @pytest.mark.parametrize("sleep", [0, 0.001, 0.5, 1])
-def test__successful_startup_and_termination(link, sleep):
+def test_successful_startup_and_termination(link, sleep):
     event = Event()
 
     p = Process(target=start_link_worker, args=(link,), kwargs=dict(sleep_after=sleep, event=event))
@@ -68,8 +68,9 @@ def test__successful_startup_and_termination(link, sleep):
     link.start(on_link_closed=callback)
 
 
-def test__join(link):
+def test_join(link):
     """ProcessLink should only join after the other side terminates"""
+
     event = Event()
 
     p = Process(target=start_link_worker, args=(link,), kwargs=dict(event=event))
@@ -83,7 +84,7 @@ def test__join(link):
     mock.assert_called()
 
 
-def test__stop_does_not_call_on_link_closed(link):
+def test_stop_does_not_call_on_link_closed(link):
     """After we call stop() we should never have the on_link_closed callback called."""
 
     p = Process(target=start_link_worker, args=(link,), kwargs=dict(sleep_after=1))
@@ -126,7 +127,7 @@ def pong_worker(link, event):
     assert event.wait(1)
 
 
-def test__message_passing(link):
+def test_message_passing(link):
     """Start a worker that responds to "ping" with "pong" and check if the message is passed correctly."""
 
     event = multiprocessing.Event()
@@ -146,3 +147,43 @@ def test__message_passing(link):
 
     assert event.wait(1)
     on_msg.assert_has_calls([call(link, "pong"), call(link, "pong"), call(link, "?")])
+
+
+def parent(var, event):
+    link = ProcessLink()
+    p = multiprocessing.Process(target=child, args=(link, var, event))
+    p.start()
+
+    link.start()
+    var.value = 1
+
+    # Kill the parent process to simulate unexpected exit
+    me = psutil.Process(os.getpid())
+    me.kill()
+
+
+def child(link, var, event):
+    def on_closed(_):
+        assert var.value == 1, "Parent exited early"
+        event.set()
+        raise SystemExit
+
+    link.start(on_link_closed=on_closed)
+    # We should never finish the sleep call, as on_closed raises SystemExit
+    time.sleep(5)
+    assert False, "on_closed callback was not called"
+
+
+def test_parent_termination():
+    """Child should detect parent termination"""
+
+    # Used to signal child exit so we can finish the test
+    event = multiprocessing.Event()
+    # Set to 1 by parent process at exit
+    var = multiprocessing.Value("i", 0)
+
+    p = multiprocessing.Process(target=parent, args=(var, event))
+    p.start()
+
+    assert event.wait(1)
+    assert var.value == 1
