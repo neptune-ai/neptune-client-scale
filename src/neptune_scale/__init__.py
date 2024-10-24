@@ -9,8 +9,6 @@ __all__ = ["Run"]
 import atexit
 import multiprocessing
 import os
-import platform
-import signal
 import threading
 import time
 from contextlib import AbstractContextManager
@@ -45,11 +43,11 @@ from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.components.sync_process import SyncProcess
 from neptune_scale.core.logger import logger
 from neptune_scale.core.metadata_splitter import MetadataSplitter
+from neptune_scale.core.process_link import ProcessLink
 from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
 )
-from neptune_scale.core.util import safe_signal_name
 from neptune_scale.core.validation import (
     verify_collection_type,
     verify_max_length,
@@ -227,11 +225,13 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp: Synchronized[float] = multiprocessing.Value("d", -1)
         self._last_ack_timestamp_wait: ConditionT = multiprocessing.Condition()
 
+        self._process_link = ProcessLink()
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._family,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
+            process_link=self._process_link,
             api_token=input_api_token,
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,
@@ -257,11 +257,9 @@ class Run(WithResources, AbstractContextManager):
         self._errors_monitor.start()
         with self._lock:
             self._sync_process.start()
+            self._process_link.start(on_link_closed=self._on_child_link_closed)
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
-
-        if platform.system() != "Windows":
-            signal.signal(signal.SIGCHLD, self._handle_signal)
 
         if not resume:
             self._create_run(
@@ -272,16 +270,12 @@ class Run(WithResources, AbstractContextManager):
             )
             self.wait_for_processing(verbose=False)
 
-    def _handle_signal(self, signum: int, frame: Any) -> None:
-        # We should not be concerned about SIGCHLD if it's not about our child process
-        if signum == signal.SIGCHLD and self._sync_process.is_alive():
-            return
-
-        if not self._is_closing:
-            signame = safe_signal_name(signum)
-            logger.debug(f"Received signal {signame}. Terminating.")
-
-        self.terminate()
+    def _on_child_link_closed(self, _: ProcessLink) -> None:
+        with self._lock:
+            if not self._is_closing:
+                logger.error("Child process closed unexpectedly. Terminating.")
+                self._is_closing = True
+                self.terminate()
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -313,6 +307,7 @@ class Run(WithResources, AbstractContextManager):
 
             self._sync_process.terminate()
             self._sync_process.join()
+            self._process_link.stop()
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
