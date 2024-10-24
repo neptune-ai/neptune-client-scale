@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the signature of `Run.log_metrics`:
     - `date` is now the first parameter in line with other logging methods ([#58](https://github.com/neptune-ai/neptune-client-scale/pull/58))
     - `step` and `data` are now mandatory ([#55](https://github.com/neptune-ai/neptune-client-scale/pull/55))
-      
+
 - Removed iterables from `log_config` value type hints ([#53](https://github.com/neptune-ai/neptune-client-scale/pull/53))
 
 ## [0.6.0] - 2024-09-09
