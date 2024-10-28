@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.0] - 2024-10-28
 
 ### Changed
-- Removed the `family` parameter from `Run.__init__()` ([#62](https://github.com/neptune-ai/neptune-client-scale/pull/62))]
+- Removed `family` from run initialization parameters ([#62](https://github.com/neptune-ai/neptune-client-scale/pull/62))]
 
 ## [0.6.3] - 2024-10-23
 
