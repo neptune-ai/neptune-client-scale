@@ -52,7 +52,6 @@ from neptune_scale import Run
 
 run = Run(
     experiment_name="ExperimentName",
-    family="RunFamilyName",  # must be the same for related runs
     run_id="SomeUniqueRunIdentifier",
 )
 ```
@@ -130,7 +129,6 @@ __Parameters__
 
 | Name             | Type             | Default | Description                                                               |
 |------------------|------------------|---------|---------------------------------------------------------------------------|
-| `family`         | `str`            | -       | Identifies related runs. All runs of the same lineage must have the same `family` value. That is, forking is only possible within the same family. Max length: 128 bytes. |
 | `run_id`         | `str`            | -       | Identifier of the run. Must be unique within the project. Max length: 128 bytes. |
 | `project`        | `str`, optional  | `None`  | Name of a project in the form `workspace-name/project-name`. If `None`, the value of the `NEPTUNE_PROJECT` environment variable is used. |
 | `api_token`      | `str`, optional  | `None`  | Your Neptune API token or a service account's API token. If `None`, the value of the `NEPTUNE_API_TOKEN` environment variable is used. To keep your token secure, don't place it in source code. Instead, save it as an environment variable. |
@@ -156,7 +154,6 @@ from neptune_scale import Run
 with Run(
     project="team-alpha/project-x",
     api_token="h0dHBzOi8aHR0cHM6...Y2MifQ==",
-    family="aquarium",
     run_id="likable-barracuda",
 ) as run:
     ...
@@ -173,7 +170,6 @@ To restart an experiment, create a forked run:
 
 ```python
 with Run(
-    family="aquarium",
     run_id="adventurous-barracuda",
     experiment_name="swim-further",
     fork_run_id="likable-barracuda",
@@ -186,7 +182,6 @@ Continue a run:
 
 ```python
 with Run(
-    family="aquarium",
     run_id="likable-barracuda",  # a Neptune run with this ID already exists
     resume=True,
 ) as run:

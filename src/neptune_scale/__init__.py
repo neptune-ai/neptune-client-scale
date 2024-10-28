@@ -67,7 +67,6 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
-    MAX_FAMILY_LENGTH,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -84,7 +83,6 @@ class Run(WithResources, AbstractContextManager):
     def __init__(
         self,
         *,
-        family: str,
         run_id: str,
         project: Optional[str] = None,
         api_token: Optional[str] = None,
@@ -106,8 +104,6 @@ class Run(WithResources, AbstractContextManager):
         Initializes a run that logs the model-building metadata to Neptune.
 
         Args:
-            family: Identifies related runs. For example, the same value must apply to all runs within a run hierarchy.
-                Max length: 128 bytes.
             run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes.
             project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
@@ -131,7 +127,6 @@ class Run(WithResources, AbstractContextManager):
             on_warning_callback: Callback function triggered when a warning occurs.
         """
 
-        verify_type("family", family, str)
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
         verify_type("project", project, (str, type(None)))
@@ -182,7 +177,6 @@ class Run(WithResources, AbstractContextManager):
         assert api_token is not None  # mypy
         input_api_token: str = api_token
 
-        verify_non_empty("family", family)
         verify_non_empty("run_id", run_id)
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
@@ -193,7 +187,6 @@ class Run(WithResources, AbstractContextManager):
 
         verify_project_qualified_name("project", project)
 
-        verify_max_length("family", family, MAX_FAMILY_LENGTH)
         verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
 
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
@@ -201,7 +194,6 @@ class Run(WithResources, AbstractContextManager):
         self._is_closing = False
 
         self._project: str = input_project
-        self._family: str = family
         self._run_id: str = run_id
 
         self._lock = threading.RLock()
@@ -229,7 +221,7 @@ class Run(WithResources, AbstractContextManager):
 
         self._sync_process = SyncProcess(
             project=self._project,
-            family=self._family,
+            family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             api_token=input_api_token,
@@ -396,7 +388,7 @@ class Run(WithResources, AbstractContextManager):
             project=self._project,
             run_id=self._run_id,
             create=CreateRun(
-                family=self._family,
+                family=self._run_id,
                 fork_point=fork_point,
                 experiment_id=experiment_name,
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),

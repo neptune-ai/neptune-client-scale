@@ -278,7 +278,7 @@ class NeptuneRunConflicting(NeptuneScaleError):
 {h1}
 ----NeptuneRunConflicting------------------------------------------------------
 {end}
-Run with specified `run_id` already exists, but has different creation parameters (`family` or `fork_run_id`).
+Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
 
 {correct}Need help?{end}-> Contact support@neptune.ai
 

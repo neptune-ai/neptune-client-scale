@@ -17,7 +17,6 @@ def api_token():
 # Set short timeouts on blocking operations for quicker test execution
 @pytest.fixture(autouse=True, scope="session")
 def short_timeouts():
-    import neptune_scale
     import neptune_scale.core.components
 
     patch = pytest.MonkeyPatch()
@@ -41,10 +40,9 @@ def test_context_manager(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # when
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled"):
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
         ...
 
     # then
@@ -55,10 +53,9 @@ def test_close(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # and
-    run = Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled")
+    run = Run(project=project, api_token=api_token, run_id=run_id, mode="disabled")
 
     # when
     run.close()
@@ -67,34 +64,16 @@ def test_close(api_token):
     assert True
 
 
-def test_family_too_long(api_token):
-    # given
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    # and
-    family = "a" * 1000
-
-    # when
-    with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled"):
-            ...
-
-    # and
-    assert True
-
-
 def test_run_id_too_long(api_token):
     # given
     project = "workspace/project"
-    family = str(uuid.uuid4())
 
     # and
     run_id = "a" * 1000
 
     # then
     with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled"):
+        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
             ...
 
     # and
@@ -104,14 +83,13 @@ def test_run_id_too_long(api_token):
 def test_invalid_project_name(api_token):
     # given
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # and
     project = "just-project"
 
     # then
     with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled"):
+        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
             ...
 
     # and
@@ -122,10 +100,9 @@ def test_metadata(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log(
             step=1,
             timestamp=datetime.now(),
@@ -156,10 +133,9 @@ def test_tags(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.add_tags(["tag1"])
         run.add_tags(["tag2"], group_tags=True)
         run.remove_tags(["tag3"])
@@ -173,10 +149,9 @@ def test_log_without_step(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log(
             timestamp=datetime.now(),
             configs={
@@ -192,10 +167,9 @@ def test_log_configs(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log_configs({"int": 1})
 
     # and
@@ -206,10 +180,9 @@ def test_log_step_float(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log(
             step=3.14,
             timestamp=datetime.now(),
@@ -226,10 +199,9 @@ def test_log_no_timestamp(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # then
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log(
             step=3.14,
             configs={
@@ -245,10 +217,9 @@ def test_resume(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # when
-    with Run(project=project, api_token=api_token, family=family, run_id=run_id, resume=True, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="disabled") as run:
         run.log(
             step=3.14,
             configs={
@@ -265,13 +236,11 @@ def test_creation_time(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        family=family,
         run_id=run_id,
         creation_time=datetime.now(),
         mode="disabled",
@@ -286,13 +255,11 @@ def test_assign_experiment(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        family=family,
         run_id=run_id,
         experiment_name="experiment_id",
         mode="disabled",
@@ -307,13 +274,11 @@ def test_forking(api_token):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
-    family = run_id
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        family=family,
         run_id=run_id,
         fork_run_id="parent-run-id",
         fork_step=3.14,
