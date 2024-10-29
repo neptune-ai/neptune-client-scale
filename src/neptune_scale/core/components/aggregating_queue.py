@@ -115,7 +115,10 @@ class AggregatingQueue(Resource):
             batch_sequence_id = element.sequence_id
             batch_timestamp = element.timestamp
 
-            batch_bytes += element.metadata_size
+            if element.metadata_size is not None:
+                batch_bytes += element.metadata_size
+            else:
+                batch_bytes += len(element.operation)
             elements_in_batch += 1
 
             self.commit()
