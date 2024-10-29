@@ -1,3 +1,4 @@
+import logging
 import time
 from queue import (
     Empty,
@@ -12,7 +13,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import (
+    RunOperation,
+    RunOperationBatch,
+)
 
 from neptune_scale.core.components.aggregating_queue import AggregatingQueue
 from neptune_scale.core.components.queue_element import (
@@ -34,6 +38,7 @@ def test__simple():
         metadata_size=update.ByteSize(),
         operation_key=None,
     )
+    batch = RunOperationBatch(update=[update])
 
     # and
     queue = AggregatingQueue(max_queue_size=1)
@@ -45,7 +50,7 @@ def test__simple():
     assert queue.get() == BatchedOperations(
         sequence_id=1,
         timestamp=element.timestamp,
-        operation=element.operation,
+        operation=batch.SerializeToString(),
     )
 
 
@@ -118,6 +123,8 @@ def test__batch_size_limit():
         metadata_size=update2.ByteSize(),
         operation_key=None,
     )
+    batch1 = RunOperationBatch(update=[update1])
+    batch2 = RunOperationBatch(update=[update2])
 
     # and
     queue = AggregatingQueue(max_queue_size=2, max_elements_in_batch=1)
@@ -130,12 +137,12 @@ def test__batch_size_limit():
     assert queue.get() == BatchedOperations(
         sequence_id=1,
         timestamp=element1.timestamp,
-        operation=element1.operation,
+        operation=batch1.SerializeToString(),
     )
     assert queue.get() == BatchedOperations(
         sequence_id=2,
         timestamp=element2.timestamp,
-        operation=element2.operation,
+        operation=batch2.SerializeToString(),
     )
 
 
@@ -182,12 +189,12 @@ def test__batching():
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert all(k in batch.update.assign for k in ["aa0", "aa1", "bb0", "bb1"])
+    assert all(k in batch.update[0].assign for k in ["aa0", "aa1", "bb0", "bb1"])
 
 
 @freeze_time("2024-09-01")
@@ -233,7 +240,7 @@ def test__not_merge_two_run_creation():
     assert result.timestamp == element1.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
@@ -248,7 +255,7 @@ def test__not_merge_two_run_creation():
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
@@ -299,7 +306,7 @@ def test__not_merge_run_creation_with_metadata_update():
     assert result.timestamp == element1.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
@@ -314,12 +321,12 @@ def test__not_merge_run_creation_with_metadata_update():
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update == update
+    assert batch.update == [update]
 
 
 @freeze_time("2024-09-01")
@@ -365,17 +372,17 @@ def test__merge_same_key():
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update.step == Step(whole=1, micro=0)
-    assert all(k in batch.update.assign for k in ["aa0", "aa1", "bb0", "bb1"])
+    assert batch.update[0].step == Step(whole=1, micro=0)
+    assert all(k in batch.update[0].assign for k in ["aa0", "aa1", "bb0", "bb1"])
 
 
 @freeze_time("2024-09-01")
-def test__not_merge_two_different_steps():
+def test__merge_two_different_steps():
     # given
     update1 = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={f"aa{i}": Value(int64=(i * 97)) for i in range(2)})
     update2 = UpdateRunSnapshot(step=Step(whole=2, micro=0), assign={f"bb{i}": Value(int64=(i * 25)) for i in range(2)})
@@ -389,7 +396,7 @@ def test__not_merge_two_different_steps():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_batchable=False,
+        is_batchable=True,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -397,7 +404,7 @@ def test__not_merge_two_different_steps():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_batchable=False,
+        is_batchable=True,
         metadata_size=0,
         operation_key=2.0,
     )
@@ -413,35 +420,20 @@ def test__not_merge_two_different_steps():
     result = queue.get()
 
     # then
-    assert result.sequence_id == 1
-    assert result.timestamp == element1.timestamp
-
-    # and
-    batch = RunOperation()
-    batch.ParseFromString(result.operation)
-
-    assert batch.project == "project"
-    assert batch.run_id == "run_id"
-    assert batch.update == update1
-
-    # when
-    result = queue.get()
-
-    # then
-    assert result.sequence_id == 2
+    assert result.sequence_id == element2.sequence_id
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update == update2
+    assert batch.update == [update1, update2]
 
 
 @freeze_time("2024-09-01")
-def test__not_merge_step_with_none():
+def test__merge_step_with_none():
     # given
     update1 = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={f"aa{i}": Value(int64=(i * 97)) for i in range(2)})
     update2 = UpdateRunSnapshot(step=None, assign={f"bb{i}": Value(int64=(i * 25)) for i in range(2)})
@@ -455,7 +447,7 @@ def test__not_merge_step_with_none():
         sequence_id=1,
         timestamp=time.process_time(),
         operation=operation1.SerializeToString(),
-        is_batchable=False,
+        is_batchable=True,
         metadata_size=0,
         operation_key=1.0,
     )
@@ -463,7 +455,7 @@ def test__not_merge_step_with_none():
         sequence_id=2,
         timestamp=time.process_time(),
         operation=operation2.SerializeToString(),
-        is_batchable=False,
+        is_batchable=True,
         metadata_size=0,
         operation_key=None,
     )
@@ -479,28 +471,13 @@ def test__not_merge_step_with_none():
     result = queue.get()
 
     # then
-    assert result.sequence_id == 1
-    assert result.timestamp == element1.timestamp
-
-    # and
-    batch = RunOperation()
-    batch.ParseFromString(result.operation)
-
-    assert batch.project == "project"
-    assert batch.run_id == "run_id"
-    assert batch.update == update1
-
-    # when
-    result = queue.get()
-
-    # then
-    assert result.sequence_id == 2
+    assert result.sequence_id == element2.sequence_id
     assert result.timestamp == element2.timestamp
 
     # and
-    batch = RunOperation()
+    batch = RunOperationBatch()
     batch.ParseFromString(result.operation)
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update == update2
+    assert batch.update == [update1, update2]

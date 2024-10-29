@@ -39,9 +39,9 @@ from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
-    RequestId,
+    RequestIdList,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperationBatch
 
 from neptune_scale.api.api_client import (
     ApiClient,
@@ -434,11 +434,11 @@ class SenderThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def submit(self, *, operation: RunOperation) -> Optional[RequestId]:
+    def submit(self, *, operation: RunOperationBatch) -> Optional[RequestIdList]:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
-        response = self._backend.submit(operation=operation, family=self._family)
+        response = self._backend.submit_batch(operation=operation, family=self._family)
 
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
@@ -459,16 +459,17 @@ class SenderThread(Daemon, WithResources):
 
                 try:
                     logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(data))
-                    run_operation = RunOperation()
+                    run_operation = RunOperationBatch()
                     run_operation.ParseFromString(data)
-                    request_id = self.submit(operation=run_operation)
+                    request_ids: Optional[RequestIdList] = self.submit(operation=run_operation)
 
-                    if request_id is None:
+                    if request_ids is None:
                         raise NeptuneUnexpectedError("Server response is empty")
 
-                    logger.debug("Operation #%d submitted as %s", sequence_id, request_id.value)
+                    last_request_id = request_ids.ids[-1].value
+                    logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
                     self._status_tracking_queue.put(
-                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value, timestamp=timestamp)
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)
                     )
                     self.commit()
                 except NeptuneRetryableError as e:

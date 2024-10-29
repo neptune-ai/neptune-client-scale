@@ -10,7 +10,10 @@ from queue import (
 from threading import RLock
 from typing import Optional
 
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import (
+    RunOperation,
+    RunOperationBatch
+)
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.queue_element import (
@@ -68,47 +71,33 @@ class AggregatingQueue(Resource):
 
     def get(self) -> BatchedOperations:
         start = time.process_time()
-        elements_in_batch: int = 0
-        batch: Optional[RunOperation] = None
+
+        batch_operations: list[(float, RunOperation)] = []
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
-        batch_key: Optional[float] = None
+
         batch_bytes: int = 0
+        elements_in_batch: int = 0
         wait_remaining = self._wait_time
 
         # Pull operations off the queue until we either reach the maximum size, or
         # the specified wait time has passed. This way we maximize the potential batch size.
-        while wait_remaining > 0:
+        while True:
             t0 = time.monotonic()
 
             if elements_in_batch >= self._max_elements_in_batch:
+                logger.debug("Batch closed due to limit of elements in batch %s", elements_in_batch)
                 break
 
             element = self._get_next(wait_remaining)
             if element is None:
                 break
 
-            elements_in_batch += 1
-
-            if batch is None:
-                batch = RunOperation()
-                batch.ParseFromString(element.operation)
-
-                batch_sequence_id = element.sequence_id
-                batch_timestamp = element.timestamp
-                batch_key = element.operation_key
-                batch_bytes = len(element.operation)
-
-                self.commit()
-
-                if not element.is_batchable:
-                    logger.debug("Batch closed due to first operation not being batchable")
-                    break
+            if not batch_operations or element.operation_key != batch_operations[-1][0]:
+                new_operation = RunOperation()
+                new_operation.ParseFromString(element.operation)
+                batch_operations.append((element.operation_key, new_operation))
             else:
-                if batch_key != element.operation_key:
-                    logger.debug("Batch closed due to key mismatch")
-                    break
-
                 if not element.is_batchable:
                     logger.debug("Batch closed due to next operation not being batchable")
                     break
@@ -119,21 +108,30 @@ class AggregatingQueue(Resource):
                     logger.debug("Batch closed due to size limit %s", batch_bytes + element.metadata_size)
                     break
 
-                batch_bytes += element.metadata_size
-
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                merge_run_operation(batch, new_operation)
+                merge_run_operation(batch_operations[-1][1], new_operation)
 
-                batch_sequence_id = element.sequence_id
-                batch_timestamp = element.timestamp
+            batch_sequence_id = element.sequence_id
+            batch_timestamp = element.timestamp
 
-                self.commit()
+            batch_bytes += element.metadata_size
+            elements_in_batch += 1
+
+            self.commit()
+
+            if not element.is_batchable:
+                logger.debug("Batch closed due to first not being batchable")
+                break
 
             t1 = time.monotonic()
             wait_remaining -= t1 - t0
 
-        if batch is None:
+            if wait_remaining <= 0:
+                logger.debug("Batch closed due to wait time")
+                break
+
+        if not batch_operations:
             logger.debug(f"Batch is empty after {self._wait_time} seconds of waiting.")
             raise Empty
 
@@ -147,11 +145,34 @@ class AggregatingQueue(Resource):
             time.process_time() - start,
         )
 
+        batch = create_run_batch(batch_operations)
+
         return BatchedOperations(
             sequence_id=batch_sequence_id,
             timestamp=batch_timestamp,
             operation=batch.SerializeToString(),
         )
+
+
+def create_run_batch(operations: list[(float, RunOperation)]) -> RunOperationBatch:
+    batch = RunOperationBatch()
+
+    head_operation = operations[0][1]
+    batch.project = head_operation.project
+    batch.run_id = head_operation.run_id
+    batch.create_missing_project = head_operation.create_missing_project
+    batch.api_key = head_operation.api_key
+
+    for _, operation in operations:
+        operation_type = operation.WhichOneof("operation")
+        if operation_type == "create":
+            batch.create.CopyFrom(operation.create)
+        elif operation_type == "update":
+            batch.update.append(operation.update)
+        else:
+            logger.error("Unknown operation type %s", operation_type)
+
+    return batch
 
 
 def merge_run_operation(batch: RunOperation, operation: RunOperation) -> None:
