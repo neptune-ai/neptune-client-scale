@@ -1,6 +1,6 @@
 __all__ = (
-    "init_root_logger",
-    "init_child_logger",
+    "init_main_process_logger",
+    "init_child_process_logger",
     "get_logger",
 )
 
@@ -34,7 +34,7 @@ def get_logger() -> logging.Logger:
     return logging.getLogger(NEPTUNE_LOGGER_NAME)
 
 
-def init_root_logger() -> Tuple[logging.Logger, multiprocessing.Queue]:
+def init_main_process_logger() -> Tuple[logging.Logger, multiprocessing.Queue]:
     """
     Initialize the root 'neptune' logger to use a mp.Queue. This should be called only once in the main process.
 
@@ -85,7 +85,7 @@ def init_root_logger() -> Tuple[logging.Logger, multiprocessing.Queue]:
     return logger, queue
 
 
-def init_child_logger(queue: multiprocessing.Queue) -> logging.Logger:
+def init_child_process_logger(queue: multiprocessing.Queue) -> logging.Logger:
     """
     Initialize a child logger to use the given queue. This should be called in child processes only once.
     After it's called, the logger can be retrieved using `get_logger()`.
@@ -96,6 +96,9 @@ def init_child_logger(queue: multiprocessing.Queue) -> logging.Logger:
     Returns:
         A logger instance.
     """
+
+    if multiprocessing.parent_process() is None:
+        raise RuntimeError("This function should be called only in child processes.")
 
     logger = logging.getLogger(NEPTUNE_LOGGER_NAME)
     if logger.hasHandlers():

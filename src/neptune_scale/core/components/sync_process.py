@@ -60,7 +60,7 @@ from neptune_scale.core.components.queue_element import (
 )
 from neptune_scale.core.logger import (
     get_logger,
-    init_child_logger,
+    init_child_process_logger,
 )
 from neptune_scale.core.util import safe_signal_name
 from neptune_scale.exceptions import (
@@ -234,7 +234,7 @@ class SyncProcess(Process):
         self._stop_event.set()  # Trigger the stop event
 
     def run(self) -> None:
-        init_child_logger(self._logging_queue)
+        init_child_process_logger(self._logging_queue)
 
         logger.info("Data synchronization started")
 

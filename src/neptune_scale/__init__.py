@@ -45,7 +45,7 @@ from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.components.sync_process import SyncProcess
 from neptune_scale.core.logger import (
     get_logger,
-    init_root_logger,
+    init_main_process_logger,
 )
 from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
@@ -132,7 +132,7 @@ class Run(WithResources, AbstractContextManager):
             on_warning_callback: Callback function triggered when a warning occurs.
         """
 
-        _, self._logging_queue = init_root_logger()
+        _, self._logging_queue = init_main_process_logger()
 
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
