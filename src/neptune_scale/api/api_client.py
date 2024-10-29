@@ -55,9 +55,11 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import Reques
 from neptune_api.types import Response
 
 from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import get_logger
 from neptune_scale.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.parameters import REQUEST_TIMEOUT
+
+logger = get_logger()
 
 
 @dataclass

@@ -11,7 +11,7 @@ from typing import (
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.queue_element import SingleOperation
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import get_logger
 from neptune_scale.core.validation import verify_type
 from neptune_scale.parameters import (
     MAX_MULTIPROCESSING_QUEUE_SIZE,
@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from threading import RLock
 
     from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+
+logger = get_logger()
 
 
 class OperationsQueue(Resource):

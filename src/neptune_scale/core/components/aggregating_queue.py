@@ -17,12 +17,14 @@ from neptune_scale.core.components.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import get_logger
 from neptune_scale.parameters import (
     BATCH_WAIT_TIME_SECONDS,
     MAX_BATCH_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
 )
+
+logger = get_logger()
 
 
 class AggregatingQueue(Resource):
