@@ -179,9 +179,7 @@ class Run(WithResources, AbstractContextManager):
         input_project: str = project
 
         api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        if api_token:
-            api_token = api_token.strip('"').strip("'")
-        else:
+        if api_token is None:
             raise NeptuneApiTokenNotProvided()
         assert api_token is not None  # mypy
         input_api_token: str = api_token
