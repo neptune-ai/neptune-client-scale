@@ -171,6 +171,13 @@ def test_log_configs(api_token):
     # then
     with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log_configs({"int": 1})
+        run.log_configs({"float": 3.14})
+        run.log_configs({"bool": True})
+        run.log_configs({"string": "test"})
+        run.log_configs({"datetime": datetime.now()})
+        run.log_configs({"string_list": ["a", "b", "c"]})
+        run.log_configs({"int_list": [1, 2, 3]})
+        run.log_configs({"mixed_list": [1, "a", datetime.now()]})
 
     # and
     assert True
