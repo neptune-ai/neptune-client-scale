@@ -43,7 +43,10 @@ from neptune_scale.core.components.errors_tracking import (
 from neptune_scale.core.components.lag_tracking import LagTracker
 from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.components.sync_process import SyncProcess
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import (
+    get_logger,
+    init_main_process_logger,
+)
 from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
     datetime_to_proto,
@@ -73,6 +76,8 @@ from neptune_scale.parameters import (
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
+
+logger = get_logger()
 
 
 class Run(WithResources, AbstractContextManager):
@@ -126,6 +131,8 @@ class Run(WithResources, AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
         """
+
+        _, self._logging_queue = init_main_process_logger()
 
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -224,6 +231,7 @@ class Run(WithResources, AbstractContextManager):
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
+            logging_queue=self._logging_queue,
             api_token=input_api_token,
             last_put_seq=self._last_put_seq,
             last_put_seq_wait=self._last_put_seq_wait,

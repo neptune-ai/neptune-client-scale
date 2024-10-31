@@ -13,7 +13,7 @@ from typing import (
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.daemon import Daemon
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import get_logger
 from neptune_scale.core.process_killer import kill_me
 from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
@@ -24,6 +24,8 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedError,
 )
 from neptune_scale.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
+
+logger = get_logger()
 
 
 class ErrorsQueue(Resource):
