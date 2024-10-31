@@ -10,10 +10,7 @@ from queue import (
 from threading import RLock
 from typing import Optional
 
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import (
-    RunOperation,
-    RunOperationBatch
-)
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.core.components.abstract import Resource
 from neptune_scale.core.components.queue_element import (
@@ -157,8 +154,11 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: list[(float, RunOperation)]) -> RunOperationBatch:
-    batch = RunOperationBatch()
+def create_run_batch(operations: list[(float, RunOperation)]) -> RunOperation:
+    if len(operations) == 1:
+        return operations[0][1]
+
+    batch = RunOperation()
 
     head_operation = operations[0][1]
     batch.project = head_operation.project
@@ -168,12 +168,10 @@ def create_run_batch(operations: list[(float, RunOperation)]) -> RunOperationBat
 
     for _, operation in operations:
         operation_type = operation.WhichOneof("operation")
-        if operation_type == "create":
-            batch.create.CopyFrom(operation.create)
-        elif operation_type == "update":
-            batch.update.append(operation.update)
+        if operation_type == "update":
+            batch.update_batch.snapshots.append(operation.update)
         else:
-            logger.error("Unknown operation type %s", operation_type)
+            logger.error("Cannot batch operation of type %s", operation_type)
 
     return batch
 

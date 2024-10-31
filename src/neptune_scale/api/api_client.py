@@ -36,7 +36,6 @@ from neptune_api.api.backend import get_client_config
 from neptune_api.api.data_ingestion import (
     check_request_status_bulk,
     submit_operation,
-    submit_operation_batch,
 )
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
@@ -50,11 +49,9 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
     RequestIdList,
+    SubmitResponse
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import (
-    RunOperation,
-    RunOperationBatch
-)
+from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
 from neptune_api.types import Response
 
@@ -110,10 +107,7 @@ def create_auth_api_client(
 
 class ApiClient(Resource, abc.ABC):
     @abc.abstractmethod
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]: ...
-
-    @abc.abstractmethod
-    def submit_batch(self, operation: RunOperationBatch, family: str) -> Response[RequestIdList]: ...
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]: ...
 
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
@@ -135,9 +129,6 @@ class HostedApiClient(ApiClient):
     def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
         return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
 
-    def submit_batch(self, operation: RunOperationBatch, family: str) -> Response[RequestIdList]:
-        return submit_operation_batch.sync_detailed(client=self._backend, body=operation, family=family)
-
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
         return check_request_status_bulk.sync_detailed(
             client=self._backend,
@@ -154,14 +145,11 @@ class MockedApiClient(ApiClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
-        return Response(content=b"", parsed=RequestId(value=str(uuid.uuid4())), status_code=HTTPStatus.OK, headers={})
-
-    def submit_batch(self, operation: RunOperationBatch, family: str) -> Response[RequestIdList]:
-        response_body = RequestIdList(
-            ids=[RequestId(value=str(uuid.uuid4())) for _ in range(len(operation.operations))]
-        )
-        return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
+        operation_count = len(operation.update_batch.snapshots) if operation.update_batch else 1
+        request_ids = [str(uuid.uuid4()) for _ in range(operation_count)]
+        response = SubmitResponse(request_id=request_ids[-1], request_ids=request_ids)
+        return Response(content=b"", parsed=response, status_code=HTTPStatus.OK, headers={})
 
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
         response_body = BulkRequestStatus(
