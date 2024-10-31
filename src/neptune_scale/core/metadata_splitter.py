@@ -43,7 +43,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         run_id: str,
         step: Optional[Union[int, float]],
         timestamp: datetime,
-        fields: Dict[str, Union[float, bool, int, str, datetime, list, set]],
+        fields: Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]],
         metrics: Dict[str, float],
         add_tags: Dict[str, Union[List[str], Set[str]]],
         remove_tags: Dict[str, Union[List[str], Set[str]]],

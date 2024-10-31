@@ -138,8 +138,12 @@ def test_tags(api_token):
     with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.add_tags(["tag1"])
         run.add_tags(["tag2"], group_tags=True)
-        run.remove_tags(["tag3"])
-        run.remove_tags(["tag4"], group_tags=True)
+        run.remove_tags(["tag1"])
+        run.remove_tags(["tag2"], group_tags=True)
+        run.add_tags(("tag3", "tag4"))
+        run.remove_tags(("tag3", "tag4"))
+        run.add_tags(("tag3", "tag4"), group_tags=True)
+        run.remove_tags(("tag3", "tag4"), group_tags=True)
 
     # and
     assert True
