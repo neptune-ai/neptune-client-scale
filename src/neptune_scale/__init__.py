@@ -25,6 +25,7 @@ from typing import (
     Literal,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -479,7 +480,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(configs=data)
 
-    def add_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+    def add_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
 
@@ -498,7 +499,7 @@ class Run(WithResources, AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
 
-    def remove_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+    def remove_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
         """
         Removes the specified tags from the run.
 
@@ -523,8 +524,8 @@ class Run(WithResources, AbstractContextManager):
         timestamp: Optional[datetime] = None,
         configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Dict[str, Union[float, int]]] = None,
-        tags_add: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
-        tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        tags_add: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
+        tags_remove: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
     ) -> None:
         """
         See one of the following instead:

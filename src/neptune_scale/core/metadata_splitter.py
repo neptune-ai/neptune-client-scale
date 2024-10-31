@@ -45,8 +45,8 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         timestamp: datetime,
         fields: Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]],
         metrics: Dict[str, float],
-        add_tags: Dict[str, Union[List[str], Set[str]]],
-        remove_tags: Dict[str, Union[List[str], Set[str]]],
+        add_tags: Dict[str, Union[List[str], Set[str], Tuple[str]]],
+        remove_tags: Dict[str, Union[List[str], Set[str], Tuple[str]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
