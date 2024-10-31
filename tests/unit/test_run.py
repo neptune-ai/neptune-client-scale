@@ -178,6 +178,8 @@ def test_log_configs(api_token):
         run.log_configs({"string_list": ["a", "b", "c"]})
         run.log_configs({"int_list": [1, 2, 3]})
         run.log_configs({"mixed_list": [1, "a", datetime.now()]})
+        run.log_configs({"mixed_set": {1, "a", datetime.now()}})
+        run.log_configs({"mixed_tuple": (1, "a", datetime.now())})
 
     # and
     assert True

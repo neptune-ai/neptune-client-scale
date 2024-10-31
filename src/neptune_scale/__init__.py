@@ -551,7 +551,9 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`tags_add` keys", list(tags_add.keys()), str)
         verify_collection_type("`tags_remove` keys", list(tags_remove.keys()), str)
 
-        verify_collection_type("`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set))
+        verify_collection_type(
+            "`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set, tuple)
+        )
         verify_collection_type("`metrics` values", list(metrics.values()), (float, int))
         verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set))
         verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set))
