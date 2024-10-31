@@ -58,7 +58,10 @@ from neptune_scale.core.components.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import (
+    get_logger,
+    init_child_process_logger,
+)
 from neptune_scale.core.util import safe_signal_name
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -105,6 +108,7 @@ from neptune_scale.parameters import (
 
 T = TypeVar("T")
 
+logger = get_logger()
 
 CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
     IngestCode.OK: None,
@@ -192,6 +196,7 @@ class SyncProcess(Process):
         self,
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
+        logging_queue: Queue,
         api_token: str,
         project: str,
         family: str,
@@ -208,6 +213,7 @@ class SyncProcess(Process):
 
         self._external_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
+        self._logging_queue: Queue = logging_queue
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -228,6 +234,8 @@ class SyncProcess(Process):
         self._stop_event.set()  # Trigger the stop event
 
     def run(self) -> None:
+        init_child_process_logger(self._logging_queue)
+
         logger.info("Data synchronization started")
 
         # Register signals handlers
