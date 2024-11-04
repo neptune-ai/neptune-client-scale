@@ -1,4 +1,7 @@
-from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
 
 from freezegun import freeze_time
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -23,7 +26,7 @@ def test_empty():
         project="workspace/project",
         run_id="run_id",
         step=1,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         configs={},
         metrics={},
         add_tags={},
@@ -50,13 +53,13 @@ def test_fields():
         project="workspace/project",
         run_id="run_id",
         step=1,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         configs={
             "some/string": "value",
             "some/int": 2501,
             "some/float": 3.14,
             "some/bool": True,
-            "some/datetime": datetime.now(),
+            "some/datetime": datetime.now(timezone.utc),
             "some/tags": {"tag1", "tag2"},
         },
         metrics={},
@@ -94,7 +97,7 @@ def test_metrics():
         project="workspace/project",
         run_id="run_id",
         step=1,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         configs={},
         metrics={
             "some/metric": 3.14,
@@ -128,7 +131,7 @@ def test_tags():
         project="workspace/project",
         run_id="run_id",
         step=1,
-        timestamp=datetime.now(),
+        timestamp=datetime.now(timezone.utc),
         configs={},
         metrics={},
         add_tags={
@@ -174,7 +177,7 @@ def test_tags():
 def test_splitting():
     # given
     max_size = 1024
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
     metrics = {f"metric{v}": 7 / 9.0 * v for v in range(1000)}
     fields = {f"field{v}": v for v in range(1000)}
     add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
@@ -220,7 +223,7 @@ def test_splitting():
 def test_split_large_tags():
     # given
     max_size = 1024
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
     metrics = {}
     fields = {}
     add_tags = {"add/tag": {f"value{v}" for v in range(1000)}}
