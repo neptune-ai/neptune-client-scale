@@ -226,6 +226,8 @@ You can log configurations or other single values. Pass the metadata as a dictio
 
 For example, `{"parameters/learning_rate": 0.001}`. In the field path, each forward slash `/` nests the field under a namespace. Use namespaces to structure the metadata into meaningful categories.
 
+Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
+
 __Parameters__
 
 | Name          | Type                                               | Default | Description                                                               |
@@ -265,7 +267,7 @@ __Parameters__
 |-------------|------------------------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `data`      | `Dict[str, Union[float, int]]` | `None`  | Dictionary of metrics to log. Each metric value is associated with a step. To log multiple metrics at once, pass multiple key-value pairs.                                                                                                                           |
 | `step`      | `Union[float, int]`           | `None`  | Index of the log entry. Must be increasing. <br> **Tip:** Using float rather than int values can be useful, for example, when logging substeps in a batch. |
-| `timestamp` | `datetime`, optional                     | `None`  | Time of logging the metadata.                                                                                                                                                                                                                                        |
+| `timestamp` | `datetime`, optional                     | `None`  | Time of logging the metadata. If not provided, the current time is used. If provided, and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.                                                                                            |
 
 __Examples__
 

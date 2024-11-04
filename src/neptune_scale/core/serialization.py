@@ -21,6 +21,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 
+from .util import ensure_utc
+
 
 def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], Set[str]]) -> Value:
     if isinstance(value, Value):
@@ -43,7 +45,7 @@ def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], S
 
 
 def datetime_to_proto(dt: datetime) -> Timestamp:
-    dt_ts = dt.timestamp()
+    dt_ts = ensure_utc(dt).timestamp()
     return Timestamp(seconds=int(dt_ts), nanos=int((dt_ts % 1) * 1e9))
 
 

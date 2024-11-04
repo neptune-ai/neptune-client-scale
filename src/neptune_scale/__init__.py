@@ -14,7 +14,10 @@ import signal
 import threading
 import time
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Condition as ConditionT
 from typing import (
@@ -52,7 +55,10 @@ from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
 )
-from neptune_scale.core.util import safe_signal_name
+from neptune_scale.core.util import (
+    ensure_utc,
+    safe_signal_name,
+)
 from neptune_scale.core.validation import (
     verify_collection_type,
     verify_max_length,
@@ -429,7 +435,8 @@ class Run(WithResources, AbstractContextManager):
                 To log multiple metrics at once, pass multiple key-value pairs.
             step: Index of the log entry. Must be increasing.
                 Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
-            timestamp (optional): Time of logging the metadata.
+            timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
+                and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
 
 
         Examples:
@@ -461,6 +468,8 @@ class Run(WithResources, AbstractContextManager):
         Args:
             data: Dictionary of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
+
+        Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
 
         Example:
             ```
@@ -540,7 +549,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
-        timestamp = datetime.now() if timestamp is None else timestamp
+        timestamp = datetime.now(tz=timezone.utc) if timestamp is None else ensure_utc(timestamp)
         configs = {} if configs is None else configs
         metrics = {} if metrics is None else metrics
         tags_add = {} if tags_add is None else tags_add
