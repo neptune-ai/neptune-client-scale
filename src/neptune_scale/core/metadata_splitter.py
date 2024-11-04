@@ -43,7 +43,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         run_id: str,
         step: Optional[Union[int, float]],
         timestamp: datetime,
-        fields: Dict[str, Union[float, bool, int, str, datetime]],
+        configs: Dict[str, Union[float, bool, int, str, datetime]],
         metrics: Dict[str, float],
         add_tags: Dict[str, Union[List[str], Set[str]]],
         remove_tags: Dict[str, Union[List[str], Set[str]]],
@@ -53,7 +53,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
-        self._fields = peekable(fields.items())
+        self._configs = peekable(configs.items())
         self._metrics = peekable(starmap(lambda k, v: (k, float(v)), metrics.items()))
         self._add_tags = peekable(add_tags.items())
         self._remove_tags = peekable(remove_tags.items())
@@ -84,7 +84,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         size = update.ByteSize()
 
         size = self.populate(
-            assets=self._fields,
+            assets=self._configs,
             update_producer=lambda key, value: update.assign[key].MergeFrom(value),
             size=size,
         )
