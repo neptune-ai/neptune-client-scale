@@ -573,7 +573,7 @@ class Run(WithResources, AbstractContextManager):
             run_id=self._run_id,
             step=step,
             timestamp=timestamp,
-            fields=configs,
+            configs=configs,
             metrics=metrics,
             add_tags=tags_add,
             remove_tags=tags_remove,
