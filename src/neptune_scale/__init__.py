@@ -173,7 +173,9 @@ class Run(WithResources, AbstractContextManager):
             raise ValueError("`max_queue_size` must be greater than 0.")
 
         project = project or os.environ.get(PROJECT_ENV_NAME)
-        if project is None:
+        if project:
+            project = project.strip('"').strip("'")
+        else:
             raise NeptuneProjectNotProvided()
         assert project is not None  # mypy
         input_project: str = project
@@ -261,7 +263,8 @@ class Run(WithResources, AbstractContextManager):
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
         if platform.system() != "Windows":
-            signal.signal(signal.SIGCHLD, self._handle_signal)
+            # Ignoring the type because the signal module is not available on Windows
+            signal.signal(signal.SIGCHLD, self._handle_signal)  # type: ignore[attr-defined]
 
         if not resume:
             self._create_run(
