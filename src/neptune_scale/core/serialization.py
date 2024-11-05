@@ -35,9 +35,8 @@ def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], S
         return Value(string=value)
     elif isinstance(value, datetime):
         return Value(timestamp=datetime_to_proto(value))
-    elif isinstance(value, (list, set)):
-        fv = Value(string_set=StringSet(values=value))
-        return fv
+    elif isinstance(value, (list, set, tuple)):
+        return Value(string_set=StringSet(values=value))
     else:
         raise ValueError(f"Unsupported ingest field value type: {type(value)}")
 

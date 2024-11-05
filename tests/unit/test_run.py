@@ -136,10 +136,18 @@ def test_tags(api_token):
 
     # then
     with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
-        run.add_tags(["tag1"])
-        run.add_tags(["tag2"], group_tags=True)
-        run.remove_tags(["tag3"])
-        run.remove_tags(["tag4"], group_tags=True)
+        run.add_tags(["tag1", "tag2"])
+        run.add_tags(["tag3", "tag4"], group_tags=True)
+        run.remove_tags(["tag1"])
+        run.remove_tags(["tag3"], group_tags=True)
+        run.add_tags(("tag5", "tag6"))
+        run.remove_tags(("tag5", "tag6"))
+        run.add_tags(("tag5", "tag6"), group_tags=True)
+        run.remove_tags(("tag5", "tag6"), group_tags=True)
+        run.add_tags({"tag7", "tag8"})
+        run.remove_tags({"tag7", "tag8"})
+        run.add_tags({"tag7", "tag8"}, group_tags=True)
+        run.remove_tags({"tag7", "tag8"}, group_tags=True)
 
     # and
     assert True
@@ -171,6 +179,11 @@ def test_log_configs(api_token):
     # then
     with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
         run.log_configs({"int": 1})
+        run.log_configs({"float": 3.14})
+        run.log_configs({"bool": True})
+        run.log_configs({"string": "test"})
+        run.log_configs({"datetime": datetime.now()})
+        run.log_configs({"string_list": ["a", "b", "c"]})
 
     # and
     assert True

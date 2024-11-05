@@ -25,6 +25,7 @@ from typing import (
     Literal,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -449,7 +450,9 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(step=step, timestamp=timestamp, metrics=data)
 
-    def log_configs(self, data: Optional[Dict[str, Union[float, bool, int, str, datetime]]] = None) -> None:
+    def log_configs(
+        self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
+    ) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
@@ -483,7 +486,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(configs=data)
 
-    def add_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+    def add_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
 
@@ -502,7 +505,7 @@ class Run(WithResources, AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
 
-    def remove_tags(self, tags: Union[List[str], Set[str]], group_tags: bool = False) -> None:
+    def remove_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
         """
         Removes the specified tags from the run.
 
@@ -525,10 +528,10 @@ class Run(WithResources, AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[Dict[str, Union[float, bool, int, str, datetime]]] = None,
+        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Dict[str, Union[float, int]]] = None,
-        tags_add: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
-        tags_remove: Optional[Dict[str, Union[List[str], Set[str]]]] = None,
+        tags_add: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
+        tags_remove: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
     ) -> None:
         """
         See one of the following instead:
@@ -557,10 +560,12 @@ class Run(WithResources, AbstractContextManager):
         verify_collection_type("`tags_add` keys", list(tags_add.keys()), str)
         verify_collection_type("`tags_remove` keys", list(tags_remove.keys()), str)
 
-        verify_collection_type("`configs` values", list(configs.values()), (float, bool, int, str, datetime))
+        verify_collection_type(
+            "`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set, tuple)
+        )
         verify_collection_type("`metrics` values", list(metrics.values()), (float, int))
-        verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set))
-        verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set))
+        verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set, tuple))
+        verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set, tuple))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
