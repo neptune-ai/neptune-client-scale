@@ -429,7 +429,8 @@ class Run(WithResources, AbstractContextManager):
                 To log multiple metrics at once, pass multiple key-value pairs.
             step: Index of the log entry. Must be increasing.
                 Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
-            timestamp (optional): Time of logging the metadata.
+            timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
+                and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
 
 
         Examples:
@@ -461,6 +462,8 @@ class Run(WithResources, AbstractContextManager):
         Args:
             data: Dictionary of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
+
+        Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
 
         Example:
             ```
