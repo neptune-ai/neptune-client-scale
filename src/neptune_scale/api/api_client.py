@@ -146,7 +146,7 @@ class MockedApiClient(ApiClient):
         pass
 
     def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
-        operation_count = len(operation.update_batch.snapshots) if operation.update_batch else 1
+        operation_count = len(operation.update_batch.snapshots) if operation.update_batch.snapshots else 1
         request_ids = [str(uuid.uuid4()) for _ in range(operation_count)]
         response = SubmitResponse(request_id=request_ids[-1], request_ids=request_ids)
         return Response(content=b"", parsed=response, status_code=HTTPStatus.OK, headers={})
