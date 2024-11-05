@@ -32,7 +32,7 @@ def test__simple():
         operation=operation.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -60,7 +60,7 @@ def test__max_size_exceeded():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -68,7 +68,7 @@ def test__max_size_exceeded():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -108,7 +108,7 @@ def test__batch_size_limit():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -116,7 +116,7 @@ def test__batch_size_limit():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -148,7 +148,7 @@ def test__batching():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -156,7 +156,7 @@ def test__batching():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -199,7 +199,7 @@ def test__not_merge_two_run_creation():
         operation=operation1.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -207,7 +207,7 @@ def test__not_merge_two_run_creation():
         operation=operation2.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -265,7 +265,7 @@ def test__not_merge_run_creation_with_metadata_update():
         operation=operation1.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -273,7 +273,7 @@ def test__not_merge_run_creation_with_metadata_update():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
-        operation_key=None,
+        batch_key=None,
     )
 
     # and
@@ -331,7 +331,7 @@ def test__merge_same_key():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        operation_key=1.0,
+        batch_key=1.0,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -339,7 +339,7 @@ def test__merge_same_key():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        operation_key=1.0,
+        batch_key=1.0,
     )
 
     # and
@@ -383,7 +383,7 @@ def test__merge_two_different_steps():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=1.0,
+        batch_key=1.0,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -391,7 +391,7 @@ def test__merge_two_different_steps():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=2.0,
+        batch_key=2.0,
     )
 
     # and
@@ -434,7 +434,7 @@ def test__merge_step_with_none():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=1.0,
+        batch_key=1.0,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -442,7 +442,7 @@ def test__merge_step_with_none():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        operation_key=None,
+        batch_key=None,
     )
 
     # and

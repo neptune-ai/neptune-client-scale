@@ -67,10 +67,10 @@ class AggregatingQueue(Resource):
         self._latest_unprocessed = None
 
     def get(self) -> BatchedOperations:
-        start = time.process_time()
+        start = time.monotonic()
 
         batch_operations: list[RunOperation] = []
-        last_batch_operation_key: Optional[float] = None
+        last_batch_key: Optional[float] = None
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -91,11 +91,11 @@ class AggregatingQueue(Resource):
             if element is None:
                 break
 
-            if not batch_operations or element.operation_key != last_batch_operation_key:
+            if not batch_operations or element.batch_key != last_batch_key:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
                 batch_operations.append(new_operation)
-                last_batch_operation_key = element.operation_key
+                last_batch_key = element.batch_key
             else:
                 if not element.is_batchable:
                     logger.debug("Batch closed due to next operation not being batchable")
@@ -144,7 +144,7 @@ class AggregatingQueue(Resource):
             "Batched %d operations. Total size %d. Total time %f",
             elements_in_batch,
             batch_bytes,
-            time.process_time() - start,
+            time.monotonic() - start,
         )
 
         batch = create_run_batch(batch_operations)
