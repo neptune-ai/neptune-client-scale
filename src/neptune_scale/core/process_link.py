@@ -11,9 +11,11 @@ from typing import (
 )
 
 from neptune_scale.core.components.daemon import Daemon
-from neptune_scale.core.logger import logger
+from neptune_scale.core.logger import get_logger
 
 POLL_TIMEOUT = 0.1
+
+logger = get_logger()
 
 
 class ProcessLink:
