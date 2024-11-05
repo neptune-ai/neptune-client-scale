@@ -7,7 +7,6 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
-import multiprocessing
 import os
 import platform
 import signal
@@ -15,8 +14,6 @@ import threading
 import time
 from contextlib import AbstractContextManager
 from datetime import datetime
-from multiprocessing.sharedctypes import Synchronized
-from multiprocessing.synchronize import Condition as ConditionT
 from typing import (
     Any,
     Callable,
@@ -49,6 +46,10 @@ from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
+)
+from neptune_scale.core.shared_var import (
+    SharedFloat,
+    SharedInt,
 )
 from neptune_scale.core.util import safe_signal_name
 from neptune_scale.core.validation import (
@@ -215,14 +216,9 @@ class Run(WithResources, AbstractContextManager):
             on_warning_callback=on_warning_callback,
         )
 
-        self._last_put_seq: Synchronized[int] = multiprocessing.Value("i", -1)
-        self._last_put_seq_wait: ConditionT = multiprocessing.Condition()
-
-        self._last_ack_seq: Synchronized[int] = multiprocessing.Value("i", -1)
-        self._last_ack_seq_wait: ConditionT = multiprocessing.Condition()
-
-        self._last_ack_timestamp: Synchronized[float] = multiprocessing.Value("d", -1)
-        self._last_ack_timestamp_wait: ConditionT = multiprocessing.Condition()
+        self._last_queued_seq = SharedInt(-1)
+        self._last_ack_seq = SharedInt(-1)
+        self._last_ack_timestamp = SharedFloat(-1)
 
         self._sync_process = SyncProcess(
             project=self._project,
@@ -230,12 +226,9 @@ class Run(WithResources, AbstractContextManager):
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             api_token=input_api_token,
-            last_put_seq=self._last_put_seq,
-            last_put_seq_wait=self._last_put_seq_wait,
+            last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
-            last_ack_seq_wait=self._last_ack_seq_wait,
             last_ack_timestamp=self._last_ack_timestamp,
-            last_ack_timestamp_wait=self._last_ack_timestamp_wait,
             max_queue_size=max_queue_size,
             mode=mode,
         )
@@ -245,7 +238,6 @@ class Run(WithResources, AbstractContextManager):
                 errors_queue=self._errors_queue,
                 operations_queue=self._operations_queue,
                 last_ack_timestamp=self._last_ack_timestamp,
-                last_ack_timestamp_wait=self._last_ack_timestamp_wait,
                 async_lag_threshold=async_lag_threshold,
                 on_async_lag_callback=on_async_lag_callback,
             )
@@ -586,8 +578,7 @@ class Run(WithResources, AbstractContextManager):
         self,
         phrase: str,
         sleep_time: float,
-        wait_condition: ConditionT,
-        wait_value: Synchronized[int],
+        wait_seq: SharedInt,
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
@@ -610,14 +601,14 @@ class Run(WithResources, AbstractContextManager):
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
-                    # Handle the case where we get notified on `wait_condition` before we actually wait.
+                    # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
-                    if wait_value.value >= self._operations_queue.last_sequence_id:
+                    if wait_seq.value >= self._operations_queue.last_sequence_id:
                         break
 
-                with wait_condition:
-                    wait_condition.wait(timeout=wait_time)
-                    value = wait_value.value
+                with wait_seq:
+                    wait_seq.wait(timeout=wait_time)
+                    value = wait_seq.value
 
                 last_queued_sequence_id = self._operations_queue.last_sequence_id
 
@@ -668,8 +659,7 @@ class Run(WithResources, AbstractContextManager):
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
-            wait_condition=self._last_put_seq_wait,
-            wait_value=self._last_put_seq,
+            wait_seq=self._last_queued_seq,
             timeout=timeout,
             verbose=verbose,
         )
@@ -687,8 +677,7 @@ class Run(WithResources, AbstractContextManager):
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
-            wait_condition=self._last_ack_seq_wait,
-            wait_value=self._last_ack_seq,
+            wait_seq=self._last_ack_seq,
             timeout=timeout,
             verbose=verbose,
         )
