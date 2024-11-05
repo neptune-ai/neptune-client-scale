@@ -463,10 +463,11 @@ class SenderThread(Daemon, WithResources):
                     run_operation.ParseFromString(data)
                     request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
-                    if request_ids is None:
+                    if request_ids is None or not request_ids.request_ids:
                         raise NeptuneUnexpectedError("Server response is empty")
 
                     last_request_id = request_ids.request_ids[-1]
+
                     logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
                     self._status_tracking_queue.put(
                         StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)

@@ -1,4 +1,3 @@
-import logging
 import time
 from queue import (
     Empty,
@@ -128,16 +127,8 @@ def test__batch_size_limit():
     queue.put_nowait(element=element2)
 
     # then
-    assert queue.get() == BatchedOperations(
-        sequence_id=1,
-        timestamp=element1.timestamp,
-        operation=element1.operation
-    )
-    assert queue.get() == BatchedOperations(
-        sequence_id=2,
-        timestamp=element2.timestamp,
-        operation=element2.operation
-    )
+    assert queue.get() == BatchedOperations(sequence_id=1, timestamp=element1.timestamp, operation=element1.operation)
+    assert queue.get() == BatchedOperations(sequence_id=2, timestamp=element2.timestamp, operation=element2.operation)
 
 
 @freeze_time("2024-09-01")

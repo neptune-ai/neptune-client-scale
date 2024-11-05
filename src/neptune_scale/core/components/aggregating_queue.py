@@ -69,7 +69,8 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.process_time()
 
-        batch_operations: list[(float, RunOperation)] = []
+        batch_operations: list[RunOperation] = []
+        last_batch_operation_key: Optional[float] = None
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -90,10 +91,11 @@ class AggregatingQueue(Resource):
             if element is None:
                 break
 
-            if not batch_operations or element.operation_key != batch_operations[-1][0]:
+            if not batch_operations or element.operation_key != last_batch_operation_key:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                batch_operations.append((element.operation_key, new_operation))
+                batch_operations.append(new_operation)
+                last_batch_operation_key = element.operation_key
             else:
                 if not element.is_batchable:
                     logger.debug("Batch closed due to next operation not being batchable")
@@ -107,7 +109,7 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                merge_run_operation(batch_operations[-1][1], new_operation)
+                merge_run_operation(batch_operations[-1], new_operation)
 
             batch_sequence_id = element.sequence_id
             batch_timestamp = element.timestamp
@@ -154,24 +156,24 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: list[(float, RunOperation)]) -> RunOperation:
+def create_run_batch(operations: list[RunOperation]) -> RunOperation:
     if len(operations) == 1:
-        return operations[0][1]
+        return operations[0]
 
     batch = RunOperation()
 
-    head_operation = operations[0][1]
+    head_operation = operations[0]
     batch.project = head_operation.project
     batch.run_id = head_operation.run_id
     batch.create_missing_project = head_operation.create_missing_project
     batch.api_key = head_operation.api_key
 
-    for _, operation in operations:
+    for operation in operations:
         operation_type = operation.WhichOneof("operation")
         if operation_type == "update":
             batch.update_batch.snapshots.append(operation.update)
         else:
-            logger.error("Cannot batch operation of type %s", operation_type)
+            raise ValueError("Cannot batch operation of type %s", operation_type)
 
     return batch
 

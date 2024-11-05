@@ -49,7 +49,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
     RequestIdList,
-    SubmitResponse
+    SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
@@ -126,7 +126,7 @@ class HostedApiClient(ApiClient):
         )
         logger.debug("Connected to Neptune API")
 
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
         return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
 
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
