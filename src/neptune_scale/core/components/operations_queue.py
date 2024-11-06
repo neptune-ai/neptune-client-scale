@@ -75,7 +75,7 @@ class OperationsQueue(Resource):
                         operation=serialized_operation,
                         metadata_size=size,
                         is_batchable=is_metadata_update,
-                        operation_key=key,
+                        batch_key=key,
                     ),
                     block=True,
                     timeout=None,

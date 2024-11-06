@@ -11,7 +11,7 @@ class BatchedOperations(NamedTuple):
     sequence_id: int
     # Timestamp of the last operation in the batch
     timestamp: float
-    # Protobuf serialized (RunOperation)
+    # Protobuf serialized (RunOperationBatch)
     operation: bytes
 
 
@@ -27,4 +27,4 @@ class SingleOperation(NamedTuple):
     # Size of the metadata in the operation (without project, family, run_id etc.)
     metadata_size: Optional[int]
     # Update metadata key
-    operation_key: Optional[float]
+    batch_key: Optional[float]

@@ -39,7 +39,7 @@ from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
-    RequestId,
+    SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
@@ -442,7 +442,7 @@ class SenderThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def submit(self, *, operation: RunOperation) -> Optional[RequestId]:
+    def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
@@ -469,14 +469,16 @@ class SenderThread(Daemon, WithResources):
                     logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(data))
                     run_operation = RunOperation()
                     run_operation.ParseFromString(data)
-                    request_id = self.submit(operation=run_operation)
+                    request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
-                    if request_id is None:
+                    if request_ids is None or not request_ids.request_ids:
                         raise NeptuneUnexpectedError("Server response is empty")
 
-                    logger.debug("Operation #%d submitted as %s", sequence_id, request_id.value)
+                    last_request_id = request_ids.request_ids[-1]
+
+                    logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
                     self._status_tracking_queue.put(
-                        StatusTrackingElement(sequence_id=sequence_id, request_id=request_id.value, timestamp=timestamp)
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)
                     )
                     self.commit()
                 except NeptuneRetryableError as e:
