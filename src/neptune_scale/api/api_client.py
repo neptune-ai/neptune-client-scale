@@ -49,6 +49,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
     RequestIdList,
+    SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
@@ -108,7 +109,7 @@ def create_auth_api_client(
 
 class ApiClient(Resource, abc.ABC):
     @abc.abstractmethod
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]: ...
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]: ...
 
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
@@ -127,7 +128,7 @@ class HostedApiClient(ApiClient):
         )
         logger.debug("Connected to Neptune API")
 
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
         return submit_operation.sync_detailed(client=self._backend, body=operation, family=family)
 
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
@@ -146,8 +147,11 @@ class MockedApiClient(ApiClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    def submit(self, operation: RunOperation, family: str) -> Response[RequestId]:
-        return Response(content=b"", parsed=RequestId(value=str(uuid.uuid4())), status_code=HTTPStatus.OK, headers={})
+    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
+        operation_count = len(operation.update_batch.snapshots) if operation.update_batch.snapshots else 1
+        request_ids = [str(uuid.uuid4()) for _ in range(operation_count)]
+        response = SubmitResponse(request_id=request_ids[-1], request_ids=request_ids)
+        return Response(content=b"", parsed=response, status_code=HTTPStatus.OK, headers={})
 
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
         response_body = BulkRequestStatus(
