@@ -77,6 +77,6 @@ def sync_run(project, run, run_init_kwargs):
 
 
 @fixture
-def ro_run(project, run_init_kwargs):
+def ro_run(project, run, run_init_kwargs):
     """ReadOnlyRun pointing to the same run as the neptune_scale.Run"""
     return ReadOnlyRun(read_only_project=project, custom_id=run_init_kwargs["run_id"])
