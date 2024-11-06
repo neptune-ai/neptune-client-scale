@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2024-11-08
+
+### Changed
+- Performance improvements
+- Change the logger's configuration to be more resilient
+- Update docs: info about timestamp and timezones
+- Strip quotes from the `NEPTUNE_PROJECT` env variable
+- Added list, set, and tuple support for `log_configs()`
+- Added tuple support for tags
+
 ## [0.7.1] - 2024-10-28
 
 ### Changed
