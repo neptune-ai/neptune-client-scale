@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import (
@@ -12,6 +13,23 @@ from neptune_fetcher import (
 from pytest import fixture
 
 from neptune_scale import Run
+
+
+@fixture(scope="session", autouse=True)
+def cleanup_logging_handlers():
+    """Remove all logging handlers after each test session, to avoid
+    messy errors from the `logging` module.
+
+    The errors happen because `Run` installs `Run.close` as an `atexit` handler.
+    The method logs some messages. The output is captured by pytest, which closes
+    its logging handler early, causing "ValueError: I/O operation on closed file."
+    """
+
+    try:
+        yield
+    finally:
+        logger = logging.getLogger("neptune")
+        logger.handlers.clear()
 
 
 @fixture(scope="module")
