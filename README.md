@@ -27,7 +27,7 @@ pip install neptune-scale
 1. Create a project, or find an existing project you want to send the run metadata to.
 1. Get your API token from your user menu in the bottom left corner.
 
-    > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, go to the workspace settings in the top right corner.
+    > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, access the workspace settings via the user menu.
 
 1. In the environment where neptune-scale is installed, set the following environment variables to the API token and project name:
 
@@ -135,7 +135,7 @@ __Parameters__
 | `resume`         | `bool`, optional | `False` | If `False` (default), creates a new run. To continue an existing run, set to `True` and pass the ID of an existing run to the `run_id` argument. To fork a run, use `fork_run_id` and `fork_step` instead. |
 | `mode`           | `"async"` or `"disabled"` | `"async"` | Mode of operation. If set to `"disabled"`, the run doesn't log any metadata. |
 | `experiment_name`  | `str`, optional  | `None` | Name of the experiment to associate the run with. Learn more about [experiments][experiments] in the Neptune documentation. |
-| `creation_time`  | `datetime`, optional | `None` | Custom creation time of the run. |
+| `creation_time`  | `datetime`, optional | `datetime.now()` | Custom creation time of the run. |
 | `fork_run_id`    | `str`, optional  | `None` | The ID of the run to fork from. |
 | `fork_step`      | `int`, optional  | `None` | The step number to fork from. |
 | `max_queue_size` | `int`, optional  | 1M | Maximum number of operations queued for processing. 1 000 000 by default. You should raise this value if you see the `on_queue_full_callback` function being called. |
