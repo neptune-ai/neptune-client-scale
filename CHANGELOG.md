@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.2] - 2024-11-08
 
+### Added
+
+- List, set, and tuple support for `log_configs()` ([#67](https://github.com/neptune-ai/neptune-client-scale/pull/67))
+- Tuple support for tags ([#67](https://github.com/neptune-ai/neptune-client-scale/pull/67))
+
 ### Changed
+
 - Performance improvements
-- Change the logger's configuration to be more resilient
-- Update docs: info about timestamp and timezones
-- Strip quotes from the `NEPTUNE_PROJECT` env variable
-- Added list, set, and tuple support for `log_configs()`
-- Added tuple support for tags
+- Change the logger's configuration to be more resilient ([#66](https://github.com/neptune-ai/neptune-client-scale/pull/66))
+- Update docs: info about timestamp and timezones ([#69](https://github.com/neptune-ai/neptune-client-scale/pull/69))
+- Strip quotes from the `NEPTUNE_PROJECT` env variable ([#51](https://github.com/neptune-ai/neptune-client-scale/pull/51))
+
 
 ## [0.7.1] - 2024-10-28
 
