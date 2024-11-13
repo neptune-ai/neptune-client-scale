@@ -153,6 +153,7 @@ class NeptuneUnexpectedError(NeptuneScaleError):
     message = """
 {h1}
 ----NeptuneUnexpectedError-----------------------------------------------------
+Reason: `{reason}`
 {end}
 An unexpected error occurred in the Neptune Scale client. For help, contact support@neptune.ai. Raw exception name: "{reason}"
 

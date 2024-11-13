@@ -45,17 +45,18 @@ class ErrorsQueue(Resource):
 
 
 def default_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
-    logger.error(error)
+    logger.error(f"Terminating the process due to an error: {error}")
     kill_me()
 
 
 def default_network_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
-    logger.warning("Experiencing network issues. Retrying...")
+    if last_seen_at is None or time.time() - last_seen_at > 5:
+        logger.warning(f"A network error occurred: {error}. Retrying...")
 
 
 def default_max_queue_size_exceeded_callback(error: BaseException, last_raised_at: Optional[float]) -> None:
     if last_raised_at is None or time.time() - last_raised_at > 5:
-        logger.warning(error)
+        logger.warning(f"Pending operations queue size exceeded: {error}. Retrying...")
 
 
 def default_warning_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
@@ -114,7 +115,7 @@ class ErrorsMonitor(Daemon, Resource):
                 elif isinstance(error, NeptuneAsyncLagThresholdExceeded):
                     self._on_async_lag_callback()
                 else:
-                    self._on_error_callback(NeptuneUnexpectedError(reason=str(type(error))), last_raised_at)
+                    self._on_error_callback(NeptuneUnexpectedError(reason=str(error)), last_raised_at)
             except Exception as e:
                 # Don't let user errors kill the process
                 logger.error(f"An exception occurred in user callback function: {e}")
