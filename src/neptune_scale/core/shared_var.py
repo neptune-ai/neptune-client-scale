@@ -1,12 +1,12 @@
 import multiprocessing
 from types import TracebackType
 from typing import (
-    Any,
     Callable,
     Generic,
     Optional,
     Type,
     TypeVar,
+    cast,
 )
 
 __all__ = ("SharedInt", "SharedFloat", "SharedVar")
@@ -39,9 +39,9 @@ class SharedVar(Generic[T]):
         self._condition = multiprocessing.Condition(self._value.get_lock())
 
     @property
-    def value(self) -> Any:
+    def value(self) -> T:
         with self._condition:
-            return self._value.value
+            return cast(T, self._value.value)
 
     @value.setter
     def value(self, new_value: T) -> None:
