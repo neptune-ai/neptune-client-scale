@@ -24,7 +24,7 @@ def test_empty():
         run_id="run_id",
         step=1,
         timestamp=datetime.now(),
-        fields={},
+        configs={},
         metrics={},
         add_tags={},
         remove_tags={},
@@ -51,7 +51,7 @@ def test_fields():
         run_id="run_id",
         step=1,
         timestamp=datetime.now(),
-        fields={
+        configs={
             "some/string": "value",
             "some/int": 2501,
             "some/float": 3.14,
@@ -95,7 +95,7 @@ def test_metrics():
         run_id="run_id",
         step=1,
         timestamp=datetime.now(),
-        fields={},
+        configs={},
         metrics={
             "some/metric": 3.14,
         },
@@ -129,7 +129,7 @@ def test_tags():
         run_id="run_id",
         step=1,
         timestamp=datetime.now(),
-        fields={},
+        configs={},
         metrics={},
         add_tags={
             "some/tags": {"tag1", "tag2"},
@@ -186,7 +186,7 @@ def test_splitting():
         run_id="run_id",
         step=1,
         timestamp=timestamp,
-        fields=fields,
+        configs=fields,
         metrics=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
@@ -232,7 +232,7 @@ def test_split_large_tags():
         run_id="run_id",
         step=1,
         timestamp=timestamp,
-        fields=fields,
+        configs=fields,
         metrics=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
