@@ -69,31 +69,24 @@ class NeptuneSynchronizationStopped(NeptuneScaleError):
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneOperationsQueueMaxSizeExceeded--------------------------------------
+NeptuneOperationsQueueMaxSizeExceeded: The amount of data being logged is higher than processing capacity.
 {end}
-The queue size for internal operations was exceeded because too much data was queued in a short time.
 
 The synchronization is paused until the queue size drops below the maximum.
 
 To resolve this issue, consider the following:
-    - Reduce the frequency of data being sent to the queue, or throttle the rate of operations.
+    - Throttle the rate of operations
     - Cautiously increase the queue size through the `max_queue_size` argument.
         Note: To ensure that memory usage remains within acceptable limits,
         closely monitor your system's memory consumption.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneUnauthorizedError(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneUnauthorizedError---------------------------------------------------
+NeptuneUnauthorizedError: You don't have permission to access the given resource.
 {end}
-You don't have permission to access the given resource.
-
     - Verify that your API token is correct. To find your API token:
         - Log in to Neptune Scale and open the user menu.
         - If your workspace uses service accounts, ask the project owner to provide the token.
@@ -105,19 +98,15 @@ You don't have permission to access the given resource.
           - {correct}PROJECT_NAME{end}: the name specified for the project
 
    - Ask your workspace admin to grant you the necessary privileges to the project.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneInvalidCredentialsError(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneInvalidCredentialsError---------------------------------------------
+NeptuneInvalidCredentialsError: The provided API token is invalid.
 {end}
-The provided API token is invalid.
+
 Make sure you copied your API token while logged in to Neptune Scale.
 If your workspace uses service accounts, ask the project owner for the token.
 
@@ -142,22 +131,17 @@ and omit the {bold}api_token{end} argument from the {bold}Run{end} constructor:
 {h2}Option 2: Run argument{end}
 Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
     {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME", api_token="YOUR_API_TOKEN"){end}
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneUnexpectedError(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneUnexpectedError-----------------------------------------------------
-Reason: `{reason}`
+NeptuneUnexpectedError: An unexpected error occurred in the Neptune Scale client.
 {end}
-An unexpected error occurred in the Neptune Scale client. For help, contact support@neptune.ai. Raw exception name: "{reason}"
+Reason: `{reason}`
 
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+This is most likely a bug in the client. Please report it to Neptune support: support@neptune.ai.
 """
 
     def __init__(self, reason: str) -> None:
@@ -171,359 +155,240 @@ class NeptuneRetryableError(NeptuneScaleError):
 class NeptuneConnectionLostError(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneConnectionLostError-------------------------------------------------
+NeptuneConnectionLostError: The connection to the Neptune server was lost.
 {end}
-The connection to the Neptune server was lost. Ensure that your computer is connected to the internet and that
-    firewall settings aren't blocking the connection.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+Ensure that your computer is connected to the internet and that firewall settings aren't blocking the connection.
 """
 
 
 class NeptuneUnexpectedResponseError(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneUnexpectedResponseError-------------------------------------------------
+NeptuneUnexpectedResponseError: The Neptune server returned an unexpected response.
 {end}
-The Neptune server returned an unexpected response. This is a temporary problem.
-If the problem persists, please contact us.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
 """
 
 
 class NeptuneInternalServerError(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneInternalServerError-------------------------------------------------
+NeptuneInternalServerError: We have encountered an internal server error.
 {end}
-We have encountered an internal server error. If the problem persists, please contact us.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
 """
 
 
 class NeptuneUnableToAuthenticateError(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneUnableToAuthenticateError-------------------------------------------
+----NeptuneUnableToAuthenticateError: The client was unable to authenticate with the Neptune server.
 {end}
-The client was unable to authenticate with the Neptune server. Ensure that your API token is correct.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+Ensure that your API token is correct.
 """
 
 
 class NeptuneProjectNotFound(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneProjectNotFound-----------------------------------------------------
+NeptuneProjectNotFound: Either the project hasn't been created yet or the name is incorrect.
 {end}
-Project not found. Either the project hasn't been created yet or the name is incorrect.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneProjectInvalidName(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneProjectInvalidName--------------------------------------------------
+NeptuneProjectInvalidName: Project name is either empty or too long.
 {end}
-Project name is either empty or too long.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneRunNotFound(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneRunNotFound---------------------------------------------------------
+----NeptuneRunNotFound: Run not found.
 {end}
-Run not found. May happen when the run is not yet created.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+This may happen when you try to resume a run (eg. by custom run id) that is not yet created.
 """
 
 
 class NeptuneRunDuplicate(NeptuneScaleWarning):
     message = """
 {h1}
-----NeptuneRunDuplicate--------------------------------------------------------
+----NeptuneRunDuplicate: A run with the provided ID already exists.
 {end}
-Identical run already exists. If you wanted to resume an existing run, include the argument `resume=True`.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+If you wanted to resume an existing run, include the argument `resume=True`.
 """
 
 
 class NeptuneRunConflicting(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneRunConflicting------------------------------------------------------
+NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
 {end}
-Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneRunForkParentNotFound(NeptuneScaleWarning):
     message = """
 {h1}
-----NeptuneRunForkParentNotFound-----------------------------------------------
+----NeptuneRunForkParentNotFound: The provided parent Run does not exist.
 {end}
-Missing fork parent run.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneRunInvalidCreationParameters----------------------------------------
+NeptuneRunInvalidCreationParameters: Run creation parameters rejected by the server.
 {end}
-Invalid run creation parameters. For example, the experiment name is too large.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+For example, the experiment name is too large.
 """
 
 
 class NeptuneFieldPathExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldPathExceedsSizeLimit-------------------------------------------
+NeptuneFieldPathExceedsSizeLimit: Attribute name is too long.
 {end}
-Field path is too long. Maximum length is 1024 bytes (not characters).
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+The maximum length is 1024 bytes (not characters) in UTF-8 encoding.
 """
 
 
 class NeptuneFieldPathEmpty(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldPathEmpty------------------------------------------------------
+NeptuneFieldPathEmpty: Attribute path is empty.
 {end}
-Field path is empty.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneFieldPathInvalid(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldPathInvalid----------------------------------------------------
+NeptuneFieldPathInvalid: Attribute path is invalid.
 {end}
-Field path is invalid. To troubleshoot the problem, ensure that the UTF-8 encoding is valid.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+To troubleshoot the problem, ensure that the provided path correctly encodes to UTF-8.
 """
 
 
 class NeptuneFieldPathNonWritable(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldPathNonWritable------------------------------------------------
+NeptuneFieldPathNonWritable: Attribute is not writable.
 {end}
-Field path is non-writable. Some special sys/ fields are read-only.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+You could be trying to overwrite a read-only attribute, eg. most of "sys/*" attributes are read-only.
 """
 
 
 class NeptuneFieldTypeUnsupported(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldTypeUnsupported------------------------------------------------
+NeptuneFieldTypeUnsupported: the provided attribute type is not supported by Neptune.
 {end}
-Field type is not supported by the system.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneFieldTypeConflicting(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFieldTypeConflicting------------------------------------------------
+NeptuneFieldTypeConflicting: the attribute type is different from the one that was previously logged for this series.
 {end}
-Field type is different from the one that was previously logged for this series.
-Once a field type is set, it cannot be changed.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+Once an attribute type is set, it cannot be changed. Eg. you cannot log strings to an existing float series.
 """
 
 
 class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
     message = """
 {h1}
-----NeptuneSeriesPointDuplicate------------------------------------------------
+NeptuneSeriesPointDuplicate: The exact same data point (value + step pair) was already logged for this series.
 {end}
-The exact same data point was already logged for this series.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneSeriesStepNonIncreasing(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneSeriesStepNonIncreasing---------------------------------------------
+NeptuneSeriesStepNonIncreasing: Subsequent steps of a series must be increasing.
 {end}
-The step of a series value is smaller than the most recently logged step for this series or the step is exactly the same,
-  but the value is different.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+This can be caused by either:
+- The step of a series value is smaller than the most recently logged step for this series
+- the step is exactly the same but the value is different
 """
 
 
 class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneSeriesStepNotAfterForkPoint-----------------------------------------
+NeptuneSeriesStepNotAfterForkPoint: The series value must be greater than the step specified by the `fork_step` argument.
 {end}
-The series value must be greater than the step specified by the `fork_step` argument.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneSeriesTimestampDecreasing-------------------------------------------
+NeptuneSeriesTimestampDecreasing: The timestamp of a series value is less than the most recently logged value.
 {end}
-The timestamp of a series value is less than the most recently logged value. Identical timestamps are allowed.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+Existing timestamps are allowed.
 """
 
 
 class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneFloatValueNanInfUnsupported-----------------------------------------
+NeptuneFloatValueNanInfUnsupported: float series do not support logging NaN and Inf values.
 {end}
-Unsupported value type for float64 field or float64 series. Applies to Inf and NaN values.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
+You can still log NaN and Inf as atom values, however series do not support them.
 """
 
 
 class NeptuneStringValueExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneStringValueExceedsSizeLimit-----------------------------------------
+NeptuneStringValueExceedsSizeLimit: String value is too long. Maximum length is 64KB.
 {end}
-String value is too long. Maximum length is 64KB.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneStringSetExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
-----NeptuneStringSetExceedsSizeLimit-------------------------------------------
+NeptuneStringSetExceedsSizeLimit: String Set value is too long. Maximum length is 64KB.
 {end}
-String Set value is too long. Maximum length is 64KB.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
     message = """
-    {h1}
-    ----NeptuneAsyncLagThresholdExceeded----------------------------------------
-    {end}
-    Neptune is experiencing a high delay in synchronizing data.
-
-    {correct}Need help?{end}-> Contact support@neptune.ai
-
-    Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
-    """
+{h1}
+NeptuneAsyncLagThresholdExceeded: Neptune is experiencing a high delay in synchronizing data.
+{end}
+This is a temporary problem. If the problem persists, please contact us at support@neptune.ai
+"""
 
 
 class NeptuneProjectNotProvided(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneProjectNotProvided--------------------------------------------------
+NeptuneProjectNotProvided: The project name was not provided.
 {end}
-The project name was not provided. Make sure to specify the project name in the `project` parameter of the `Run`
+Make sure to specify the project name in the `project` parameter of the `Run`
 constructor or with the `NEPTUNE_PROJECT` environment variable.
 
 For instructions, see https://docs-beta.neptune.ai/setup
 
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
 
 
 class NeptuneApiTokenNotProvided(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneApiTokenNotProvided-------------------------------------------------
+NeptuneApiTokenNotProvided: The Neptune API token was not provided.
 {end}
-The Neptune API token was not provided. Make sure to specify the API token in the `api_token` parameter of the `Run`
+Make sure to specify the API token in the `api_token` parameter of the `Run`
 constructor or with the `NEPTUNE_API_TOKEN` environment variable.
 
 For instructions, see https://docs-beta.neptune.ai/api_token
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
 """
