@@ -29,7 +29,6 @@ __all__ = (
     "NeptuneSeriesStepNonIncreasing",
     "NeptuneSeriesStepNotAfterForkPoint",
     "NeptuneSeriesTimestampDecreasing",
-    "NeptuneFloatValueNanInfUnsupported",
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
@@ -438,19 +437,6 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 ----NeptuneSeriesTimestampDecreasing-------------------------------------------
 {end}
 The timestamp of a series value is less than the most recently logged value. Identical timestamps are allowed.
-
-{correct}Need help?{end}-> Contact support@neptune.ai
-
-Struggling with the formatting? To disable it, set the `NEPTUNE_DISABLE_COLORS` environment variable to `True`.
-"""
-
-
-class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
-    message = """
-{h1}
-----NeptuneFloatValueNanInfUnsupported-----------------------------------------
-{end}
-Unsupported value type for float64 field or float64 series. Applies to Inf and NaN values.
 
 {correct}Need help?{end}-> Contact support@neptune.ai
 

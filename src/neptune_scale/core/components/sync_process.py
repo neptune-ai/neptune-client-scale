@@ -68,7 +68,6 @@ from neptune_scale.exceptions import (
     NeptuneFieldPathNonWritable,
     NeptuneFieldTypeConflicting,
     NeptuneFieldTypeUnsupported,
-    NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
     NeptuneOperationsQueueMaxSizeExceeded,
@@ -126,7 +125,6 @@ CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
     IngestCode.SERIES_STEP_NON_INCREASING: NeptuneSeriesStepNonIncreasing,
     IngestCode.SERIES_STEP_NOT_AFTER_FORK_POINT: NeptuneSeriesStepNotAfterForkPoint,
     IngestCode.SERIES_TIMESTAMP_DECREASING: NeptuneSeriesTimestampDecreasing,
-    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: NeptuneFloatValueNanInfUnsupported,
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
 }
