@@ -131,6 +131,7 @@ and omit the {bold}api_token{end} argument from the {bold}Run{end} constructor:
 {h2}Option 2: Run argument{end}
 Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
     {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME", api_token="YOUR_API_TOKEN"){end}
+For help, see https://docs-beta.neptune.ai/setup
 """
 
 
@@ -193,6 +194,7 @@ class NeptuneProjectNotFound(NeptuneScaleError):
 {h1}
 NeptuneProjectNotFound: Either the project hasn't been created yet or the name is incorrect.
 {end}
+For help, see https://docs-beta.neptune.ai/setup
 """
 
 
@@ -209,7 +211,7 @@ class NeptuneRunNotFound(NeptuneScaleError):
 {h1}
 ----NeptuneRunNotFound: Run not found.
 {end}
-This may happen when you try to resume a run (eg. by custom run id) that is not yet created.
+This may happen if you try to resume a run (for example, by custom ID) that is not yet created.
 """
 
 
@@ -227,14 +229,16 @@ class NeptuneRunConflicting(NeptuneScaleError):
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
 {end}
+For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
 class NeptuneRunForkParentNotFound(NeptuneScaleWarning):
     message = """
 {h1}
-----NeptuneRunForkParentNotFound: The provided parent Run does not exist.
+----NeptuneRunForkParentNotFound: The provided parent run does not exist.
 {end}
+For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
@@ -278,7 +282,9 @@ class NeptuneFieldPathNonWritable(NeptuneScaleError):
 {h1}
 NeptuneFieldPathNonWritable: Attribute is not writable.
 {end}
-You could be trying to overwrite a read-only attribute, eg. most of "sys/*" attributes are read-only.
+You could be trying to overwrite a read-only attribute. Note that most of the "sys/*" attributes are read-only.
+
+For details, see https://docs-beta.neptune.ai/sys
 """
 
 
@@ -287,6 +293,7 @@ class NeptuneFieldTypeUnsupported(NeptuneScaleError):
 {h1}
 NeptuneFieldTypeUnsupported: the provided attribute type is not supported by Neptune.
 {end}
+For supported types, see https://docs-beta.neptune.ai/attribute_types
 """
 
 
@@ -295,7 +302,7 @@ class NeptuneFieldTypeConflicting(NeptuneScaleError):
 {h1}
 NeptuneFieldTypeConflicting: the attribute type is different from the one that was previously logged for this series.
 {end}
-Once an attribute type is set, it cannot be changed. Eg. you cannot log strings to an existing float series.
+Once an attribute type is set, it cannot be changed. Example: you can't log strings to an existing float series.
 """
 
 
@@ -304,6 +311,7 @@ class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
 {h1}
 NeptuneSeriesPointDuplicate: The exact same data point (value + step pair) was already logged for this series.
 {end}
+For help, see https://docs-beta.neptune.ai/log_metrics
 """
 
 
@@ -315,6 +323,8 @@ NeptuneSeriesStepNonIncreasing: Subsequent steps of a series must be increasing.
 This can be caused by either:
 - The step of a series value is smaller than the most recently logged step for this series
 - the step is exactly the same but the value is different
+
+For help, see https://docs-beta.neptune.ai/log_metrics
 """
 
 
@@ -323,6 +333,7 @@ class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
 {h1}
 NeptuneSeriesStepNotAfterForkPoint: The series value must be greater than the step specified by the `fork_step` argument.
 {end}
+For help, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
@@ -331,7 +342,7 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 {h1}
 NeptuneSeriesTimestampDecreasing: The timestamp of a series value is less than the most recently logged value.
 {end}
-Existing timestamps are allowed.
+Existing timestamps are allowed. For help, see https://docs-beta.neptune.ai/log_metrics
 """
 
 
@@ -340,7 +351,9 @@ class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
 {h1}
 NeptuneFloatValueNanInfUnsupported: float series do not support logging NaN and Inf values.
 {end}
-You can still log NaN and Inf as atom values, however series do not support them.
+You can log NaN and Inf as single config values. However, they're not supported in series attributes.
+
+For details, see https://docs-beta.neptune.ai/log_configs
 """
 
 
