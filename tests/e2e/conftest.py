@@ -66,7 +66,7 @@ def run_init_kwargs(project):
     #       an existing run id
     kwargs = {"project": project.project_identifier}
     run_id = os.getenv("NEPTUNE_E2E_CUSTOM_RUN_ID")
-    if run_id is None:
+    if not run_id:
         run_id = str(uuid.uuid4())
         kwargs["experiment_name"] = "pye2e-scale"
     else:
