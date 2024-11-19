@@ -268,7 +268,7 @@ class Run(WithResources, AbstractContextManager):
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
-            self.wait_for_processing(verbose=False)
+            self.wait_for_submission(verbose=False)
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
         # We should not be concerned about SIGCHLD if it's not about our child process

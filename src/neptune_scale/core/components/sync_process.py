@@ -439,8 +439,10 @@ class SenderThread(Daemon, WithResources):
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
+        import time
+        start = time.time()
         response = self._backend.submit(operation=operation, family=self._family)
-
+        print(f"Time taken to submit: {int(time.time() - start)} seconds, data len: {len(operation.SerializeToString())/ 1024 / 1024} MB")
         if response.status_code == 403:
             raise NeptuneUnauthorizedError()
 
