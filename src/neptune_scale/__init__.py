@@ -307,7 +307,7 @@ class Run(WithResources, AbstractContextManager):
 
         if self._sync_process.is_alive():
             if wait:
-                self.wait_for_processing()
+                self.wait_for_submission()
 
             self._sync_process.terminate()
             self._sync_process.join()
