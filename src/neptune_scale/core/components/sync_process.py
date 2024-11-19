@@ -10,8 +10,6 @@ from multiprocessing import (
     Process,
     Queue,
 )
-from multiprocessing.sharedctypes import Synchronized
-from multiprocessing.synchronize import Condition
 from types import FrameType
 from typing import (
     Any,
@@ -59,6 +57,10 @@ from neptune_scale.core.components.queue_element import (
     SingleOperation,
 )
 from neptune_scale.core.logger import get_logger
+from neptune_scale.core.shared_var import (
+    SharedFloat,
+    SharedInt,
+)
 from neptune_scale.core.util import safe_signal_name
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -197,12 +199,9 @@ class SyncProcess(Process):
         project: str,
         family: str,
         mode: Literal["async", "disabled"],
-        last_put_seq: Synchronized[int],
-        last_put_seq_wait: Condition,
-        last_ack_seq: Synchronized[int],
-        last_ack_seq_wait: Condition,
-        last_ack_timestamp: Synchronized[float],
-        last_ack_timestamp_wait: Condition,
+        last_queued_seq: SharedInt,
+        last_ack_seq: SharedInt,
+        last_ack_timestamp: SharedFloat,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         super().__init__(name="SyncProcess")
@@ -212,12 +211,9 @@ class SyncProcess(Process):
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
-        self._last_put_seq: Synchronized[int] = last_put_seq
-        self._last_put_seq_wait: Condition = last_put_seq_wait
-        self._last_ack_seq: Synchronized[int] = last_ack_seq
-        self._last_ack_seq_wait: Condition = last_ack_seq_wait
-        self._last_ack_timestamp: Synchronized[float] = last_ack_timestamp
-        self._last_ack_timestamp_wait: Condition = last_ack_timestamp_wait
+        self._last_queued_seq: SharedInt = last_queued_seq
+        self._last_ack_seq: SharedInt = last_ack_seq
+        self._last_ack_timestamp: SharedFloat = last_ack_timestamp
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
@@ -240,13 +236,10 @@ class SyncProcess(Process):
             api_token=self._api_token,
             errors_queue=self._errors_queue,
             external_operations_queue=self._external_operations_queue,
-            last_put_seq=self._last_put_seq,
-            last_put_seq_wait=self._last_put_seq_wait,
+            last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
-            last_ack_seq_wait=self._last_ack_seq_wait,
             max_queue_size=self._max_queue_size,
             last_ack_timestamp=self._last_ack_timestamp,
-            last_ack_timestamp_wait=self._last_ack_timestamp_wait,
             mode=self._mode,
         )
         worker.start()
@@ -274,12 +267,9 @@ class SyncProcessWorker(WithResources):
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
         external_operations_queue: multiprocessing.Queue[SingleOperation],
-        last_put_seq: Synchronized[int],
-        last_put_seq_wait: Condition,
-        last_ack_seq: Synchronized[int],
-        last_ack_seq_wait: Condition,
-        last_ack_timestamp: Synchronized[float],
-        last_ack_timestamp_wait: Condition,
+        last_queued_seq: SharedInt,
+        last_ack_seq: SharedInt,
+        last_ack_timestamp: SharedFloat,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         self._errors_queue = errors_queue
@@ -292,8 +282,7 @@ class SyncProcessWorker(WithResources):
             status_tracking_queue=self._status_tracking_queue,
             errors_queue=self._errors_queue,
             family=family,
-            last_put_seq=last_put_seq,
-            last_put_seq_wait=last_put_seq_wait,
+            last_queued_seq=last_queued_seq,
             mode=mode,
         )
         self._external_to_internal_thread = InternalQueueFeederThread(
@@ -308,9 +297,7 @@ class SyncProcessWorker(WithResources):
             errors_queue=self._errors_queue,
             status_tracking_queue=self._status_tracking_queue,
             last_ack_seq=last_ack_seq,
-            last_ack_seq_wait=last_ack_seq_wait,
             last_ack_timestamp=last_ack_timestamp,
-            last_ack_timestamp_wait=last_ack_timestamp_wait,
         )
 
     @property
@@ -396,8 +383,7 @@ class SenderThread(Daemon, WithResources):
         operations_queue: AggregatingQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
-        last_put_seq: Synchronized[int],
-        last_put_seq_wait: Condition,
+        last_queued_seq: SharedInt,
         mode: Literal["async", "disabled"],
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
@@ -407,8 +393,7 @@ class SenderThread(Daemon, WithResources):
         self._operations_queue: AggregatingQueue = operations_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
-        self._last_put_seq: Synchronized[int] = last_put_seq
-        self._last_put_seq_wait: Condition = last_put_seq_wait
+        self._last_queued_seq: SharedInt = last_queued_seq
         self._mode: Literal["async", "disabled"] = mode
 
         self._backend: Optional[ApiClient] = None
@@ -480,13 +465,13 @@ class SenderThread(Daemon, WithResources):
                     break
 
                 # Update Last PUT sequence id and notify threads in the main process
-                with self._last_put_seq_wait:
-                    self._last_put_seq.value = sequence_id
-                    self._last_put_seq_wait.notify_all()
+                with self._last_queued_seq:
+                    self._last_queued_seq.value = sequence_id
+                    self._last_queued_seq.notify_all()
         except Exception as e:
             self._errors_queue.put(e)
-            with self._last_put_seq_wait:
-                self._last_put_seq_wait.notify_all()
+            with self._last_queued_seq:
+                self._last_queued_seq.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
@@ -499,10 +484,8 @@ class StatusTrackingThread(Daemon, WithResources):
         project: str,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
-        last_ack_seq: Synchronized[int],
-        last_ack_seq_wait: Condition,
-        last_ack_timestamp: Synchronized[float],
-        last_ack_timestamp_wait: Condition,
+        last_ack_seq: SharedInt,
+        last_ack_timestamp: SharedFloat,
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
@@ -511,10 +494,8 @@ class StatusTrackingThread(Daemon, WithResources):
         self._project: str = project
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
-        self._last_ack_seq: Synchronized[int] = last_ack_seq
-        self._last_ack_seq_wait: Condition = last_ack_seq_wait
-        self._last_ack_timestamp: Synchronized[float] = last_ack_timestamp
-        self._last_ack_timestamp_wait: Condition = last_ack_timestamp_wait
+        self._last_ack_seq: SharedInt = last_ack_seq
+        self._last_ack_timestamp: SharedFloat = last_ack_timestamp
 
         self._backend: Optional[ApiClient] = None
 
@@ -587,20 +568,20 @@ class StatusTrackingThread(Daemon, WithResources):
                     if processed_sequence_id is not None:
                         logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
 
-                        with self._last_ack_seq_wait:
+                        with self._last_ack_seq:
                             self._last_ack_seq.value = processed_sequence_id
-                            self._last_ack_seq_wait.notify_all()
+                            self._last_ack_seq.notify_all()
 
                     # Update Last ACK timestamp and notify threads in the main process
                     if processed_timestamp is not None:
-                        with self._last_ack_timestamp_wait:
+                        with self._last_ack_timestamp:
                             self._last_ack_timestamp.value = processed_timestamp
-                            self._last_ack_timestamp_wait.notify_all()
+                            self._last_ack_timestamp.notify_all()
                 else:
                     # Sleep before retry
                     break
         except Exception as e:
             self._errors_queue.put(e)
             self.interrupt()
-            self._last_ack_seq_wait.notify_all()
+            self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e

@@ -1,10 +1,10 @@
-import multiprocessing
 import time
 from threading import Event
 from unittest.mock import Mock
 
 from freezegun import freeze_time
 
+from neptune_scale import SharedFloat
 from neptune_scale.core.components.lag_tracking import LagTracker
 
 
@@ -17,8 +17,7 @@ def test__lag_tracker__callback_called():
     # and
     errors_queue = Mock()
     operations_queue = Mock(last_timestamp=time.time())
-    last_ack_timestamp = multiprocessing.Value("d", time.time() - lag)
-    last_ack_timestamp_wait = multiprocessing.Condition()
+    last_ack_timestamp = SharedFloat(time.time() - lag)
     callback = Mock()
 
     # Synchronization event
@@ -34,7 +33,6 @@ def test__lag_tracker__callback_called():
         errors_queue=errors_queue,
         operations_queue=operations_queue,
         last_ack_timestamp=last_ack_timestamp,
-        last_ack_timestamp_wait=last_ack_timestamp_wait,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback_with_event,
     )
@@ -63,8 +61,7 @@ def test__lag_tracker__not_called():
     # and
     errors_queue = Mock()
     operations_queue = Mock(last_timestamp=time.time())
-    last_ack_timestamp = multiprocessing.Value("d", time.time() - lag)
-    last_ack_timestamp_wait = multiprocessing.Condition()
+    last_ack_timestamp = SharedFloat(time.time() - lag)
     callback = Mock()
 
     # and
@@ -72,7 +69,6 @@ def test__lag_tracker__not_called():
         errors_queue=errors_queue,
         operations_queue=operations_queue,
         last_ack_timestamp=last_ack_timestamp,
-        last_ack_timestamp_wait=last_ack_timestamp_wait,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback,
     )
