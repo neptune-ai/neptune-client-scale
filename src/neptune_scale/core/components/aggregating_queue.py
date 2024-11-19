@@ -21,6 +21,7 @@ from neptune_scale.core.logger import get_logger
 from neptune_scale.parameters import (
     BATCH_WAIT_TIME_SECONDS,
     MAX_BATCH_SIZE,
+    MAX_BATCH_SNAPSHOT_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
 )
 
@@ -33,10 +34,12 @@ class AggregatingQueue(Resource):
         max_queue_size: int,
         max_elements_in_batch: int = MAX_BATCH_SIZE,
         max_queue_element_size: int = MAX_QUEUE_ELEMENT_SIZE,
+        max_snapshots_in_batch: int = MAX_BATCH_SNAPSHOT_SIZE,
         wait_time: float = BATCH_WAIT_TIME_SECONDS,
     ) -> None:
         self._max_queue_size = max_queue_size
         self._max_elements_in_batch = max_elements_in_batch
+        self._max_snapshots_in_batch = max_snapshots_in_batch
         self._max_queue_element_size = max_queue_element_size
         self._wait_time = wait_time
 
@@ -94,6 +97,10 @@ class AggregatingQueue(Resource):
                 break
 
             if not batch_operations or element.batch_key != last_batch_key:
+                if batch_operations and len(batch_operations) >= self._max_snapshots_in_batch:
+                    logger.debug("Batch closed due to limit of snapshots in batch %s", len(batch_operations))
+                    break
+
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
                 batch_operations.append(new_operation)
@@ -125,7 +132,7 @@ class AggregatingQueue(Resource):
             self.commit()
 
             if not element.is_batchable:
-                logger.debug("Batch closed due to first not being batchable")
+                logger.debug("Batch closed due to the last element not being batchable")
                 break
 
             t1 = time.monotonic()

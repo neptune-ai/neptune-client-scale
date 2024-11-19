@@ -5,6 +5,7 @@ MAX_EXPERIMENT_NAME_LENGTH = 730
 # Operations queue
 MAX_BATCH_SIZE = 100000
 MAX_QUEUE_SIZE = 1000000
+MAX_BATCH_SNAPSHOT_SIZE = 2000
 MAX_MULTIPROCESSING_QUEUE_SIZE = 32767
 MAX_QUEUE_ELEMENT_SIZE = 1024 * 1024  # 1MB
 # Wait up to this many seconds for incoming operations before submitting a batch

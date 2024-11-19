@@ -183,6 +183,46 @@ def test__batching():
 
 
 @freeze_time("2024-09-01")
+def test__batch_snapshot_limit():
+    # given
+    update1 = UpdateRunSnapshot(step=Step(whole=1), assign={f"aa{i}": Value(int64=(i * 97)) for i in range(2)})
+    update2 = UpdateRunSnapshot(step=Step(whole=2), assign={f"bb{i}": Value(int64=(i * 25)) for i in range(2)})
+
+    # and
+    operation1 = RunOperation(update=update1, project="project", run_id="run_id")
+    operation2 = RunOperation(update=update2, project="project", run_id="run_id")
+
+    # and
+    element1 = SingleOperation(
+        sequence_id=1,
+        timestamp=time.process_time(),
+        operation=operation1.SerializeToString(),
+        is_batchable=True,
+        metadata_size=update1.ByteSize(),
+        batch_key=1.0,
+    )
+    element2 = SingleOperation(
+        sequence_id=2,
+        timestamp=time.process_time(),
+        operation=operation2.SerializeToString(),
+        is_batchable=True,
+        metadata_size=update2.ByteSize(),
+        batch_key=2.0,
+    )
+
+    # and
+    queue = AggregatingQueue(max_queue_size=2, max_elements_in_batch=2, max_snapshots_in_batch=1)
+
+    # when
+    queue.put_nowait(element=element1)
+    queue.put_nowait(element=element2)
+
+    # then
+    assert queue.get() == BatchedOperations(sequence_id=1, timestamp=element1.timestamp, operation=element1.operation)
+    assert queue.get() == BatchedOperations(sequence_id=2, timestamp=element2.timestamp, operation=element2.operation)
+
+
+@freeze_time("2024-09-01")
 def test__not_merge_two_run_creation():
     # given
     create1 = CreateRun(family="family", run_id="run_id1")
