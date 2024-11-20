@@ -57,6 +57,7 @@ from neptune_scale.core.components.queue_element import (
     SingleOperation,
 )
 from neptune_scale.core.logger import get_logger
+from neptune_scale.core.process_link import ProcessLink
 from neptune_scale.core.shared_var import (
     SharedFloat,
     SharedInt,
@@ -195,6 +196,7 @@ class SyncProcess(Process):
         self,
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
+        process_link: ProcessLink,
         api_token: str,
         project: str,
         family: str,
@@ -208,6 +210,7 @@ class SyncProcess(Process):
 
         self._external_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
+        self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -224,10 +227,14 @@ class SyncProcess(Process):
         logger.debug(f"Received signal {safe_signal_name(signum)}")
         self._stop_event.set()  # Trigger the stop event
 
+    def _on_parent_link_closed(self, _: ProcessLink) -> None:
+        logger.error("SyncProcess: main process closed unexpectedly. Exiting")
+        self._stop_event.set()
+
     def run(self) -> None:
         logger.info("Data synchronization started")
 
-        # Register signals handlers
+        self._process_link.start(on_link_closed=self._on_parent_link_closed)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
         worker = SyncProcessWorker(
