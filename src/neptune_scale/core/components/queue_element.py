@@ -11,7 +11,7 @@ class BatchedOperations(NamedTuple):
     sequence_id: int
     # Timestamp of the last operation in the batch
     timestamp: float
-    # Protobuf serialized (RunOperationBatch)
+    # Protobuf serialized (RunOperation)
     operation: bytes
 
 
