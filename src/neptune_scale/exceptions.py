@@ -349,9 +349,9 @@ Existing timestamps are allowed. For help, see https://docs-beta.neptune.ai/log_
 class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFloatValueNanInfUnsupported: float series do not support logging NaN and Inf values.
+NeptuneFloatValueNanInfUnsupported: metric {metric} at step `{step}` has non-finite value of `{value}`.
 {end}
-You can log NaN and Inf as single config values. However, they're not supported in series attributes.
+Float series do not support logging NaN and Inf values. You can only log NaN and Inf as single config values.
 
 For details, see https://docs-beta.neptune.ai/log_configs
 """

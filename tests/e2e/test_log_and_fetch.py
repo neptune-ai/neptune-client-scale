@@ -1,3 +1,4 @@
+import math
 import os
 import random
 import time
@@ -6,8 +7,11 @@ from datetime import (
     datetime,
     timezone,
 )
+from unittest.mock import patch
 
+import numpy as np
 from neptune_fetcher import ReadOnlyRun
+from pytest import mark
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 
@@ -154,3 +158,11 @@ def test_series_fetch_and_append(run, ro_run):
     df = ro_run[path].fetch_values()
     assert df["step"].tolist() == steps + steps2
     assert df["value"].tolist() == values + values2
+
+
+@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", True)
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+def test_single_non_finite_metric(value, sync_run, ro_run):
+    path = unique_path("test_series/non_finite")
+    sync_run.log_metrics(data={path: value}, step=1)
+    assert path not in refresh(ro_run).field_names

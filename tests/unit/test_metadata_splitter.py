@@ -1,5 +1,9 @@
+import math
 from datetime import datetime
+from unittest.mock import patch
 
+import numpy as np
+import pytest
 from freezegun import freeze_time
 from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
@@ -12,8 +16,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from pytest import mark
 
 from neptune_scale.core.metadata_splitter import MetadataSplitter
+from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -266,3 +272,49 @@ def test_split_large_tags():
     assert {tag for op, _ in result for tag in op.update.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
         "remove/tag"
     ]
+
+
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+def test_raise_on_non_finite_float_metrics(value):
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=10,
+        timestamp=datetime.now(),
+        configs={},
+        metrics={"metric": value},
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=1024,
+    )
+
+    with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
+        list(builder)
+
+    exc.match(f"step.*10.*value.*{value}")
+
+
+@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", True)
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+def test_skip_non_finite_float_metrics(value, caplog):
+    with caplog.at_level("WARNING"):
+        builder = MetadataSplitter(
+            project="workspace/project",
+            run_id="run_id",
+            step=10,
+            timestamp=datetime.now(),
+            configs={},
+            metrics={"bad-metric": value},
+            add_tags={},
+            remove_tags={},
+            max_message_bytes_size=1024,
+        )
+
+        result = list(builder)
+        assert len(result) == 1
+
+        op, _ = result[0]
+        assert not op.update.assign
+
+        assert "Skipping a non-finite value" in caplog.text
+        assert "bad-metric" in caplog.text
