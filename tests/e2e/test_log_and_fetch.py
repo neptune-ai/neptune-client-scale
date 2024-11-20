@@ -7,7 +7,6 @@ from datetime import (
     datetime,
     timezone,
 )
-from unittest.mock import patch
 
 import numpy as np
 from neptune_fetcher import ReadOnlyRun
@@ -160,7 +159,6 @@ def test_series_fetch_and_append(run, ro_run):
     assert df["value"].tolist() == values + values2
 
 
-@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", True)
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_single_non_finite_metric(value, sync_run, ro_run):
     path = unique_path("test_series/non_finite")

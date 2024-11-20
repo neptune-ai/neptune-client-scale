@@ -39,7 +39,7 @@ logger = get_logger()
 
 T = TypeVar("T", bound=Any)
 
-SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, False)
+SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
 class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
@@ -182,7 +182,11 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
 
             if not math.isfinite(v):
                 if SKIP_NON_FINITE_METRICS:
-                    logger.warning(f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`")
+                    logger.warning(
+                        f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. "
+                        f"You can turn this warning into an error by setting the `{envs.SKIP_NON_FINITE_METRICS}` "
+                        "environment variable to `False`."
+                    )
                     continue
                 else:
                     raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)

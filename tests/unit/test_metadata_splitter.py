@@ -274,6 +274,7 @@ def test_split_large_tags():
     ]
 
 
+@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", False)
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_raise_on_non_finite_float_metrics(value):
     builder = MetadataSplitter(
@@ -294,7 +295,6 @@ def test_raise_on_non_finite_float_metrics(value):
     exc.match(f"step.*10.*value.*{value}")
 
 
-@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", True)
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_skip_non_finite_float_metrics(value, caplog):
     with caplog.at_level("WARNING"):
