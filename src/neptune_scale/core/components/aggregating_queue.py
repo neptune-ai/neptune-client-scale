@@ -93,11 +93,12 @@ class AggregatingQueue(Resource):
             if element is None:
                 break
 
-            if not batch_operations or element.batch_key != last_batch_key:
+            if not batch_operations:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
                 batch_operations.append(new_operation)
                 last_batch_key = element.batch_key
+                batch_bytes += len(element.operation)
             else:
                 if not element.is_batchable:
                     logger.debug("Batch closed due to next operation not being batchable")
@@ -111,21 +112,22 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                merge_run_operation(batch_operations[-1], new_operation)
+                if element.batch_key != last_batch_key:
+                    batch_operations.append(new_operation)
+                    last_batch_key = element.batch_key
+                else:
+                    merge_run_operation(batch_operations[-1], new_operation)
+                batch_bytes += element.metadata_size
 
             batch_sequence_id = element.sequence_id
             batch_timestamp = element.timestamp
 
-            if element.metadata_size is not None:
-                batch_bytes += element.metadata_size
-            else:
-                batch_bytes += len(element.operation)
             elements_in_batch += 1
 
             self.commit()
 
             if not element.is_batchable:
-                logger.debug("Batch closed due to first not being batchable")
+                logger.debug("Batch closed due to the first element not being batchable")
                 break
 
             t1 = time.monotonic()
