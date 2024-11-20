@@ -38,7 +38,7 @@ def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], S
     elif isinstance(value, (list, set, tuple)):
         return Value(string_set=StringSet(values=value))
     else:
-        raise ValueError(f"Unsupported ingest field value type: {type(value)}")
+        raise ValueError(f"Unsupported value type: {type(value)}")
 
 
 def datetime_to_proto(dt: datetime) -> Timestamp:

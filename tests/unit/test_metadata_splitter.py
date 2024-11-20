@@ -44,7 +44,7 @@ def test_empty():
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
-def test_fields():
+def test_configs():
     # given
     builder = MetadataSplitter(
         project="workspace/project",
@@ -176,7 +176,7 @@ def test_splitting():
     max_size = 1024
     timestamp = datetime.now()
     metrics = {f"metric{v}": 7 / 9.0 * v for v in range(1000)}
-    fields = {f"field{v}": v for v in range(1000)}
+    configs = {f"config{v}": v for v in range(1000)}
     add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
     remove_tags = {f"remove/tag{v}": {f"value{v}"} for v in range(1000)}
 
@@ -186,7 +186,7 @@ def test_splitting():
         run_id="run_id",
         step=1,
         timestamp=timestamp,
-        configs=fields,
+        configs=configs,
         metrics=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
@@ -208,9 +208,9 @@ def test_splitting():
     assert all(op.update.step.whole == 1 for op, _ in result)
     assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
-    # Check if all metrics, fields and tags are present in the result
+    # Check if all metrics, configs and tags are present in the result
     assert sorted([key for op, _ in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
-    assert sorted([key for op, _ in result for key in op.update.assign.keys()]) == sorted(list(fields.keys()))
+    assert sorted([key for op, _ in result for key in op.update.assign.keys()]) == sorted(list(configs.keys()))
     assert sorted([key for op, _ in result for key in op.update.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
     )

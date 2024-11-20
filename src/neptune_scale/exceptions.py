@@ -19,12 +19,12 @@ __all__ = (
     "NeptuneRunConflicting",
     "NeptuneRunForkParentNotFound",
     "NeptuneRunInvalidCreationParameters",
-    "NeptuneFieldPathExceedsSizeLimit",
-    "NeptuneFieldPathEmpty",
-    "NeptuneFieldPathInvalid",
-    "NeptuneFieldPathNonWritable",
-    "NeptuneFieldTypeUnsupported",
-    "NeptuneFieldTypeConflicting",
+    "NeptuneAttributePathExceedsSizeLimit",
+    "NeptuneAttributePathEmpty",
+    "NeptuneAttributePathInvalid",
+    "NeptuneAttributePathNonWritable",
+    "NeptuneAttributeTypeUnsupported",
+    "NeptuneAttributeTypeMismatch",
     "NeptuneSeriesPointDuplicate",
     "NeptuneSeriesStepNonIncreasing",
     "NeptuneSeriesStepNotAfterForkPoint",
@@ -251,36 +251,36 @@ For example, the experiment name is too large.
 """
 
 
-class NeptuneFieldPathExceedsSizeLimit(NeptuneScaleError):
+class NeptuneAttributePathExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldPathExceedsSizeLimit: Attribute name is too long.
+NeptuneAttributePathExceedsSizeLimit: Attribute name is too long.
 {end}
 The maximum length is 1024 bytes (not characters) in UTF-8 encoding.
 """
 
 
-class NeptuneFieldPathEmpty(NeptuneScaleError):
+class NeptuneAttributePathEmpty(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldPathEmpty: Attribute path is empty.
+NeptuneAttributePathEmpty: Attribute path is empty.
 {end}
 """
 
 
-class NeptuneFieldPathInvalid(NeptuneScaleError):
+class NeptuneAttributePathInvalid(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldPathInvalid: Attribute path is invalid.
+NeptuneAttributePathInvalid: Attribute path is invalid.
 {end}
 To troubleshoot the problem, ensure that the provided path correctly encodes to UTF-8.
 """
 
 
-class NeptuneFieldPathNonWritable(NeptuneScaleError):
+class NeptuneAttributePathNonWritable(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldPathNonWritable: Attribute is not writable.
+NeptuneAttributePathNonWritable: Attribute is not writable.
 {end}
 You could be trying to overwrite a read-only attribute. Note that most of the "sys/*" attributes are read-only.
 
@@ -288,19 +288,19 @@ For details, see https://docs-beta.neptune.ai/sys
 """
 
 
-class NeptuneFieldTypeUnsupported(NeptuneScaleError):
+class NeptuneAttributeTypeUnsupported(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldTypeUnsupported: the provided attribute type is not supported by Neptune.
+NeptuneAttributeTypeUnsupported: the provided attribute type is not supported by Neptune.
 {end}
 For supported types, see https://docs-beta.neptune.ai/attribute_types
 """
 
 
-class NeptuneFieldTypeConflicting(NeptuneScaleError):
+class NeptuneAttributeTypeMismatch(NeptuneScaleError):
     message = """
 {h1}
-NeptuneFieldTypeConflicting: the attribute type is different from the one that was previously logged for this series.
+NeptuneAttributeTypeMismatch: the attribute type is different from the one that was previously logged for this series.
 {end}
 Once an attribute type is set, it cannot be changed. Example: you can't log strings to an existing float series.
 """
