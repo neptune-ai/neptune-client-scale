@@ -410,7 +410,7 @@ class Run(WithResources, AbstractContextManager):
         - value: a float or int value to append to the series.
 
         For example, {"metrics/accuracy": 0.89}.
-        In the field path, each forward slash "/" nests the field under a namespace.
+        In the attribute path, each forward slash "/" nests the attribute under a namespace.
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
@@ -448,7 +448,7 @@ class Run(WithResources, AbstractContextManager):
         - value: configuration or other single value to log.
 
         For example, {"parameters/learning_rate": 0.001}.
-        In the field path, each forward slash "/" nests the field under a namespace.
+        In the attribute path, each forward slash "/" nests the attribute under a namespace.
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:

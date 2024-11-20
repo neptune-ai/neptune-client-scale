@@ -224,7 +224,7 @@ You can log configurations or other single values. Pass the metadata as a dictio
 - `key`: path to where the metadata should be stored in the run.
 - `value`: the piece of metadata to log.
 
-For example, `{"parameters/learning_rate": 0.001}`. In the field path, each forward slash `/` nests the field under a namespace. Use namespaces to structure the metadata into meaningful categories.
+For example, `{"parameters/learning_rate": 0.001}`. In the attribute path, each forward slash `/` nests the attribute under a namespace. Use namespaces to structure the metadata into meaningful categories.
 
 Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
 
@@ -259,7 +259,7 @@ You can log metrics representing a series of numeric values. Pass the metadata a
 - `key`: path to where the metadata should be stored in the run.
 - `value`: the piece of metadata to log.
 
-For example, `{"metrics/accuracy": 0.89}`. In the field path, each forward slash `/` nests the field under a namespace. Use namespaces to structure the metadata into meaningful categories.
+For example, `{"metrics/accuracy": 0.89}`. In the attribute path, each forward slash `/` nests the attribute under a namespace. Use namespaces to structure the metadata into meaningful categories.
 
 __Parameters__
 
