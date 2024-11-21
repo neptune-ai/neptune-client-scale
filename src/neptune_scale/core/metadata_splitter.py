@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ("MetadataSplitter",)
 
 import math
+import warnings
 from datetime import datetime
 from typing import (
     Any,
@@ -26,7 +27,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale import envs
-from neptune_scale.core.logger import get_logger
+from neptune_scale.core.logger import (
+    NeptuneWarning,
+    get_logger,
+)
 from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
@@ -181,11 +185,14 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
 
             if not math.isfinite(v):
                 if self._should_skip_non_finite_metrics:
-                    logger.warning(
-                        f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. "
-                        f"You can turn this warning into an error by setting the `{envs.SKIP_NON_FINITE_METRICS}` "
-                        "environment variable to `False`."
+                    warnings.warn(
+                        f"Neptune is skipping non-finite metric values. You can turn this warning into an error by "
+                        f"setting the `{envs.SKIP_NON_FINITE_METRICS}` environment variable to `False`.",
+                        category=NeptuneWarning,
+                        stacklevel=7,
                     )
+
+                    logger.warning(f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. ")
                     continue
                 else:
                     raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)

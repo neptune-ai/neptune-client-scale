@@ -9,6 +9,10 @@ from neptune_scale.core.styles import (
 )
 from neptune_scale.envs import DEBUG_MODE
 
+
+class NeptuneWarning(Warning): ...
+
+
 LOG_FORMAT = "{blue}%(name)s{end}:{bold}%(levelname)s{end}: %(message)s"
 DEBUG_FORMAT = (
     "%(asctime)s:%(name)s:%(levelname)s:%(processName)s(%(process)d):%(threadName)s:%(filename)s:"
