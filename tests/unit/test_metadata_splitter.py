@@ -1,4 +1,5 @@
 import math
+import os
 from datetime import datetime
 from unittest.mock import patch
 
@@ -274,7 +275,7 @@ def test_split_large_tags():
     ]
 
 
-@patch("neptune_scale.core.metadata_splitter.SKIP_NON_FINITE_METRICS", False)
+@patch.dict(os.environ, {"NEPTUNE_SKIP_NON_FINITE_METRICS": "False"})
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_raise_on_non_finite_float_metrics(value):
     builder = MetadataSplitter(
@@ -283,7 +284,7 @@ def test_raise_on_non_finite_float_metrics(value):
         step=10,
         timestamp=datetime.now(),
         configs={},
-        metrics={"metric": value},
+        metrics={"bad-metric": value},
         add_tags={},
         remove_tags={},
         max_message_bytes_size=1024,
@@ -292,7 +293,9 @@ def test_raise_on_non_finite_float_metrics(value):
     with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
         list(builder)
 
-    exc.match(f"step.*10.*value.*{value}")
+    exc.match("metric `bad-metric`")
+    exc.match("step `10`")
+    exc.match(f"non-finite value of `{value}`")
 
 
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])

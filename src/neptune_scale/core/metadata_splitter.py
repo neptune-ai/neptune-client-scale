@@ -39,8 +39,6 @@ logger = get_logger()
 
 T = TypeVar("T", bound=Any)
 
-SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
-
 
 class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
     def __init__(
@@ -75,6 +73,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         )
 
         self._has_returned = False
+        self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
     def __iter__(self) -> MetadataSplitter:
         self._has_returned = False
@@ -181,7 +180,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
             v = float(v)
 
             if not math.isfinite(v):
-                if SKIP_NON_FINITE_METRICS:
+                if self._should_skip_non_finite_metrics:
                     logger.warning(
                         f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. "
                         f"You can turn this warning into an error by setting the `{envs.SKIP_NON_FINITE_METRICS}` "
