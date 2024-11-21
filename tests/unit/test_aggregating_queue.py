@@ -14,8 +14,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.core.components.aggregating_queue import AggregatingQueue
-from neptune_scale.core.components.queue_element import (
+from neptune_scale.sync.aggregating_queue import AggregatingQueue
+from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )

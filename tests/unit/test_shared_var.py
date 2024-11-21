@@ -2,7 +2,7 @@ from multiprocessing import Process
 
 import pytest
 
-from neptune_scale.core.shared_var import (
+from neptune_scale.util import (
     SharedFloat,
     SharedInt,
 )

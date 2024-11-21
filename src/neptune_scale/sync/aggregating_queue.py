@@ -12,17 +12,17 @@ from typing import Optional
 
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import (
-    BatchedOperations,
-    SingleOperation,
-)
-from neptune_scale.core.logger import get_logger
-from neptune_scale.parameters import (
+from neptune_scale.sync.parameters import (
     BATCH_WAIT_TIME_SECONDS,
     MAX_BATCH_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
 )
+from neptune_scale.sync.queue_element import (
+    BatchedOperations,
+    SingleOperation,
+)
+from neptune_scale.util import get_logger
+from neptune_scale.util.abstract import Resource
 
 logger = get_logger()
 

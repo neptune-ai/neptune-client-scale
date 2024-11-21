@@ -10,8 +10,10 @@ from typing import (
     Optional,
 )
 
-from neptune_scale.core.components.daemon import Daemon
-from neptune_scale.core.logger import get_logger
+from neptune_scale.util import (
+    Daemon,
+    get_logger,
+)
 
 POLL_TIMEOUT = 0.1
 

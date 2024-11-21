@@ -3,11 +3,11 @@ __all__ = ("get_logger",)
 import logging
 import os
 
-from neptune_scale.core.styles import (
+from neptune_scale.util.envs import DEBUG_MODE
+from neptune_scale.util.styles import (
     STYLES,
     ensure_style_detected,
 )
-from neptune_scale.envs import DEBUG_MODE
 
 LOG_FORMAT = "{blue}%(name)s{end}:{bold}%(levelname)s{end}: %(message)s"
 DEBUG_FORMAT = (

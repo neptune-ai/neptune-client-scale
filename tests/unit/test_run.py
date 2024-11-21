@@ -17,7 +17,8 @@ def api_token():
 # Set short timeouts on blocking operations for quicker test execution
 @pytest.fixture(autouse=True, scope="session")
 def short_timeouts():
-    import neptune_scale.core.components
+    import neptune_scale.sync.parameters
+    import neptune_scale.sync.sync_process
 
     patch = pytest.MonkeyPatch()
     timeout = 0.05
@@ -28,10 +29,10 @@ def short_timeouts():
         "SYNC_THREAD_SLEEP_TIME",
         "ERRORS_MONITOR_THREAD_SLEEP_TIME",
     ):
-        patch.setattr(neptune_scale.parameters, name, timeout)
+        patch.setattr(neptune_scale.sync.parameters, name, timeout)
 
         # Not perfect, but does the trick for now. Handle direct imports.
-        for mod in (neptune_scale, neptune_scale.core.components.sync_process):
+        for mod in (neptune_scale, neptune_scale.sync.sync_process):
             if hasattr(mod, name):
                 patch.setattr(mod, name, timeout)
 

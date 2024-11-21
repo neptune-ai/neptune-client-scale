@@ -40,7 +40,7 @@ __all__ = (
 
 from typing import Any
 
-from neptune_scale.core.styles import (
+from neptune_scale.util.styles import (
     STYLES,
     ensure_style_detected,
 )

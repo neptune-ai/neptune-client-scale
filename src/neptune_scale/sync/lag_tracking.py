@@ -5,15 +5,17 @@ __all__ = ("LagTracker",)
 from time import monotonic
 from typing import Callable
 
-from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.daemon import Daemon
-from neptune_scale.core.components.errors_tracking import ErrorsQueue
-from neptune_scale.core.components.operations_queue import OperationsQueue
-from neptune_scale.core.shared_var import SharedFloat
-from neptune_scale.parameters import (
+from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.parameters import (
     LAG_TRACKER_THREAD_SLEEP_TIME,
     LAG_TRACKER_TIMEOUT,
 )
+from neptune_scale.util import (
+    Daemon,
+    SharedFloat,
+)
+from neptune_scale.util.abstract import Resource
 
 
 class LagTracker(Daemon, Resource):

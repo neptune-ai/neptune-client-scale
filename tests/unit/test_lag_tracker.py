@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 from freezegun import freeze_time
 
-from neptune_scale import SharedFloat
-from neptune_scale.core.components.lag_tracking import LagTracker
+from neptune_scale.sync.lag_tracking import LagTracker
+from neptune_scale.util import SharedFloat
 
 
 @freeze_time("2024-09-01 00:00:00")

@@ -4,7 +4,7 @@ import os
 import platform
 from typing import Dict
 
-from neptune_scale.envs import DISABLE_COLORS
+from neptune_scale.util.envs import DISABLE_COLORS
 
 UNIX_STYLES = {
     "h1": "\033[95m",
