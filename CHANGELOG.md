@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - pending
+
+### Added
+- Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
+  the `NEPTUNE_SKIP_NON_FINITE_METRICS` environment variable ([#85](https://github.com/neptune-ai/neptune-client-scale/pull/85))
+
 ## [0.7.2] - 2024-11-08
 
 ### Added

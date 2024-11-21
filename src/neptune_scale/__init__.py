@@ -10,6 +10,7 @@ import atexit
 import os
 import threading
 import time
+import warnings
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import (
@@ -39,7 +40,10 @@ from neptune_scale.core.components.errors_tracking import (
 from neptune_scale.core.components.lag_tracking import LagTracker
 from neptune_scale.core.components.operations_queue import OperationsQueue
 from neptune_scale.core.components.sync_process import SyncProcess
-from neptune_scale.core.logger import get_logger
+from neptune_scale.core.logger import (
+    NeptuneWarning,
+    get_logger,
+)
 from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.core.process_link import ProcessLink
 from neptune_scale.core.serialization import (
@@ -73,6 +77,8 @@ from neptune_scale.parameters import (
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
+
+warnings.simplefilter("once", category=NeptuneWarning)
 
 logger = get_logger()
 

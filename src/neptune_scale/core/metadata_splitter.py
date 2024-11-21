@@ -2,8 +2,9 @@ from __future__ import annotations
 
 __all__ = ("MetadataSplitter",)
 
+import math
+import warnings
 from datetime import datetime
-from itertools import starmap
 from typing import (
     Any,
     Callable,
@@ -25,12 +26,20 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
+from neptune_scale import envs
+from neptune_scale.core.logger import (
+    NeptuneWarning,
+    get_logger,
+)
 from neptune_scale.core.serialization import (
     datetime_to_proto,
     make_step,
     make_value,
     pb_key_size,
 )
+from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
+
+logger = get_logger()
 
 T = TypeVar("T", bound=Any)
 
@@ -54,7 +63,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         self._project = project
         self._run_id = run_id
         self._configs = peekable(configs.items())
-        self._metrics = peekable(starmap(lambda k, v: (k, float(v)), metrics.items()))
+        self._metrics = peekable(self._skip_non_finite(step, metrics))
         self._add_tags = peekable(add_tags.items())
         self._remove_tags = peekable(remove_tags.items())
 
@@ -68,6 +77,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         )
 
         self._has_returned = False
+        self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
     def __iter__(self) -> MetadataSplitter:
         self._has_returned = False
@@ -166,3 +176,25 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
                 break
 
         return size
+
+    def _skip_non_finite(self, step: Optional[float | int], metrics: Dict[str, float]) -> Iterator[Tuple[str, float]]:
+        """Yields (metric, value) pairs, skipping non-finite values depending on the env setting."""
+
+        for k, v in metrics.items():
+            v = float(v)
+
+            if not math.isfinite(v):
+                if self._should_skip_non_finite_metrics:
+                    warnings.warn(
+                        f"Neptune is skipping non-finite metric values. You can turn this warning into an error by "
+                        f"setting the `{envs.SKIP_NON_FINITE_METRICS}` environment variable to `False`.",
+                        category=NeptuneWarning,
+                        stacklevel=7,
+                    )
+
+                    logger.warning(f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. ")
+                    continue
+                else:
+                    raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)
+
+            yield k, v
