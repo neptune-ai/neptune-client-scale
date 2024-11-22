@@ -11,7 +11,7 @@ from typing import (
     Type,
 )
 
-from neptune_scale.api.exceptions import (
+from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
     NeptuneConnectionLostError,
     NeptuneOperationsQueueMaxSizeExceeded,

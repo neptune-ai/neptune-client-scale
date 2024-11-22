@@ -28,16 +28,16 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.exceptions import (
-    NeptuneApiTokenNotProvided,
-    NeptuneProjectNotProvided,
-)
 from neptune_scale.api.validation import (
     verify_collection_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
     verify_type,
+)
+from neptune_scale.exceptions import (
+    NeptuneApiTokenNotProvided,
+    NeptuneProjectNotProvided,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,

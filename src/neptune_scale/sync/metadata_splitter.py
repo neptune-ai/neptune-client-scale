@@ -26,7 +26,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.exceptions import (
+from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
 )
