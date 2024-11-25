@@ -50,6 +50,7 @@ def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = Fa
     """
     Converts a number to protobuf Step value. Example:
     >>> assert make_step(7.654321, True) == Step(whole=7, micro=654321)
+
     Args:
         number: step expressed as number
         raise_on_step_precision_loss: inform converter whether it should silently drop precision and

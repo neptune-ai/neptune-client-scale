@@ -23,10 +23,10 @@ runs:
 
     - name: Test
       run: |
-        pytest -v ./tests/unit/ \
-        --timeout=120 --timeout_method=thread \
+        pytest -v --timeout=120 --timeout_method=thread \
         --color=yes \
-        --junitxml="./test-results/test-unit-new-${{ inputs.os }}-${{ inputs.python-version }}.xml"
+        --junitxml="./test-results/test-unit-new-${{ inputs.os }}-${{ inputs.python-version }}.xml" \
+        ./tests/unit/ ./src/
       shell: bash
 
     - name: Upload test reports

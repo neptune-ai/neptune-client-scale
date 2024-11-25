@@ -92,3 +92,6 @@ check_untyped_defs = "True"
 warn_return_any = "True"
 show_error_codes = "True"
 # warn_unused_ignores = "True"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
