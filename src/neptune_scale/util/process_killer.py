@@ -5,7 +5,7 @@ from typing import List
 
 import psutil
 
-from neptune_scale.envs import SUBPROCESS_KILL_TIMEOUT
+from neptune_scale.util.envs import SUBPROCESS_KILL_TIMEOUT
 
 KILL_TIMEOUT = int(os.getenv(SUBPROCESS_KILL_TIMEOUT, "5"))
 

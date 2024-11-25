@@ -41,28 +41,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.api_client import (
-    ApiClient,
-    backend_factory,
-)
-from neptune_scale.core.components.abstract import (
-    Resource,
-    WithResources,
-)
-from neptune_scale.core.components.aggregating_queue import AggregatingQueue
-from neptune_scale.core.components.daemon import Daemon
-from neptune_scale.core.components.errors_tracking import ErrorsQueue
-from neptune_scale.core.components.queue_element import (
-    BatchedOperations,
-    SingleOperation,
-)
-from neptune_scale.core.logger import get_logger
-from neptune_scale.core.process_link import ProcessLink
-from neptune_scale.core.shared_var import (
-    SharedFloat,
-    SharedInt,
-)
-from neptune_scale.core.util import safe_signal_name
 from neptune_scale.exceptions import (
     NeptuneAttributePathEmpty,
     NeptuneAttributePathExceedsSizeLimit,
@@ -95,7 +73,13 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
 )
-from neptune_scale.parameters import (
+from neptune_scale.net.api_client import (
+    ApiClient,
+    backend_factory,
+)
+from neptune_scale.sync.aggregating_queue import AggregatingQueue
+from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
     MAX_REQUEST_RETRY_SECONDS,
@@ -104,6 +88,22 @@ from neptune_scale.parameters import (
     STATUS_TRACKING_THREAD_SLEEP_TIME,
     SYNC_PROCESS_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
+)
+from neptune_scale.sync.queue_element import (
+    BatchedOperations,
+    SingleOperation,
+)
+from neptune_scale.sync.util import safe_signal_name
+from neptune_scale.util import (
+    Daemon,
+    ProcessLink,
+    SharedFloat,
+    SharedInt,
+    get_logger,
+)
+from neptune_scale.util.abstract import (
+    Resource,
+    WithResources,
 )
 
 T = TypeVar("T")

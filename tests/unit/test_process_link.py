@@ -16,7 +16,7 @@ import psutil
 import pytest
 from pytest import fixture
 
-from neptune_scale.core.process_link import ProcessLink
+from neptune_scale.util import ProcessLink
 
 
 @fixture

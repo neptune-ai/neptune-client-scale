@@ -2,7 +2,7 @@ from threading import Event
 from typing import Optional
 from unittest.mock import Mock
 
-from neptune_scale.core.components.errors_tracking import (
+from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )

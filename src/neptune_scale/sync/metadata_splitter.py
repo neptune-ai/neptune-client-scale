@@ -26,18 +26,20 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale import envs
-from neptune_scale.core.logger import (
-    NeptuneWarning,
-    get_logger,
+from neptune_scale.exceptions import (
+    NeptuneFloatValueNanInfUnsupported,
+    NeptuneScaleWarning,
 )
-from neptune_scale.core.serialization import (
+from neptune_scale.net.serialization import (
     datetime_to_proto,
     make_step,
     make_value,
     pb_key_size,
 )
-from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
+from neptune_scale.util import (
+    envs,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -188,7 +190,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
                     warnings.warn(
                         f"Neptune is skipping non-finite metric values. You can turn this warning into an error by "
                         f"setting the `{envs.SKIP_NON_FINITE_METRICS}` environment variable to `False`.",
-                        category=NeptuneWarning,
+                        category=NeptuneScaleWarning,
                         stacklevel=7,
                     )
 

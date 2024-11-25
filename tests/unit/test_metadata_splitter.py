@@ -19,8 +19,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from pytest import mark
 
-from neptune_scale.core.metadata_splitter import MetadataSplitter
 from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
+from neptune_scale.sync.metadata_splitter import MetadataSplitter
 
 
 @freeze_time("2024-07-30 12:12:12.000022")

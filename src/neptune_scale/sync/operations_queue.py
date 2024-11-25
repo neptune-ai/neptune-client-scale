@@ -9,15 +9,15 @@ from typing import (
     Optional,
 )
 
-from neptune_scale.core.components.abstract import Resource
-from neptune_scale.core.components.queue_element import SingleOperation
-from neptune_scale.core.logger import get_logger
-from neptune_scale.core.validation import verify_type
-from neptune_scale.parameters import (
+from neptune_scale.api.validation import verify_type
+from neptune_scale.sync.parameters import (
     MAX_MULTIPROCESSING_QUEUE_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
     MAX_QUEUE_SIZE,
 )
+from neptune_scale.sync.queue_element import SingleOperation
+from neptune_scale.util import get_logger
+from neptune_scale.util.abstract import Resource
 
 if TYPE_CHECKING:
     from threading import RLock
