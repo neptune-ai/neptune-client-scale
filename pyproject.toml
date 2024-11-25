@@ -94,4 +94,4 @@ show_error_codes = "True"
 # warn_unused_ignores = "True"
 
 [tool.pytest.ini_options]
-addopts = "--doctest-modules"
+addopts = "--doctest-modules -n auto"
