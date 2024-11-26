@@ -24,20 +24,36 @@ pip install neptune-scale
 ### Configure API token and project
 
 1. Log in to your Neptune Scale workspace.
-1. Create a project, or find an existing project you want to send the run metadata to.
 1. Get your API token from your user menu in the bottom left corner.
 
     > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, access the workspace settings via the user menu.
 
-1. In the environment where neptune-scale is installed, set the following environment variables to the API token and project name:
+1. In the environment where neptune-scale is installed, save your API token to the `NEPTUNE_API_TOKEN` environment variable:
 
     ```
-    export NEPTUNE_API_TOKEN="h0dHBzOi8aHR0cHM.4kl0jvYh3Kb8...ifQ=="
+    export NEPTUNE_API_TOKEN="h0dHBzOi8aHR0cHM6...Y2MifQ=="
     ```
 
+1. Create a project, or find an existing project you want to send the run metadata to.
+
+    To create a project via API:
+
+    ```python
+    from neptune_scale import create_project
+
+    create_project(
+        name="project-x",
+        workspace="team-alpha",
+    )
     ```
+
+1. (optional) In the environment where neptune-scale is installed, save your full project path to the `NEPTUNE_PROJECT` environment variable:
+
+    ```bash
     export NEPTUNE_PROJECT="team-alpha/project-x"
     ```
+
+    > If you skip this step, you need to pass the project name as an argument each time you start a run.
 
 You're ready to start using Neptune Scale.
 
