@@ -9,7 +9,7 @@ from neptune_scale.api.validation import verify_type
 from neptune_scale.net import projects
 from neptune_scale.net.projects import ProjectVisibility
 
-PROJECT_QUALIFIED_NAME_RE = re.compile(r"^((?P<workspace>[\w-]+)/)?(?P<project>[\w-]+)$")
+PROJECT_QUALIFIED_NAME_RE = re.compile(r"^((?P<workspace>[\w\-.]+)/)?(?P<project>[\w\-.]+)$")
 
 
 def create_project(
@@ -19,6 +19,7 @@ def create_project(
     visibility: str = ProjectVisibility.PRIVATE.value,
     description: Optional[str] = None,
     key: Optional[str] = None,
+    fail_if_exists: bool = False,
     api_token: Optional[str] = None,
 ) -> str:
     """Creates a new project in a Neptune workspace.
@@ -39,6 +40,7 @@ def create_project(
             If None, it will be left empty.
         key: Project identifier. Must contain 1-10 upper case letters or numbers (at least one letter).
             For example, "CLS2". If you leave it out, Neptune generates a project key for you.
+        fail_if_exists: If the project already exists and this flag is True, an error is raised.
         api_token: Account's API token.
             If None, the value of the NEPTUNE_API_TOKEN environment variable is used.
             Note: To keep your token secure, use the NEPTUNE_API_TOKEN environment variable rather than placing your
@@ -56,8 +58,14 @@ def create_project(
     verify_type("api_token", api_token, (str, type(None)))
 
     workspace, name = extract_workspace_and_project(name=name, workspace=workspace)
-    workspace, name = projects.create_project(
-        name, workspace=workspace, visibility=visibility, description=description, key=key, api_token=api_token
+    projects.create_project(
+        workspace=workspace,
+        name=name,
+        visibility=visibility,
+        description=description,
+        key=key,
+        fail_if_exists=fail_if_exists,
+        api_token=api_token,
     )
 
     return normalize_project_name(name, workspace)
@@ -67,8 +75,8 @@ def extract_workspace_and_project(name: str, workspace: Optional[str] = None) ->
     """Return a tuple of (workspace name, project name) from the provided
     fully qualified project name, or a name + workspace
 
-    >>> extract_workspace_and_project("workspace/project")
-    ('workspace', 'project')
+    >>> extract_workspace_and_project("my-own.workspace_/pr_oj-ect")
+    ('my-own.workspace_', 'pr_oj-ect')
     >>> extract_workspace_and_project("project", "workspace")
     ('workspace', 'project')
     >>> extract_workspace_and_project("workspace/project", "workspace")

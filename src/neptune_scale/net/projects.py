@@ -1,10 +1,10 @@
 import os
+import re
 from enum import Enum
 from json import JSONDecodeError
 from typing import (
     Any,
     Optional,
-    Tuple,
 )
 
 import httpx
@@ -29,20 +29,20 @@ class ProjectVisibility(Enum):
     WORKSPACE = "workspace"
 
 
+ORGANIZATION_NOT_FOUND_RE = re.compile(r"Organization .* not found")
+
+
 @with_api_errors_handling
 def create_project(
+    workspace: str,
     name: str,
     *,
-    workspace: Optional[str] = None,
     visibility: ProjectVisibility = ProjectVisibility.PRIVATE,
     description: Optional[str] = None,
     key: Optional[str] = None,
+    fail_if_exists: bool = False,
     api_token: Optional[str] = None,
-) -> Tuple[str, str]:
-    """
-    Return a tuple of (workspace name, project name)
-    """
-
+) -> None:
     api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
     if api_token is None:
         raise NeptuneApiTokenNotProvided()
@@ -66,12 +66,15 @@ def create_project(
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
         if code == 409:
-            raise NeptuneProjectAlreadyExists()
+            if fail_if_exists:
+                raise NeptuneProjectAlreadyExists()
+        # We need to match plain text, as this is what the backend returns
+        elif code == 404 and ORGANIZATION_NOT_FOUND_RE.match(response.text):
+            raise NeptuneBadRequestError(status_code=code, reason=f"Workspace '{workspace}' not found")
         elif code // 100 == 4:
             raise NeptuneBadRequestError(status_code=code, reason=json.get("message"))
-        raise e
-
-    return json["organizationName"], json["name"]
+        else:
+            raise e
 
 
 def _safe_json(response: httpx.Response) -> Any:
