@@ -25,26 +25,20 @@ def create_project(
     """Creates a new project in a Neptune workspace.
 
     Args:
-        name: The name for the project in Neptune. Can contain letters and hyphens. For example, "classification".
-            If you leave out the workspace argument, include the workspace name here,
-            in the form "workspace-name/project-name". For example, "ml-team/classification".
-        workspace: Name of your Neptune workspace.
-            If None, it will be parsed from the name argument.
+        name (str): Name of the project. Can contain letters and hyphens (-). For example, "project-x".
+        workspace (str, optional): Name of your Neptune workspace.
+            You can omit this argument if you include the workspace name in the `name` argument.
         visibility: Level of privacy for the project. Options:
             - "pub": Public. Anyone on the internet can see it.
-            - "priv": Private. Only users specifically assigned to the project can access it. Requires a plan with
+            - "priv" (default): Private. Only users specifically assigned to the project can access it. Requires a plan with
                 project-level access control.
             - "workspace" (team workspaces only): Accessible to all workspace members.
-            The default is "priv".
-        description: Project description.
-            If None, it will be left empty.
+        description: Project description. If None, it's left empty.
         key: Project identifier. Must contain 1-10 upper case letters or numbers (at least one letter).
-            For example, "CLS2". If you leave it out, Neptune generates a project key for you.
-        fail_if_exists: If the project already exists and this flag is True, an error is raised.
+            For example, "PX2". If you leave it out, Neptune generates a project key for you.
+        fail_if_exists: If the project already exists and this flag is set to `True`, an error is raised.
         api_token: Account's API token.
-            If None, the value of the NEPTUNE_API_TOKEN environment variable is used.
-            Note: To keep your token secure, use the NEPTUNE_API_TOKEN environment variable rather than placing your
-            API token in plain text in your source code.
+            If not provided, the value of the NEPTUNE_API_TOKEN environment variable is used (recommended).
 
     Returns:
         The name of the new project created.
