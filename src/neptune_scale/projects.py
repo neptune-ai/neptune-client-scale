@@ -9,7 +9,7 @@ from neptune_scale.api.validation import verify_type
 from neptune_scale.net import projects
 from neptune_scale.net.projects import ProjectVisibility
 
-PROJECT_QUALIFIED_NAME_RE = re.compile(r"^((?P<workspace>[^/]+)/)?(?P<project>[^/]+)$")
+PROJECT_QUALIFIED_NAME_RE = re.compile(r"^((?P<workspace>[\w-]+)/)?(?P<project>[\w-]+)$")
 
 
 def create_project(
@@ -64,6 +64,28 @@ def create_project(
 
 
 def extract_workspace_and_project(name: str, workspace: Optional[str] = None) -> Tuple[str, str]:
+    """Return a tuple of (workspace name, project name) from the provided
+    fully qualified project name, or a name + workspace
+
+    >>> extract_workspace_and_project("workspace/project")
+    ('workspace', 'project')
+    >>> extract_workspace_and_project("project", "workspace")
+    ('workspace', 'project')
+    >>> extract_workspace_and_project("workspace/project", "workspace")
+    ('workspace', 'project')
+    >>> extract_workspace_and_project("workspace/project", "another_workspace")
+    Traceback (most recent call last):
+    ...
+    ValueError: The provided `workspace` argument `another_workspace` is different ...
+    >>> extract_workspace_and_project("project")
+    Traceback (most recent call last):
+    ...
+    ValueError: Workspace not provided ...
+    >>> extract_workspace_and_project("workspace/project!@#")
+    Traceback (most recent call last):
+    ...
+    ValueError: Invalid project name ...
+    """
     project_spec = PROJECT_QUALIFIED_NAME_RE.search(name)
 
     if not project_spec:
@@ -79,7 +101,7 @@ def extract_workspace_and_project(name: str, workspace: Optional[str] = None) ->
 
     if workspace and extracted_workspace and workspace != extracted_workspace:
         raise ValueError(
-            f"The provided `workspace` argument `{workspace} is different from the one in project name `{name}`"
+            f"The provided `workspace` argument `{workspace}` is different from the one in project name `{name}`"
         )
 
     final_workspace_name = cast(str, extracted_workspace or workspace)
