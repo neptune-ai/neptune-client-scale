@@ -141,7 +141,7 @@ Set the NEPTUNE_API_TOKEN environment variable depending on your operating syste
     In the terminal:
         {bash}export NEPTUNE_API_TOKEN="YOUR_API_TOKEN"{end}
 
-    {correct}WindowGs{end}
+    {correct}Windows{end}
     In Command Prompt or similar:
         {bash}setx NEPTUNE_API_TOKEN "YOUR_API_TOKEN"{end}
 
