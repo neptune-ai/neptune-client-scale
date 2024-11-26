@@ -12,8 +12,6 @@ from multiprocessing import (
 )
 from types import FrameType
 from typing import (
-    Any,
-    Callable,
     Dict,
     Generic,
     List,
@@ -25,14 +23,6 @@ from typing import (
 )
 
 import backoff
-import httpx
-from neptune_api.errors import (
-    InvalidApiTokenException,
-    UnableToDeserializeApiKeyError,
-    UnableToExchangeApiKeyError,
-    UnableToRefreshTokenError,
-    UnexpectedStatus,
-)
 from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
@@ -51,7 +41,6 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
-    NeptuneInvalidCredentialsError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -68,7 +57,6 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
-    NeptuneUnableToAuthenticateError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
@@ -76,6 +64,7 @@ from neptune_scale.exceptions import (
 from neptune_scale.net.api_client import (
     ApiClient,
     backend_factory,
+    with_api_errors_handling,
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
@@ -173,22 +162,6 @@ class PeekableQueue(Generic[T]):
             size = self._queue.qsize()
             for _ in range(min(size, n)):
                 self._queue.get()
-
-
-def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        try:
-            return func(*args, **kwargs)
-        except (InvalidApiTokenException, UnableToDeserializeApiKeyError):
-            raise NeptuneInvalidCredentialsError()
-        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus):
-            raise NeptuneUnableToAuthenticateError()
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError):
-            raise NeptuneConnectionLostError()
-        except Exception as e:
-            raise e
-
-    return wrapper
 
 
 class SyncProcess(Process):

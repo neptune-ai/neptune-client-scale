@@ -51,7 +51,8 @@ class NeptuneScaleError(Exception):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
-        super().__init__(self.message.format(*args, **STYLES, **kwargs))
+        message = kwargs.pop("message", self.message)
+        super().__init__(message.format(*args, **STYLES, **kwargs))
 
 
 class NeptuneScaleWarning(Warning):
@@ -60,6 +61,25 @@ class NeptuneScaleWarning(Warning):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
         super().__init__(self.message.format(*args, **STYLES, **kwargs))
+
+
+class NeptuneBadRequestError(NeptuneScaleError):
+    """
+    A generic "bad request" error. Pass `reason` to provide a custom message.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        reason = kwargs.get("reason", None)
+        if not reason:
+            reason = "The request contains invalid data"
+        kwargs["reason"] = reason
+        kwargs["status_code"] = kwargs.get("status_code", 400)
+        super().__init__(*args, **kwargs)
+
+    message = """
+{h1}
+NeptuneBadRequestError({status_code}): {reason}
+"""
 
 
 class NeptuneSynchronizationStopped(NeptuneScaleError):
@@ -202,6 +222,14 @@ class NeptuneProjectInvalidName(NeptuneScaleError):
     message = """
 {h1}
 NeptuneProjectInvalidName: Project name is either empty or too long.
+{end}
+"""
+
+
+class NeptuneProjectAlreadyExists(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneProjectAlreadyExists: A project with the provided name or project key already exists.
 {end}
 """
 
