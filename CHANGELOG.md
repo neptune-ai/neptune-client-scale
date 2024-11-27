@@ -2,17 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+<!--- ONLY INCLUDE USER-FACING CHANGES -->
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.3] - pending
+## [0.8.0] - 2024-11-26
 
 ### Added
-- Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
-  the `NEPTUNE_SKIP_NON_FINITE_METRICS` environment variable ([#85](https://github.com/neptune-ai/neptune-client-scale/pull/85))
-- New function: `neptune_scale.projects.create_project()` ([#92](https://github.com/neptune-ai/neptune-client-scale/pull/92))
+- Added function `neptune_scale.projects.create_project()` to programatically create Neptune projects ([#92](https://github.com/neptune-ai/neptune-client-scale/pull/92))
 
-## [0.7.2] - 2024-11-08
+### Changed
+- Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
+  the new `NEPTUNE_SKIP_NON_FINITE_METRICS` environment variable ([#85](https://github.com/neptune-ai/neptune-client-scale/pull/85))
+- Made default error callback logs more informative ([#78](https://github.com/neptune-ai/neptune-client-scale/pull/78))
+- Revamped exception descriptions ([#80](https://github.com/neptune-ai/neptune-client-scale/pull/80))
+- `fields` renamed to `attributes` ([#86](https://github.com/neptune-ai/neptune-client-scale/pull/86))
+
+### Fixed
+- Fixed batching of steps ([#82](https://github.com/neptune-ai/neptune-client-scale/pull/82))
+
+## [0.7.2] - 2024-11-07
 
 ### Added
 
