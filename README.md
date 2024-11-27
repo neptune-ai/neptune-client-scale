@@ -39,7 +39,7 @@ pip install neptune-scale
     To create a project via API:
 
     ```python
-    from neptune_scale import create_project
+    from neptune_scale.projects import create_project
 
     create_project(
         name="project-x",
