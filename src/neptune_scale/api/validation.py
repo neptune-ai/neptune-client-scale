@@ -10,6 +10,8 @@ __all__ = (
 
 from typing import (
     Any,
+    Dict,
+    Optional,
     Type,
     Union,
 )
@@ -56,10 +58,29 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
 def verify_collection_type(
     var_name: str, var: Union[list, set, tuple], expected_type: Union[type, tuple], allow_none: bool = True
 ) -> None:
-    if var is None and not allow_none:
-        raise ValueError(f"{var_name} must not be None")
+    if var is None:
+        if not allow_none:
+            raise ValueError(f"{var_name} must not be None")
+        return
 
     verify_type(var_name, var, (list, set, tuple))
 
     for value in var:
         verify_type(f"elements of collection '{var_name}'", value, expected_type)
+
+
+def verify_dict_type(
+    var_name: str, var: Optional[Dict[Any, Any]], expected_type: Union[type, tuple], allow_none: bool = True
+) -> None:
+    if var is None:
+        if not allow_none:
+            raise ValueError(f"{var_name} must not be None")
+        return
+
+    verify_type(var_name, var, dict)
+
+    for key, value in var.items():
+        if not isinstance(key, str):
+            raise TypeError(f"Keys of dictionary '{var_name}' must be strings (got `{key}`)")
+
+        verify_type(f"Values of dictionary '{var_name}'", value, expected_type)
