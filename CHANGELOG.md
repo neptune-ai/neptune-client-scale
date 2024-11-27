@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.0] - 2024-11-26
 
 ### Added
-- Added function `neptune_scale.projects.create_project()` to programatically create Neptune projects ([#92](https://github.com/neptune-ai/neptune-client-scale/pull/92))
+- Added function `neptune_scale.projects.create_project()` to programmatically create Neptune projects ([#92](https://github.com/neptune-ai/neptune-client-scale/pull/92))
 
 ### Changed
 - Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
