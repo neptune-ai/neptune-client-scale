@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
   the `NEPTUNE_SKIP_NON_FINITE_METRICS` environment variable ([#85](https://github.com/neptune-ai/neptune-client-scale/pull/85))
 - New function: `neptune_scale.projects.create_project()` ([#92](https://github.com/neptune-ai/neptune-client-scale/pull/92))
+- New function: `neptune_scale.list_projects()` ([#97](https://github.com/neptune-ai/neptune-client-scale/pull/97))
 
 ## [0.7.2] - 2024-11-08
 
