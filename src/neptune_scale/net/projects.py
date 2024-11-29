@@ -4,7 +4,10 @@ from enum import Enum
 from json import JSONDecodeError
 from typing import (
     Any,
+    Dict,
+    List,
     Optional,
+    cast,
 )
 
 import httpx
@@ -32,6 +35,14 @@ class ProjectVisibility(Enum):
 ORGANIZATION_NOT_FOUND_RE = re.compile(r"Organization .* not found")
 
 
+def _get_api_token(api_token: Optional[str]) -> str:
+    api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
+    if api_token is None:
+        raise NeptuneApiTokenNotProvided()
+
+    return api_token
+
+
 @with_api_errors_handling
 def create_project(
     workspace: str,
@@ -43,9 +54,7 @@ def create_project(
     fail_if_exists: bool = False,
     api_token: Optional[str] = None,
 ) -> None:
-    api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-    if api_token is None:
-        raise NeptuneApiTokenNotProvided()
+    api_token = _get_api_token(api_token)
 
     client = HostedApiClient(api_token=api_token)
     visibility = ProjectVisibility(visibility)
@@ -82,3 +91,15 @@ def _safe_json(response: httpx.Response) -> Any:
         return response.json()
     except JSONDecodeError:
         return {}
+
+
+def get_project_list(*, api_token: Optional[str] = None) -> List[Dict]:
+    client = HostedApiClient(api_token=_get_api_token(api_token))
+
+    params = {
+        "userRelation": "viewerOrHigher",
+        "sortBy": "lastViewed",
+    }
+
+    response = client.backend.get_httpx_client().request("get", f"{PROJECTS_PATH_BASE}", params=params)
+    return cast(List[Dict], response.json()["entries"])
