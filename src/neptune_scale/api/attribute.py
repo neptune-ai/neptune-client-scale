@@ -1,5 +1,6 @@
 import functools
 import itertools
+import threading
 import warnings
 from datetime import datetime
 from typing import (
@@ -16,6 +17,7 @@ from typing import (
     cast,
 )
 
+from neptune_scale.exceptions import NeptuneSeriesStepNonIncreasing
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 
@@ -61,6 +63,11 @@ class AttributeStore:
         self._run_id = run_id
         self._operations_queue = operations_queue
         self._attributes: Dict[str, Attribute] = {}
+        # Keep a list of path -> (last step, last value) mappings to detect non-increasing steps
+        # at call site. The backend will detect this error as well, but it's more convenient for the user
+        # to get the error as soon as possible.
+        self._metric_state: Dict[str, Tuple[float, float]] = {}
+        self._lock = threading.RLock()
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -87,22 +94,41 @@ class AttributeStore:
     ) -> None:
         if timestamp is None:
             timestamp = datetime.now()
-        elif isinstance(timestamp, float):
+        elif isinstance(timestamp, (float, int)):
             timestamp = datetime.fromtimestamp(timestamp)
 
-        splitter: MetadataSplitter = MetadataSplitter(
-            project=self._project,
-            run_id=self._run_id,
-            step=step,
-            timestamp=timestamp,
-            configs=configs,
-            metrics=metrics,
-            add_tags=tags_add,
-            remove_tags=tags_remove,
-        )
+        with self._lock:
+            self._verify_and_update_metrics_state(step, metrics)
 
-        for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
+            # TODO: Move splitting into the worker process. Here we should just send messages as they are.
+            splitter: MetadataSplitter = MetadataSplitter(
+                project=self._project,
+                run_id=self._run_id,
+                step=step,
+                timestamp=timestamp,
+                configs=configs,
+                metrics=metrics,
+                add_tags=tags_add,
+                remove_tags=tags_remove,
+            )
+
+            for operation, metadata_size in splitter:
+                self._operations_queue.enqueue(operation=operation, size=metadata_size, step=step)
+
+    def _verify_and_update_metrics_state(self, step: Optional[float], metrics: Optional[Dict[str, float]]) -> None:
+        """Check if step in provided metrics is increasing, raise `NeptuneSeriesStepNonIncreasing` if not."""
+
+        if step is None or metrics is None:
+            return
+
+        for metric, value in metrics.items():
+            if (state := self._metric_state.get(metric)) is not None:
+                last_step, last_value = state
+                # Repeating a step is fine as long as the value does not change
+                if step < last_step or (step == last_step and value != last_value):
+                    raise NeptuneSeriesStepNonIncreasing()
+
+            self._metric_state[metric] = (step, value)
 
 
 class Attribute:
@@ -130,7 +156,7 @@ class Attribute:
         self,
         value: Union[Dict[str, Any], float],
         *,
-        step: Union[float, int],
+        step: Optional[Union[float, int]] = None,
         timestamp: Optional[Union[float, datetime]] = None,
         wait: bool = False,
         **kwargs: Any,

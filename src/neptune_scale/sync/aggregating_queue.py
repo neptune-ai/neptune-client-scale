@@ -72,7 +72,7 @@ class AggregatingQueue(Resource):
         start = time.monotonic()
 
         batch_operations: list[RunOperation] = []
-        last_batch_key: Optional[float] = None
+        current_batch_step: Optional[float] = None
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -97,7 +97,7 @@ class AggregatingQueue(Resource):
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
                 batch_operations.append(new_operation)
-                last_batch_key = element.batch_key
+                current_batch_step = element.step
                 batch_bytes += len(element.operation)
             else:
                 if not element.is_batchable:
@@ -112,9 +112,26 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                if element.batch_key != last_batch_key:
+
+                # This is where we decide if we need to wrap up the current UpdateSnapshot and start a new one.
+                # This happens if the step changes, but also if it is None.
+                # On None, the backend will assign the next available step. This is why we cannot merge here,
+                # especially considering metrics, since we would overwrite them:
+                #
+                #   log metric1=1.0, step=None
+                #   log metric1=1.2, step=None
+                #
+                # After merging by step, we would end up with a single value (the most recent one).
+                #
+                # TODO: we could potentially keep merging until we encounter a metric already seen in this batch.
+                #       Something to optimize in the future. Given the metrics:
+                #           m1, m2, m3, m4, m1, m2, m3, ...
+                #       we could batch up to m4 and close the batch when encountering m1, as long as steps are None
+                #       We could also keep batching if there are no metrics in a given operation, although this would
+                #       not be a common case.
+                if element.step is None or element.step != current_batch_step:
                     batch_operations.append(new_operation)
-                    last_batch_key = element.batch_key
+                    current_batch_step = element.step
                 else:
                     merge_run_operation(batch_operations[-1], new_operation)
                 batch_bytes += element.metadata_size

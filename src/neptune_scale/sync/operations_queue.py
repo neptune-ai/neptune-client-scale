@@ -57,7 +57,7 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None, key: Optional[float] = None) -> None:
+    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None, step: Optional[float] = None) -> None:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
@@ -75,7 +75,7 @@ class OperationsQueue(Resource):
                         operation=serialized_operation,
                         metadata_size=size,
                         is_batchable=is_metadata_update,
-                        batch_key=key,
+                        step=step,
                     ),
                     block=True,
                     timeout=None,
