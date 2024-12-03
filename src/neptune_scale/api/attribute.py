@@ -1,18 +1,16 @@
 import functools
 import itertools
 import warnings
+from collections.abc import (
+    Collection,
+    Iterator,
+)
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Collection,
-    Dict,
-    Iterator,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
     cast,
 )
@@ -52,7 +50,7 @@ ValueType = Any  # Union[float, int, str, bool, datetime, Tuple, List, Dict, Set
 class AttributeStore:
     def __init__(self, run: "Run") -> None:
         self._run = run
-        self._attributes: Dict[str, Attribute] = {}
+        self._attributes: dict[str, Attribute] = {}
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -72,10 +70,10 @@ class AttributeStore:
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[Union[datetime, float]] = None,
-        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Dict[str, Union[float, int]]] = None,
-        tags_add: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
-        tags_remove: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
+        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        metrics: Optional[dict[str, Union[float, int]]] = None,
+        tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
+        tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
         # TODO: This should not call Run.log, but do the actual work. Reverse the current dependency so that this
         #       class handles all the logging
@@ -117,7 +115,7 @@ class Attribute:
     @warn_unsupported_params
     def append(
         self,
-        value: Union[Dict[str, Any], float],
+        value: Union[dict[str, Any], float],
         *,
         step: Union[float, int],
         timestamp: Optional[Union[float, datetime]] = None,
@@ -130,7 +128,7 @@ class Attribute:
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
     # def add(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
-    def add(self, values: Union[str, Union[List[str], Set[str], Tuple[str]]], *, wait: bool = False) -> None:
+    def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
         self._store.log(tags_add={self._path: values})
@@ -138,7 +136,7 @@ class Attribute:
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
     # def remove(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
-    def remove(self, values: Union[str, Union[List[str], Set[str], Tuple[str]]], *, wait: bool = False) -> None:
+    def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
         self._store.log(tags_remove={self._path: values})
@@ -168,7 +166,7 @@ class Attribute:
     # TODO: change Run API to typehint timestamp as Union[datetime, float]
 
 
-def iter_nested(dict_: Dict[str, ValueType], path: str) -> Iterator[Tuple[Tuple[str, ...], ValueType]]:
+def iter_nested(dict_: dict[str, ValueType], path: str) -> Iterator[tuple[tuple[str, ...], ValueType]]:
     """Iterate a nested dictionary, yielding a tuple of path components and value.
 
     >>> list(iter_nested({"foo": 1, "bar": {"baz": 2}}, "base"))
@@ -187,7 +185,7 @@ def iter_nested(dict_: Dict[str, ValueType], path: str) -> Iterator[Tuple[Tuple[
     yield from _iter_nested(dict_, parts)
 
 
-def _iter_nested(dict_: Dict[str, ValueType], path_acc: Tuple[str, ...]) -> Iterator[Tuple[Tuple[str, ...], ValueType]]:
+def _iter_nested(dict_: dict[str, ValueType], path_acc: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], ValueType]]:
     if not dict_:
         raise ValueError("The dictionary cannot be empty or contain empty nested dictionaries.")
 
@@ -228,7 +226,7 @@ def cleanup_path(path: str) -> str:
     return path
 
 
-def accumulate_dict_values(value: Union[ValueType, Dict[str, ValueType]], path_or_base: str) -> Dict:
+def accumulate_dict_values(value: Union[ValueType, dict[str, ValueType]], path_or_base: str) -> dict:
     """
     >>> accumulate_dict_values(1, "foo")
     {'foo': 1}

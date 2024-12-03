@@ -8,11 +8,6 @@ __all__ = (
 )
 
 from datetime import datetime
-from typing import (
-    List,
-    Set,
-    Union,
-)
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
@@ -22,7 +17,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 
 
-def make_value(value: Union[Value, float, str, int, bool, datetime, List[str], Set[str]]) -> Value:
+def make_value(value: Value | float | str | int | bool | datetime | list[str] | set[str]) -> Value:
     if isinstance(value, Value):
         return value
     if isinstance(value, float):
@@ -46,7 +41,7 @@ def datetime_to_proto(dt: datetime) -> Timestamp:
     return Timestamp(seconds=int(dt_ts), nanos=int((dt_ts % 1) * 1e9))
 
 
-def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = False) -> Step:
+def make_step(number: float | int, raise_on_step_precision_loss: bool = False) -> Step:
     """
     Converts a number to protobuf Step value. Example:
     >>> assert make_step(7.654321, True) == Step(whole=7, micro=654321)

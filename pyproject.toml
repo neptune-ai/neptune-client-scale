@@ -81,6 +81,7 @@ select = ["F", "UP"]
 ignore = ["UP006", "UP007"]
 
 [tool.mypy]
+python_version = "3.9"
 files = 'src/neptune_scale'
 mypy_path = "stubs"
 install_types = "True"

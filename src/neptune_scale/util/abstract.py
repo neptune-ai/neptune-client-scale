@@ -5,10 +5,6 @@ from abc import (
     abstractmethod,
 )
 from types import TracebackType
-from typing import (
-    Optional,
-    Type,
-)
 
 
 class AutoCloseable(ABC):
@@ -20,9 +16,9 @@ class AutoCloseable(ABC):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         self.close()
 

@@ -12,13 +12,9 @@ from multiprocessing import (
 )
 from types import FrameType
 from typing import (
-    Dict,
     Generic,
-    List,
     Literal,
     NamedTuple,
-    Optional,
-    Type,
     TypeVar,
 )
 
@@ -99,7 +95,7 @@ T = TypeVar("T")
 
 logger = get_logger()
 
-CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
+CODE_TO_ERROR: dict[IngestCode.ValueType, type[Exception] | None] = {
     IngestCode.OK: None,
     IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
     IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
@@ -130,7 +126,7 @@ class StatusTrackingElement(NamedTuple):
     request_id: str
 
 
-def code_to_exception(code: IngestCode.ValueType) -> Optional[Type[Exception]]:
+def code_to_exception(code: IngestCode.ValueType) -> type[Exception] | None:
     if code in CODE_TO_ERROR:
         return CODE_TO_ERROR[code]
     return NeptuneUnexpectedError
@@ -145,7 +141,7 @@ class PeekableQueue(Generic[T]):
         with self._lock:
             self._queue.put(element)
 
-    def peek(self, max_size: int) -> Optional[List[T]]:
+    def peek(self, max_size: int) -> list[T] | None:
         with self._lock:
             size = self._queue.qsize()
             if size == 0:
@@ -196,7 +192,7 @@ class SyncProcess(Process):
         # This flag is set when a termination signal is caught
         self._stop_event = multiprocessing.Event()
 
-    def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
+    def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
         logger.debug(f"Received signal {safe_signal_name(signum)}")
         self._stop_event.set()  # Trigger the stop event
 
@@ -300,7 +296,7 @@ class SyncProcessWorker(WithResources):
         for thread in self.threads:
             thread.start()
 
-    def join(self, timeout: Optional[int] = None) -> None:
+    def join(self, timeout: int | None = None) -> None:
         # The same timeout will be applied to each thread separately
         for thread in self.threads:
             thread.join(timeout=timeout)
@@ -319,9 +315,9 @@ class InternalQueueFeederThread(Daemon, Resource):
         self._internal: AggregatingQueue = internal
         self._errors_queue: ErrorsQueue = errors_queue
 
-        self._latest_unprocessed: Optional[SingleOperation] = None
+        self._latest_unprocessed: SingleOperation | None = None
 
-    def get_next(self) -> Optional[SingleOperation]:
+    def get_next(self) -> SingleOperation | None:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 
@@ -376,10 +372,10 @@ class SenderThread(Daemon, WithResources):
         self._last_queued_seq: SharedInt = last_queued_seq
         self._mode: Literal["async", "disabled"] = mode
 
-        self._backend: Optional[ApiClient] = None
-        self._latest_unprocessed: Optional[BatchedOperations] = None
+        self._backend: ApiClient | None = None
+        self._latest_unprocessed: BatchedOperations | None = None
 
-    def get_next(self) -> Optional[BatchedOperations]:
+    def get_next(self) -> BatchedOperations | None:
         if self._latest_unprocessed is not None:
             return self._latest_unprocessed
 
@@ -400,7 +396,7 @@ class SenderThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
+    def submit(self, *, operation: RunOperation) -> SubmitResponse | None:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
@@ -427,7 +423,7 @@ class SenderThread(Daemon, WithResources):
                     logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(data))
                     run_operation = RunOperation()
                     run_operation.ParseFromString(data)
-                    request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
+                    request_ids: SubmitResponse | None = self.submit(operation=run_operation)
 
                     if request_ids is None or not request_ids.request_ids:
                         raise NeptuneUnexpectedError("Server response is empty")
@@ -477,7 +473,7 @@ class StatusTrackingThread(Daemon, WithResources):
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
 
-        self._backend: Optional[ApiClient] = None
+        self._backend: ApiClient | None = None
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -485,7 +481,7 @@ class StatusTrackingThread(Daemon, WithResources):
             return (self._backend,)
         return ()
 
-    def get_next(self) -> Optional[List[StatusTrackingElement]]:
+    def get_next(self) -> list[StatusTrackingElement] | None:
         try:
             return self._status_tracking_queue.peek(max_size=MAX_REQUESTS_STATUS_BATCH_SIZE)
         except queue.Empty:
@@ -493,7 +489,7 @@ class StatusTrackingThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def check_batch(self, *, request_ids: List[str]) -> Optional[BulkRequestStatus]:
+    def check_batch(self, *, request_ids: list[str]) -> BulkRequestStatus | None:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 

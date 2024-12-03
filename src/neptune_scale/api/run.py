@@ -15,13 +15,7 @@ from datetime import datetime
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Literal,
-    Optional,
-    Set,
-    Tuple,
-    Union,
 )
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
@@ -90,21 +84,21 @@ class Run(WithResources, AbstractContextManager):
         self,
         *,
         run_id: str,
-        project: Optional[str] = None,
-        api_token: Optional[str] = None,
+        project: str | None = None,
+        api_token: str | None = None,
         resume: bool = False,
         mode: Literal["async", "disabled"] = "async",
-        experiment_name: Optional[str] = None,
-        creation_time: Optional[datetime] = None,
-        fork_run_id: Optional[str] = None,
-        fork_step: Optional[Union[int, float]] = None,
+        experiment_name: str | None = None,
+        creation_time: datetime | None = None,
+        fork_run_id: str | None = None,
+        fork_step: int | float | None = None,
         max_queue_size: int = MAX_QUEUE_SIZE,
-        async_lag_threshold: Optional[float] = None,
-        on_async_lag_callback: Optional[Callable[[], None]] = None,
-        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        async_lag_threshold: float | None = None,
+        on_async_lag_callback: Callable[[], None] | None = None,
+        on_queue_full_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_network_error_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_error_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_warning_callback: Callable[[BaseException, float | None], None] | None = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -237,7 +231,7 @@ class Run(WithResources, AbstractContextManager):
             max_queue_size=max_queue_size,
             mode=mode,
         )
-        self._lag_tracker: Optional[LagTracker] = None
+        self._lag_tracker: LagTracker | None = None
         if async_lag_threshold is not None and on_async_lag_callback is not None:
             self._lag_tracker = LagTracker(
                 errors_queue=self._errors_queue,
@@ -253,7 +247,7 @@ class Run(WithResources, AbstractContextManager):
             self._sync_process.start()
             self._process_link.start(on_link_closed=self._on_child_link_closed)
 
-        self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
+        self._exit_func: Callable[[], None] | None = atexit.register(self._close)
 
         if not resume:
             self._create_run(
@@ -371,11 +365,11 @@ class Run(WithResources, AbstractContextManager):
     def _create_run(
         self,
         creation_time: datetime,
-        experiment_name: Optional[str],
-        fork_run_id: Optional[str],
-        fork_step: Optional[Union[int, float]],
+        experiment_name: str | None,
+        fork_run_id: str | None,
+        fork_step: int | float | None,
     ) -> None:
-        fork_point: Optional[ForkPoint] = None
+        fork_point: ForkPoint | None = None
         if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
                 parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
@@ -401,10 +395,10 @@ class Run(WithResources, AbstractContextManager):
 
     def log_metrics(
         self,
-        data: Dict[str, Union[float, int]],
-        step: Union[float, int],
+        data: dict[str, float | int],
+        step: float | int,
         *,
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """
         Logs the specified metrics to a Neptune run.
@@ -442,7 +436,7 @@ class Run(WithResources, AbstractContextManager):
         self.log(step=step, timestamp=timestamp, metrics=data)
 
     def log_configs(
-        self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
+        self, data: dict[str, float | bool | int | str | datetime | list | set | tuple] | None = None
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
@@ -477,7 +471,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(configs=data)
 
-    def add_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
+    def add_tags(self, tags: list[str] | set[str] | tuple[str], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
 
@@ -496,7 +490,7 @@ class Run(WithResources, AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
 
-    def remove_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
+    def remove_tags(self, tags: list[str] | set[str] | tuple[str], group_tags: bool = False) -> None:
         """
         Removes the specified tags from the run.
 
@@ -517,12 +511,12 @@ class Run(WithResources, AbstractContextManager):
 
     def log(
         self,
-        step: Optional[Union[float, int]] = None,
-        timestamp: Optional[datetime] = None,
-        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Dict[str, Union[float, int]]] = None,
-        tags_add: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
-        tags_remove: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
+        step: float | int | None = None,
+        timestamp: datetime | None = None,
+        configs: dict[str, float | bool | int | str | datetime | list | set | tuple] | None = None,
+        metrics: dict[str, float | int] | None = None,
+        tags_add: dict[str, list[str] | set[str] | tuple[str]] | None = None,
+        tags_remove: dict[str, list[str] | set[str] | tuple[str]] | None = None,
     ) -> None:
         """
         See one of the following instead:
@@ -586,7 +580,7 @@ class Run(WithResources, AbstractContextManager):
         phrase: str,
         sleep_time: float,
         wait_seq: SharedInt,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
         verbose: bool = True,
     ) -> None:
         if verbose:
@@ -597,7 +591,7 @@ class Run(WithResources, AbstractContextManager):
 
         begin_time = time.time()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
-        last_print_timestamp: Optional[float] = None
+        last_print_timestamp: float | None = None
 
         while True:
             try:
@@ -652,7 +646,7 @@ class Run(WithResources, AbstractContextManager):
         if verbose:
             logger.info(f"All operations were {phrase}")
 
-    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_submission(self, timeout: float | None = None, verbose: bool = True) -> None:
         """
         Waits until all metadata is submitted to Neptune for processing.
 
@@ -671,7 +665,7 @@ class Run(WithResources, AbstractContextManager):
             verbose=verbose,
         )
 
-    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_processing(self, timeout: float | None = None, verbose: bool = True) -> None:
         """
         Waits until all metadata is processed by Neptune.
 
@@ -690,7 +684,7 @@ class Run(WithResources, AbstractContextManager):
         )
 
 
-def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
+def print_message(msg: str, *args: Any, last_print: float | None = None, verbose: bool = True) -> float | None:
     current_time = time.time()
 
     if verbose and (last_print is None or current_time - last_print > STOP_MESSAGE_FREQUENCY):

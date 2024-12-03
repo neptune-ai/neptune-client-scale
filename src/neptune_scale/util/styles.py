@@ -2,7 +2,6 @@ __all__ = ("STYLES", "ensure_style_detected")
 
 import os
 import platform
-from typing import Dict
 
 from neptune_scale.util.envs import DISABLE_COLORS
 
@@ -49,7 +48,7 @@ EMPTY_STYLES = {
 }
 
 
-STYLES: Dict[str, str] = {}
+STYLES: dict[str, str] = {}
 
 
 def ensure_style_detected() -> None:
