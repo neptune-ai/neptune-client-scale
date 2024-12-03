@@ -10,11 +10,11 @@ import atexit
 import os
 import threading
 import time
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
     Literal,
     Optional,
     Union,
