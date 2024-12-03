@@ -398,7 +398,7 @@ class SenderThread(Daemon, WithResources):
             return (self._backend,)
         return ()
 
-    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
+    @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
