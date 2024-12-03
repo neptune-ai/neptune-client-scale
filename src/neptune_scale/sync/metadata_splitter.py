@@ -4,11 +4,13 @@ __all__ = ("MetadataSplitter",)
 
 import math
 import warnings
-from collections.abc import Iterator
+from collections.abc import (
+    Callable,
+    Iterator,
+)
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
     TypeVar,
 )
 
