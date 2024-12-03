@@ -108,12 +108,12 @@ class ErrorsMonitor(Daemon, Resource):
                     self._on_queue_full_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneConnectionLostError):
                     self._on_network_error_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneAsyncLagThresholdExceeded):
+                    self._on_async_lag_callback()
                 elif isinstance(error, NeptuneScaleWarning):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneScaleError):
                     self._on_error_callback(error, last_raised_at)
-                elif isinstance(error, NeptuneAsyncLagThresholdExceeded):
-                    self._on_async_lag_callback()
                 else:
                     self._on_error_callback(NeptuneUnexpectedError(reason=str(error)), last_raised_at)
             except Exception as e:
