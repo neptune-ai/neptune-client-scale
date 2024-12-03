@@ -1,6 +1,5 @@
 import queue
 import time
-from typing import List
 from unittest.mock import Mock
 
 import pytest
@@ -20,7 +19,7 @@ from neptune_scale.sync.sync_process import SenderThread
 from neptune_scale.util.shared_var import SharedInt
 
 
-def response(request_ids: List[str], status_code: int = 200):
+def response(request_ids: list[str], status_code: int = 200):
     body = SubmitResponse(request_ids=request_ids, request_id=request_ids[-1] if request_ids else None)
     content = body.SerializeToString()
     return Mock(status_code=status_code, content=content, parsed=body)

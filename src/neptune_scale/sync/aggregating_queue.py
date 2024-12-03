@@ -8,7 +8,6 @@ from queue import (
     Queue,
 )
 from threading import RLock
-from typing import Optional
 
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
@@ -42,7 +41,7 @@ class AggregatingQueue(Resource):
 
         self._queue: Queue[SingleOperation] = Queue(maxsize=max_queue_size)
         self._lock: RLock = RLock()
-        self._latest_unprocessed: Optional[SingleOperation] = None
+        self._latest_unprocessed: SingleOperation | None = None
 
     @property
     def maxsize(self) -> int:
@@ -52,7 +51,7 @@ class AggregatingQueue(Resource):
         with self._lock:
             self._queue.put_nowait(element)
 
-    def _get_next(self, timeout: float) -> Optional[SingleOperation]:
+    def _get_next(self, timeout: float) -> SingleOperation | None:
         # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE because of MetadataSplitter.
         # We can assume that every queue element has the same project, run id and family
         with self._lock:
@@ -72,9 +71,9 @@ class AggregatingQueue(Resource):
         start = time.monotonic()
 
         batch_operations: list[RunOperation] = []
-        last_batch_key: Optional[float] = None
-        batch_sequence_id: Optional[int] = None
-        batch_timestamp: Optional[float] = None
+        last_batch_key: float | None = None
+        batch_sequence_id: int | None = None
+        batch_timestamp: float | None = None
 
         batch_bytes: int = 0
         elements_in_batch: int = 0

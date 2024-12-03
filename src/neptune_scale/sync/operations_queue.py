@@ -4,10 +4,7 @@ __all__ = ("OperationsQueue",)
 
 from multiprocessing import Queue
 from time import monotonic
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 from neptune_scale.api.validation import verify_type
 from neptune_scale.sync.parameters import (
@@ -40,7 +37,7 @@ class OperationsQueue(Resource):
         self._max_size: int = max_size
 
         self._sequence_id: int = 0
-        self._last_timestamp: Optional[float] = None
+        self._last_timestamp: float | None = None
         self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
 
     @property
@@ -53,11 +50,11 @@ class OperationsQueue(Resource):
             return self._sequence_id - 1
 
     @property
-    def last_timestamp(self) -> Optional[float]:
+    def last_timestamp(self) -> float | None:
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None, key: Optional[float] = None) -> None:
+    def enqueue(self, *, operation: RunOperation, size: int | None = None, key: float | None = None) -> None:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()

@@ -5,11 +5,7 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 import multiprocessing
 import queue
 import time
-from typing import (
-    Callable,
-    Optional,
-    Type,
-)
+from typing import Callable
 
 from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
@@ -35,7 +31,7 @@ class ErrorsQueue(Resource):
     def put(self, error: BaseException) -> None:
         self._errors_queue.put(error)
 
-    def get(self, block: bool = True, timeout: Optional[float] = None) -> BaseException:
+    def get(self, block: bool = True, timeout: float | None = None) -> BaseException:
         return self._errors_queue.get(block=block, timeout=timeout)
 
     def close(self) -> None:
@@ -44,22 +40,22 @@ class ErrorsQueue(Resource):
         self._errors_queue.cancel_join_thread()
 
 
-def default_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
+def default_error_callback(error: BaseException, last_seen_at: float | None) -> None:
     logger.error(f"Terminating the process due to an error: {error}")
     kill_me()
 
 
-def default_network_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
+def default_network_error_callback(error: BaseException, last_seen_at: float | None) -> None:
     if last_seen_at is None or time.time() - last_seen_at > 5:
         logger.warning(f"A network error occurred: {error}. Retrying...")
 
 
-def default_max_queue_size_exceeded_callback(error: BaseException, last_raised_at: Optional[float]) -> None:
+def default_max_queue_size_exceeded_callback(error: BaseException, last_raised_at: float | None) -> None:
     if last_raised_at is None or time.time() - last_raised_at > 5:
         logger.warning(f"Pending operations queue size exceeded: {error}. Retrying...")
 
 
-def default_warning_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
+def default_warning_callback(error: BaseException, last_seen_at: float | None) -> None:
     logger.warning(error)
 
 
@@ -67,32 +63,32 @@ class ErrorsMonitor(Daemon, Resource):
     def __init__(
         self,
         errors_queue: ErrorsQueue,
-        on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_async_lag_callback: Optional[Callable[[], None]] = None,
-        on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
-        on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        on_queue_full_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_async_lag_callback: Callable[[], None] | None = None,
+        on_network_error_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_error_callback: Callable[[BaseException, float | None], None] | None = None,
+        on_warning_callback: Callable[[BaseException, float | None], None] | None = None,
     ):
         super().__init__(name="ErrorsMonitor", sleep_time=ERRORS_MONITOR_THREAD_SLEEP_TIME)
 
         self._errors_queue: ErrorsQueue = errors_queue
-        self._on_queue_full_callback: Callable[[BaseException, Optional[float]], None] = (
+        self._on_queue_full_callback: Callable[[BaseException, float | None], None] = (
             on_queue_full_callback or default_max_queue_size_exceeded_callback
         )
         self._on_async_lag_callback: Callable[[], None] = on_async_lag_callback or (lambda: None)
-        self._on_network_error_callback: Callable[[BaseException, Optional[float]], None] = (
+        self._on_network_error_callback: Callable[[BaseException, float | None], None] = (
             on_network_error_callback or default_network_error_callback
         )
-        self._on_error_callback: Callable[[BaseException, Optional[float]], None] = (
+        self._on_error_callback: Callable[[BaseException, float | None], None] = (
             on_error_callback or default_error_callback
         )
-        self._on_warning_callback: Callable[[BaseException, Optional[float]], None] = (
+        self._on_warning_callback: Callable[[BaseException, float | None], None] = (
             on_warning_callback or default_warning_callback
         )
 
-        self._last_raised_timestamps: dict[Type[BaseException], float] = {}
+        self._last_raised_timestamps: dict[type[BaseException], float] = {}
 
-    def get_next(self) -> Optional[BaseException]:
+    def get_next(self) -> BaseException | None:
         try:
             return self._errors_queue.get(block=False)
         except queue.Empty:
