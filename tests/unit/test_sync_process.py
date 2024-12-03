@@ -38,7 +38,7 @@ def single_operation(update: UpdateRunSnapshot, sequence_id):
     )
 
 
-def test_sender_thread_ends_when_queue_empty():
+def test_sender_thread_work_finishes_when_queue_empty():
     # given
     operations_queue = Mock()
     status_tracking_queue = Mock()
