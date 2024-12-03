@@ -5,7 +5,7 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 import multiprocessing
 import queue
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,

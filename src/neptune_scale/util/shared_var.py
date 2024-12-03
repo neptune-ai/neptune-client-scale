@@ -1,7 +1,7 @@
 import multiprocessing
+from collections.abc import Callable
 from types import TracebackType
 from typing import (
-    Callable,
     Generic,
     Optional,
     TypeVar,
