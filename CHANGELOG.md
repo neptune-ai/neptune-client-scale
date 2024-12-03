@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added function `neptune_scale.list_projects()` to list all projects the current user has access to ([#97](https://github.com/neptune-ai/neptune-client-scale/pull/97))
 
 ### Changed
+- Removed support for Python 3.8
 - Neptune will now skip non-finite metric values by default, instead of raising an error. This can be configured using
   the new `NEPTUNE_SKIP_NON_FINITE_METRICS` environment variable ([#85](https://github.com/neptune-ai/neptune-client-scale/pull/85))
 - Made default error callback logs more informative ([#78](https://github.com/neptune-ai/neptune-client-scale/pull/78))
