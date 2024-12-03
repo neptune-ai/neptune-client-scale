@@ -2,7 +2,10 @@ import functools
 import itertools
 import threading
 import warnings
-from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
 from typing import (
     Any,
     Callable,
@@ -95,7 +98,7 @@ class AttributeStore:
         if timestamp is None:
             timestamp = datetime.now()
         elif isinstance(timestamp, (float, int)):
-            timestamp = datetime.fromtimestamp(timestamp)
+            timestamp = datetime.fromtimestamp(timestamp, timezone.utc)
 
         with self._lock:
             self._verify_and_update_metrics_state(step, metrics)
