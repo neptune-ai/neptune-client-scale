@@ -18,6 +18,7 @@ from __future__ import annotations
 __all__ = ("HostedApiClient", "MockedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
 
 import abc
+import functools
 import os
 import uuid
 from dataclasses import dataclass
@@ -188,6 +189,7 @@ def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiCl
 
 
 def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
