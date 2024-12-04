@@ -20,12 +20,15 @@ from typing import (
 if TYPE_CHECKING:
     from neptune_scale.api.run import Run
 
+__all__ = ("Attribute", "AttributeStore")
+
 
 def warn_unsupported_params(fn: Callable) -> Callable:
     # Perform some simple heuristics to detect if a method is called with parameters
     # that are not supported by Scale
     warn = functools.partial(warnings.warn, stacklevel=3)
 
+    @functools.wraps(fn)
     def wrapper(*args, **kwargs):  # type: ignore
         if kwargs.get("wait") is not None:
             warn("The `wait` parameter is not yet implemented and will be ignored.")
@@ -51,9 +54,9 @@ class AttributeStore:
         self._run = run
         self._attributes: Dict[str, Attribute] = {}
 
-    def __getitem__(self, key: str) -> "Attribute":
-        path = cleanup_path(key)
-        attr = self._attributes.get(key)
+    def __getitem__(self, path: str) -> "Attribute":
+        path = cleanup_path(path)
+        attr = self._attributes.get(path)
         if attr is None:
             attr = Attribute(self, path)
             self._attributes[path] = attr
@@ -83,8 +86,6 @@ class AttributeStore:
         metrics = {} if metrics is None else metrics
         tags_add = {} if tags_add is None else tags_add
         tags_remove = {} if tags_remove is None else tags_remove
-
-        print(f"log({step}, {configs}, {metrics}, {tags_add}, {tags_remove}")
 
         # TODO: remove once Run.log accepts Union[datetime, float]
         timestamp = cast(datetime, timestamp)
