@@ -101,5 +101,5 @@ def get_project_list(*, api_token: Optional[str] = None) -> List[Dict]:
         "sortBy": "lastViewed",
     }
 
-    response = client.backend.get_httpx_client().request("get", f"{PROJECTS_PATH_BASE}", params=params)
+    response = client.backend.get_httpx_client().request("get", PROJECTS_PATH_BASE, params=params)
     return cast(List[Dict], response.json()["entries"])
