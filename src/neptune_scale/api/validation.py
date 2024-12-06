@@ -53,7 +53,12 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
         raise ValueError(f"{var_name} is not in expected format, should be 'workspace-name/project-name")
 
 
-def verify_collection_type(var_name: str, var: Union[list, set, tuple], expected_type: Union[type, tuple]) -> None:
+def verify_collection_type(
+    var_name: str, var: Union[list, set, tuple], expected_type: Union[type, tuple], allow_none: bool = True
+) -> None:
+    if var is None and not allow_none:
+        raise ValueError(f"{var_name} must not be None")
+
     verify_type(var_name, var, (list, set, tuple))
 
     for value in var:
