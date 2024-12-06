@@ -178,7 +178,7 @@ class SyncProcess(Process):
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self._external_operations_queue: Queue[SingleOperation] = operations_queue
+        self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
@@ -212,7 +212,7 @@ class SyncProcess(Process):
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
-            external_operations_queue=self._external_operations_queue,
+            input_queue=self._input_operations_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             max_queue_size=self._max_queue_size,
@@ -243,7 +243,7 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
-        external_operations_queue: multiprocessing.Queue[SingleOperation],
+        input_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -262,9 +262,9 @@ class SyncProcessWorker(WithResources):
             last_queued_seq=last_queued_seq,
             mode=mode,
         )
-        self._external_to_internal_thread = InternalQueueFeederThread(
-            external=external_operations_queue,
-            internal=self._internal_operations_queue,
+        self._operation_dispatcher_thread = OperationDispatcherThread(
+            input_queue=input_queue,
+            operations_queue=self._internal_operations_queue,
             errors_queue=self._errors_queue,
         )
         self._status_tracking_thread = StatusTrackingThread(
@@ -279,11 +279,11 @@ class SyncProcessWorker(WithResources):
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
 
     def interrupt(self) -> None:
         for thread in self.threads:
@@ -303,17 +303,17 @@ class SyncProcessWorker(WithResources):
             thread.join(timeout=timeout)
 
 
-class InternalQueueFeederThread(Daemon, Resource):
+class OperationDispatcherThread(Daemon, Resource):
     def __init__(
         self,
-        external: multiprocessing.Queue[SingleOperation],
-        internal: AggregatingQueue,
+        input_queue: multiprocessing.Queue[SingleOperation],
+        operations_queue: AggregatingQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
-        super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+        super().__init__(name="OperationDispatcherThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
-        self._external: multiprocessing.Queue[SingleOperation] = external
-        self._internal: AggregatingQueue = internal
+        self._input_queue: multiprocessing.Queue[SingleOperation] = input_queue
+        self._operations_queue: AggregatingQueue = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
 
         self._latest_unprocessed: Optional[SingleOperation] = None
@@ -323,7 +323,7 @@ class InternalQueueFeederThread(Daemon, Resource):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._external.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+            self._latest_unprocessed = self._input_queue.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
             return self._latest_unprocessed
         except queue.Empty:
             return None
@@ -339,11 +339,15 @@ class InternalQueueFeederThread(Daemon, Resource):
                     continue
 
                 try:
-                    self._internal.put_nowait(operation)
+                    self._operations_queue.put_nowait(operation)
                     self.commit()
                 except queue.Full:
-                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
-                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
+                    logger.debug(
+                        "Operations queue is full (%d elements), waiting for free space", self._operations_queue.maxsize
+                    )
+                    self._errors_queue.put(
+                        NeptuneOperationsQueueMaxSizeExceeded(max_size=self._operations_queue.maxsize)
+                    )
                     # Sleep before retry
                     break
         except Exception as e:
