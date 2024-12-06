@@ -71,8 +71,7 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.monotonic()
 
-        batch_operations: list[RunOperation] = []
-        last_batch_key: Optional[float] = None
+        batch_operations: dict[Optional[float], RunOperation] = {}
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -96,8 +95,7 @@ class AggregatingQueue(Resource):
             if not batch_operations:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                batch_operations.append(new_operation)
-                last_batch_key = element.batch_key
+                batch_operations[element.batch_key] = new_operation
                 batch_bytes += len(element.operation)
             else:
                 if not element.is_batchable:
@@ -112,11 +110,10 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                if element.batch_key != last_batch_key:
-                    batch_operations.append(new_operation)
-                    last_batch_key = element.batch_key
+                if element.batch_key not in batch_operations:
+                    batch_operations[element.batch_key] = new_operation
                 else:
-                    merge_run_operation(batch_operations[-1], new_operation)
+                    merge_run_operation(batch_operations[element.batch_key], new_operation)
                 batch_bytes += element.metadata_size
 
             batch_sequence_id = element.sequence_id
@@ -160,25 +157,27 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: list[RunOperation]) -> RunOperation:
+def create_run_batch(operations: dict[Optional[float], RunOperation]) -> RunOperation:
     if len(operations) == 1:
-        return operations[0]
+        return next(iter(operations.values()))
 
-    batch = RunOperation()
+    batch = None
+    for _, operation in sorted(operations.items(), key=lambda x: (x[0] is not None, x[0])):
+        if batch is None:
+            batch = RunOperation()
+            batch.project = operation.project
+            batch.run_id = operation.run_id
+            batch.create_missing_project = operation.create_missing_project
+            batch.api_key = operation.api_key
 
-    head_operation = operations[0]
-    batch.project = head_operation.project
-    batch.run_id = head_operation.run_id
-    batch.create_missing_project = head_operation.create_missing_project
-    batch.api_key = head_operation.api_key
-
-    for operation in operations:
         operation_type = operation.WhichOneof("operation")
         if operation_type == "update":
             batch.update_batch.snapshots.append(operation.update)
         else:
             raise ValueError("Cannot batch operation of type %s", operation_type)
 
+    if batch is None:
+        raise Empty
     return batch
 
 
