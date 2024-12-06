@@ -2,8 +2,8 @@ from __future__ import annotations
 
 __all__ = ("LagTracker",)
 
+from collections.abc import Callable
 from time import monotonic
-from typing import Callable
 
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.operations_queue import OperationsQueue

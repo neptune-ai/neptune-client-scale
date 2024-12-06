@@ -262,7 +262,7 @@ def test_split_large_tags():
     assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
     # Check if all StringSet values are split correctly
-    assert set([key for op, _ in result for key in op.update.modify_sets.keys()]) == set(
+    assert {key for op, _ in result for key in op.update.modify_sets.keys()} == set(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
 

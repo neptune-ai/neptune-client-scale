@@ -1,10 +1,9 @@
 import multiprocessing
+from collections.abc import Callable
 from types import TracebackType
 from typing import (
-    Callable,
     Generic,
     Optional,
-    Type,
     TypeVar,
     cast,
 )
@@ -66,7 +65,7 @@ class SharedVar(Generic[T]):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
+        exc_type: Optional[type[BaseException]],
         exc_value: Optional[BaseException],
         traceback: Optional[TracebackType],
     ) -> None:
