@@ -11,12 +11,21 @@ pattern = "default-unprefixed"
 [tool.poetry.dependencies]
 python = "^3.8"
 
-neptune-api = { git = "https://github.com/neptune-ai/neptune-api.git", rev = "ee8f7e2f7d5cb9e59a1cf076451ea1838e6f148a" }
+neptune-api = [
+    #https://github.com/python-poetry/poetry/pull/9553
+    { markers = "extra == 'gcp'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "977eacc46c1705dd6d622d3dde85aedcca9325fa", extras = ["gcp"] },
+    { markers = "extra != 'gcp'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "977eacc46c1705dd6d622d3dde85aedcca9325fa" },
+]
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
 backoff = "^2.0.0"
 
+[tool.poetry.extras]
+gcp = ["neptune-api"]
+
+
 [tool.poetry]
+
 name = "neptune-scale"
 version = "0.1.0"
 description = "A minimal client library"
