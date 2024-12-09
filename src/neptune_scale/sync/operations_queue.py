@@ -7,6 +7,7 @@ from time import monotonic
 from typing import (
     TYPE_CHECKING,
     Optional,
+    cast,
 )
 
 from neptune_scale.api.validation import verify_type
@@ -15,7 +16,12 @@ from neptune_scale.sync.parameters import (
     MAX_QUEUE_ELEMENT_SIZE,
     MAX_QUEUE_SIZE,
 )
-from neptune_scale.sync.queue_element import SingleOperation
+from neptune_scale.sync.queue_element import (
+    OperationMessage,
+    OperationT,
+    OperationType,
+    SingleOperation,
+)
 from neptune_scale.util import get_logger
 from neptune_scale.util.abstract import Resource
 
@@ -41,10 +47,10 @@ class OperationsQueue(Resource):
 
         self._sequence_id: int = 0
         self._last_timestamp: Optional[float] = None
-        self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
+        self._queue: Queue[OperationMessage] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
 
     @property
-    def queue(self) -> Queue[SingleOperation]:
+    def queue(self) -> Queue[OperationMessage]:
         return self._queue
 
     @property
@@ -57,7 +63,19 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None, step: Optional[float] = None) -> None:
+    def enqueue(self, op_type: OperationType, operation: OperationT) -> int:
+        with self._lock:
+            message = OperationMessage(type=op_type, sequence_id=self._sequence_id, operation=operation)
+            self._queue.put(message, block=True, timeout=None)
+            self._sequence_id += 1
+            if op_type == OperationType.SINGLE_OPERATION:
+                assert message.sequence_id == cast(SingleOperation, operation).sequence_id
+
+        return message.sequence_id
+
+    def enqueue_run_op(
+        self, *, operation: RunOperation, size: Optional[int] = None, step: Optional[float] = None
+    ) -> int:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
@@ -68,7 +86,8 @@ class OperationsQueue(Resource):
             with self._lock:
                 self._last_timestamp = monotonic()
                 # TODO: should we not block here, and just call the error callback if we were to block?
-                self._queue.put(
+                return self.enqueue(
+                    OperationType.SINGLE_OPERATION,
                     SingleOperation(
                         sequence_id=self._sequence_id,
                         timestamp=self._last_timestamp,
@@ -77,10 +96,7 @@ class OperationsQueue(Resource):
                         is_batchable=is_metadata_update,
                         step=step,
                     ),
-                    block=True,
-                    timeout=None,
                 )
-                self._sequence_id += 1
         except Exception as e:
             logger.error("Failed to enqueue operation: %s %s", e, operation)
             raise e
@@ -89,3 +105,6 @@ class OperationsQueue(Resource):
         self._queue.close()
         # This is needed to avoid hanging the main process
         self._queue.cancel_join_thread()
+
+    def get(self, timeout: Optional[float] = None) -> OperationMessage:
+        return self._queue.get(timeout=timeout)

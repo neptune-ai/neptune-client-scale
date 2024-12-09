@@ -1,8 +1,15 @@
-__all__ = ("BatchedOperations", "SingleOperation")
+__all__ = ("BatchedOperations", "SingleOperation", "UploadFile", "OperationType", "OperationMessage")
 
+import pathlib
+from enum import (
+    Enum,
+    auto,
+)
 from typing import (
     NamedTuple,
     Optional,
+    TypeAlias,
+    Union,
 )
 
 
@@ -28,3 +35,24 @@ class SingleOperation(NamedTuple):
     metadata_size: Optional[int]
     # Step provided by the user
     step: Optional[float]
+
+
+class UploadFile(NamedTuple):
+    attribute_path: str
+    local_path: pathlib.Path
+    target_path: Optional[str]
+    target_basename: Optional[str]
+
+
+class OperationType(Enum):
+    UPLOAD_FILE = auto()
+    SINGLE_OPERATION = auto()
+
+
+OperationT: TypeAlias = Union[SingleOperation, UploadFile]
+
+
+class OperationMessage(NamedTuple):
+    type: OperationType
+    sequence_id: int
+    operation: OperationT

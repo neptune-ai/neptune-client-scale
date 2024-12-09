@@ -116,7 +116,7 @@ class AttributeStore:
             )
 
             for operation, metadata_size in splitter:
-                self._operations_queue.enqueue(operation=operation, size=metadata_size, step=step)
+                self._operations_queue.enqueue_run_op(operation=operation, size=metadata_size, step=step)
 
     def _verify_and_update_metrics_state(self, step: Optional[float], metrics: Optional[Dict[str, float]]) -> None:
         """Check if step in provided metrics is increasing, raise `NeptuneSeriesStepNonIncreasing` if not."""

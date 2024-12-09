@@ -6,10 +6,7 @@ import multiprocessing
 import queue
 import signal
 import threading
-from multiprocessing import (
-    Process,
-    Queue,
-)
+from multiprocessing import Process
 from types import FrameType
 from typing import (
     Dict,
@@ -41,7 +38,6 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
-    NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
@@ -67,9 +63,11 @@ from neptune_scale.net.api_client import (
     with_api_errors_handling,
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
+from neptune_scale.sync.dispatcher import OperationDispatcherThread
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.file_upload import FileUploader
+from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
-    INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
     MAX_REQUEST_RETRY_SECONDS,
     MAX_REQUESTS_STATUS_BATCH_SIZE,
@@ -78,10 +76,7 @@ from neptune_scale.sync.parameters import (
     SYNC_PROCESS_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
 )
-from neptune_scale.sync.queue_element import (
-    BatchedOperations,
-    SingleOperation,
-)
+from neptune_scale.sync.queue_element import BatchedOperations
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.util import (
     Daemon,
@@ -167,7 +162,7 @@ class PeekableQueue(Generic[T]):
 class SyncProcess(Process):
     def __init__(
         self,
-        operations_queue: Queue,
+        operations_queue: OperationsQueue,
         errors_queue: ErrorsQueue,
         process_link: ProcessLink,
         api_token: str,
@@ -177,13 +172,17 @@ class SyncProcess(Process):
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
+        files_in_progress_counter: SharedInt,
         max_queue_size: int = MAX_QUEUE_SIZE,
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self._input_operations_queue: Queue[SingleOperation] = operations_queue
+        self._input_operations_queue = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
+        self._file_uploader: FileUploader = FileUploader(
+            project, api_token, family, files_in_progress_counter, errors_queue
+        )
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -216,6 +215,7 @@ class SyncProcess(Process):
             api_token=self._api_token,
             errors_queue=self._errors_queue,
             input_queue=self._input_operations_queue,
+            file_uploader=self._file_uploader,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             max_queue_size=self._max_queue_size,
@@ -246,7 +246,8 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
-        input_queue: multiprocessing.Queue[SingleOperation],
+        input_queue: OperationsQueue,
+        file_uploader: FileUploader,
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -269,6 +270,7 @@ class SyncProcessWorker(WithResources):
             input_queue=input_queue,
             operations_queue=self._internal_operations_queue,
             errors_queue=self._errors_queue,
+            file_uploader=file_uploader,
         )
         self._status_tracking_thread = StatusTrackingThread(
             api_token=api_token,
@@ -304,59 +306,6 @@ class SyncProcessWorker(WithResources):
         # The same timeout will be applied to each thread separately
         for thread in self.threads:
             thread.join(timeout=timeout)
-
-
-class OperationDispatcherThread(Daemon, Resource):
-    def __init__(
-        self,
-        input_queue: multiprocessing.Queue[SingleOperation],
-        operations_queue: AggregatingQueue,
-        errors_queue: ErrorsQueue,
-    ) -> None:
-        super().__init__(name="OperationDispatcherThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
-
-        self._input_queue: multiprocessing.Queue[SingleOperation] = input_queue
-        self._operations_queue: AggregatingQueue = operations_queue
-        self._errors_queue: ErrorsQueue = errors_queue
-
-        self._latest_unprocessed: Optional[SingleOperation] = None
-
-    def get_next(self) -> Optional[SingleOperation]:
-        if self._latest_unprocessed is not None:
-            return self._latest_unprocessed
-
-        try:
-            self._latest_unprocessed = self._input_queue.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
-            return self._latest_unprocessed
-        except queue.Empty:
-            return None
-
-    def commit(self) -> None:
-        self._latest_unprocessed = None
-
-    def work(self) -> None:
-        try:
-            while not self._is_interrupted():
-                operation = self.get_next()
-                if operation is None:
-                    continue
-
-                try:
-                    self._operations_queue.put_nowait(operation)
-                    self.commit()
-                except queue.Full:
-                    logger.debug(
-                        "Operations queue is full (%d elements), waiting for free space", self._operations_queue.maxsize
-                    )
-                    self._errors_queue.put(
-                        NeptuneOperationsQueueMaxSizeExceeded(max_size=self._operations_queue.maxsize)
-                    )
-                    # Sleep before retry
-                    break
-        except Exception as e:
-            self._errors_queue.put(e)
-            self.interrupt()
-            raise NeptuneSynchronizationStopped() from e
 
 
 class SenderThread(Daemon, WithResources):

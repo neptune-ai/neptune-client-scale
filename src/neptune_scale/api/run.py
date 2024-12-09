@@ -225,19 +225,24 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp = SharedFloat(-1)
 
         self._process_link = ProcessLink()
+
+        self._files_in_progress_count = SharedInt(0)
+
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._run_id,
-            operations_queue=self._operations_queue.queue,
+            operations_queue=self._operations_queue,
             errors_queue=self._errors_queue,
             process_link=self._process_link,
             api_token=input_api_token,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
+            files_in_progress_counter=self._files_in_progress_count,
             max_queue_size=max_queue_size,
             mode=mode,
         )
+
         self._lag_tracker: Optional[LagTracker] = None
         if async_lag_threshold is not None and on_async_lag_callback is not None:
             self._lag_tracker = LagTracker(
@@ -392,7 +397,7 @@ class Run(WithResources, AbstractContextManager):
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
             ),
         )
-        self._operations_queue.enqueue(operation=operation)
+        self._operations_queue.enqueue_run_op(operation=operation)
 
     def __getitem__(self, key: str) -> Attribute:
         return self._attr_store[key]
@@ -555,6 +560,14 @@ class Run(WithResources, AbstractContextManager):
         self._attr_store.log(
             step=step, timestamp=timestamp, configs=configs, metrics=metrics, tags_add=tags_add, tags_remove=tags_remove
         )
+
+    def log_file(
+        self,
+        attribute_path: str,
+        local_path: str,
+        target_base_name: Optional[str] = None,
+        target_path: Optional[str] = None,
+    ) -> None: ...
 
     def _wait(
         self,
