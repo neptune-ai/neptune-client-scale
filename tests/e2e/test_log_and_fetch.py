@@ -164,3 +164,42 @@ def test_single_non_finite_metric(value, sync_run, ro_run):
     path = unique_path("test_series/non_finite")
     sync_run.log_metrics(data={path: value}, step=1)
     assert path not in refresh(ro_run).field_names
+
+
+@mark.parametrize("first_step", [None, 0, 10])
+def test_auto_step_with_initial_step(run, ro_run, first_step):
+    """Logging series values with step=None results in backend-side step assignment"""
+
+    path = unique_path(f"test_series/auto_step_{first_step}")
+
+    _, values = random_series()
+
+    run.log_metrics(data={path: values[0]}, step=first_step)
+    for value in values[1:]:
+        run.log_metrics(data={path: value})
+
+    run.wait_for_processing()
+
+    # Backend will assign steps starting from zero by default,
+    # so handle this test case properly
+    if first_step is None:
+        first_step = 0
+
+    df = ro_run[path].fetch_values()
+    assert df["step"].tolist() == [float(x) for x in list(range(first_step, first_step + len(values)))]
+    assert df["value"].tolist() == values
+
+
+def test_auto_step_with_manual_increase(run, ro_run):
+    """Increase step manually at a single point in series, then use auto-step"""
+
+    path = unique_path("test_series/auto_step_increase")
+    run.log_metrics(data={path: 1})
+    run.log_metrics(data={path: 2}, step=10)
+    run.log_metrics(data={path: 3})
+
+    run.wait_for_processing()
+
+    df = ro_run[path].fetch_values()
+    assert df["step"].tolist() == [0, 10, 11]
+    assert df["value"].tolist() == [1, 2, 3]

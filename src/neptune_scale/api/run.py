@@ -403,7 +403,7 @@ class Run(WithResources, AbstractContextManager):
     def log_metrics(
         self,
         data: Dict[str, Union[float, int]],
-        step: Optional[Union[float, int]],
+        step: Optional[Union[float, int]] = None,
         *,
         timestamp: Optional[datetime] = None,
     ) -> None:
