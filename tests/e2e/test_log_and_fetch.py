@@ -203,3 +203,27 @@ def test_auto_step_with_manual_increase(run, ro_run):
     df = ro_run[path].fetch_values()
     assert df["step"].tolist() == [0, 10, 11]
     assert df["value"].tolist() == [1, 2, 3]
+
+
+def test_auto_step_with_different_metrics(run, ro_run):
+    path1 = unique_path("test_series/auto_step_different_metrics1")
+    path2 = unique_path("test_series/auto_step_different_metrics2")
+
+    run.log_metrics(data={path1: 1})
+    run.log_metrics(data={path2: 1}, step=10)
+
+    run.log_metrics(data={path1: 2})
+    run.log_metrics(data={path2: 2}, step=20)
+
+    run.log_metrics(data={path1: 3}, step=5)
+    run.log_metrics(data={path2: 3})
+
+    run.wait_for_processing()
+
+    df1 = ro_run[path1].fetch_values()
+    assert df1["step"].tolist() == [0.0, 1.0, 5.0]
+    assert df1["value"].tolist() == [1, 2, 3]
+
+    df2 = ro_run[path2].fetch_values()
+    assert df2["step"].tolist() == [10.0, 20.0, 21.0]
+    assert df2["value"].tolist() == [1, 2, 3]
