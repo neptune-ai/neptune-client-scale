@@ -12,8 +12,8 @@ pattern = "default-unprefixed"
 python = "^3.8"
 
 neptune-api = [
-    { markers = "extra == 'iap'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "c93b6d3e9b2db9f9776ed600017de48ecacc21b3", extras = ["iap"], optional = true },
-    { markers = "extra != 'iap'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "c93b6d3e9b2db9f9776ed600017de48ecacc21b3", optional = false },
+    { markers = "extra != 'iap'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "c93b6d3e9b2db9f9776ed600017de48ecacc21b3" },
+    { markers = "extra == 'iap'", git = "https://github.com/neptune-ai/neptune-api.git", rev = "c93b6d3e9b2db9f9776ed600017de48ecacc21b3", extras = ["iap"] },
 ]
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
