@@ -28,6 +28,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
+from neptune_scale.api.attribute import (
+    Attribute,
+    AttributeStore,
+)
 from neptune_scale.api.validation import (
     verify_collection_type,
     verify_max_length,
@@ -199,6 +203,7 @@ class Run(WithResources, AbstractContextManager):
 
         self._project: str = input_project
         self._run_id: str = run_id
+        self._attr_store: AttributeStore = AttributeStore(self)
 
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(
@@ -388,6 +393,12 @@ class Run(WithResources, AbstractContextManager):
         )
         self._operations_queue.enqueue(operation=operation)
 
+    def __getitem__(self, key: str) -> Attribute:
+        return self._attr_store[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._attr_store[key] = value
+
     def log_metrics(
         self,
         data: Dict[str, Union[float, int]],
@@ -530,11 +541,13 @@ class Run(WithResources, AbstractContextManager):
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
         timestamp = datetime.now() if timestamp is None else timestamp
+        # TODO: move this into AttributeStore
         configs = {} if configs is None else configs
         metrics = {} if metrics is None else metrics
         tags_add = {} if tags_add is None else tags_add
         tags_remove = {} if tags_remove is None else tags_remove
 
+        # TODO: refactor this into something like `verify_dict_types(name, allowed_key_types, allowed_value_types)`
         verify_collection_type("`configs` keys", list(configs.keys()), str)
         verify_collection_type("`metrics` keys", list(metrics.keys()), str)
         verify_collection_type("`tags_add` keys", list(tags_add.keys()), str)

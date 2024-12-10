@@ -1,5 +1,3 @@
-import base64
-import json
 import uuid
 from datetime import datetime
 
@@ -7,11 +5,6 @@ import pytest
 from freezegun import freeze_time
 
 from neptune_scale import Run
-
-
-@pytest.fixture(scope="session")
-def api_token():
-    return base64.b64encode(json.dumps({"api_address": "aa", "api_url": "bb"}).encode("utf-8")).decode("utf-8")
 
 
 # Set short timeouts on blocking operations for quicker test execution

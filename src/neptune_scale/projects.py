@@ -1,5 +1,6 @@
 import re
 from typing import (
+    List,
     Optional,
     Tuple,
     cast,
@@ -115,3 +116,24 @@ def normalize_project_name(name: str, workspace: Optional[str] = None) -> str:
     extracted_workspace_name, extracted_project_name = extract_workspace_and_project(name=name, workspace=workspace)
 
     return f"{extracted_workspace_name}/{extracted_project_name}"
+
+
+def list_projects(*, api_token: Optional[str] = None) -> List[str]:
+    """Lists projects that the account has access to.
+
+    Args:
+        api_token: Account's API token.
+            If None, the value of the NEPTUNE_API_TOKEN environment variable is used.
+            Note: To keep your token secure, use the NEPTUNE_API_TOKEN environment variable rather than placing your
+            API token in plain text in your source code.
+
+    Returns:
+        List of project names in the form "workspace-name/project-name".
+    """
+
+    verify_type("api_token", api_token, (str, type(None)))
+
+    return [
+        normalize_project_name(project["name"], project["organizationName"])
+        for project in projects.get_project_list(api_token=api_token)
+    ]
