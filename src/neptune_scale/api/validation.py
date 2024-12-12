@@ -38,8 +38,12 @@ def verify_non_empty(var_name: str, var: Any) -> None:
         raise ValueError(f"{var_name} must not be empty")
 
 
-def verify_max_length(var_name: str, var: str, max_length: int) -> None:
-    byte_len = len(var.encode("utf8"))
+def verify_max_length(var_name: str, var: Union[str, bytes], max_length: int) -> None:
+    if isinstance(var, str):
+        byte_len = len(var.encode("utf8"))
+    else:
+        byte_len = len(var)
+
     if byte_len > max_length:
         raise ValueError(f"{var_name} must not exceed {max_length} bytes, got {byte_len} bytes.")
 
