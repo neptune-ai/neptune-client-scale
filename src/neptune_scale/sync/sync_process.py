@@ -17,6 +17,7 @@ from typing import (
     NamedTuple,
     Optional,
     TypeVar,
+    cast,
 )
 
 import backoff
@@ -65,6 +66,8 @@ from neptune_scale.net.api_client import (
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.files.queue import FileUploadQueue
+from neptune_scale.sync.files.worker import FileUploadWorkerThread
 from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
@@ -167,8 +170,10 @@ class SyncProcess(Process):
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
         process_link: ProcessLink,
+        file_upload_queue: FileUploadQueue,
         api_token: str,
         project: str,
+        run_id: str,
         family: str,
         mode: Literal["async", "disabled"],
         last_queued_seq: SharedInt,
@@ -181,8 +186,10 @@ class SyncProcess(Process):
         self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
+        self._file_upload_queue: FileUploadQueue = file_upload_queue
         self._api_token: str = api_token
         self._project: str = project
+        self._run_id: str = run_id
         self._family: str = family
         self._last_queued_seq: SharedInt = last_queued_seq
         self._last_ack_seq: SharedInt = last_ack_seq
@@ -209,10 +216,12 @@ class SyncProcess(Process):
 
         worker = SyncProcessWorker(
             project=self._project,
+            run_id=self._run_id,
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
             input_queue=self._input_operations_queue,
+            file_upload_queue=self._file_upload_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             max_queue_size=self._max_queue_size,
@@ -240,10 +249,12 @@ class SyncProcessWorker(WithResources):
         *,
         api_token: str,
         project: str,
+        run_id: str,
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
         input_queue: multiprocessing.Queue[SingleOperation],
+        file_upload_queue: FileUploadQueue,
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -276,14 +287,27 @@ class SyncProcessWorker(WithResources):
             last_ack_seq=last_ack_seq,
             last_ack_timestamp=last_ack_timestamp,
         )
+        self._file_upload_thread = FileUploadWorkerThread(
+            project=project,
+            run_id=run_id,
+            api_token=api_token,
+            family=family,
+            input_queue=file_upload_queue,
+            errors_queue=self._errors_queue,
+        )
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._operation_dispatcher_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+        return cast(tuple[Resource], self.threads)
 
     def interrupt(self) -> None:
         for thread in self.threads:

@@ -7,12 +7,14 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
+import math
 import os
 import threading
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     Literal,
@@ -47,6 +49,7 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+from neptune_scale.sync.files.queue import FileUploadQueue
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
@@ -221,8 +224,12 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp = SharedFloat(-1)
 
         self._process_link = ProcessLink()
+
+        self._file_upload_queue = FileUploadQueue()
+
         self._sync_process = SyncProcess(
             project=self._project,
+            run_id=self._run_id,
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
@@ -231,9 +238,11 @@ class Run(WithResources, AbstractContextManager):
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
+            file_upload_queue=self._file_upload_queue,
             max_queue_size=max_queue_size,
             mode=mode,
         )
+
         self._lag_tracker: Optional[LagTracker] = None
         if async_lag_threshold is not None and on_async_lag_callback is not None:
             self._lag_tracker = LagTracker(
@@ -270,18 +279,17 @@ class Run(WithResources, AbstractContextManager):
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        if self._lag_tracker is not None:
-            return (
-                self._errors_queue,
-                self._operations_queue,
-                self._lag_tracker,
-                self._errors_monitor,
-            )
-        return (
-            self._errors_queue,
+        res: tuple[Resource, ...] = (
             self._operations_queue,
+            self._errors_queue,
             self._errors_monitor,
+            self._file_upload_queue,
         )
+
+        if self._lag_tracker is not None:
+            res += (self._lag_tracker,)
+
+        return res
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
@@ -552,6 +560,73 @@ class Run(WithResources, AbstractContextManager):
             step=step, timestamp=timestamp, configs=configs, metrics=metrics, tags_add=tags_add, tags_remove=tags_remove
         )
 
+    def log_file(
+        self,
+        attribute_path: str,
+        *,
+        path: Optional[str] = None,
+        data: Optional[Union[str, bytes]] = None,
+        mime_type: Optional[str] = None,
+        target_basename: Optional[str] = None,
+        target_path: Optional[str] = None,
+    ) -> None:
+        """
+        Uploads a file under the specified attribute path. The file contents can be read from a local
+        file or provided directly as str/bytes.
+
+            run.log_file("configs/files/foo.txt", path="path/to/local/file.txt")
+            run.log_file("configs/files/bar.txt", data="file content")
+
+        Args:
+            attribute_path: attribute name under which the file will be stored.
+            path: local path to the file. If provided, `data` must be `None`.
+            data: file content as a string or bytes. If provided, `path` must be `None`.
+
+                The maximum length of the data is 10 MB. If the data is larger, use `path` instead.
+                If data is of type `str`, it will be encoded using UTF-8. If you need different encoding,
+                pass the data as `bytes`.
+            mime_type: MIME type of the file. If not provided, it will be guessed based on the file extension first,
+                then attribute path.
+            target_basename: basename of the file in the underlying object storage. If not provided, the final path
+                will be generated automatically, using the local file's basename, or randomly, if `data` is provided.
+            target_path: the full path to the file in the underlying object storage. It always takes precedence, so
+                caution is advised, as it is possible to overwrite existing files in the object storage.
+        """
+
+        verify_non_empty("attribute_path", attribute_path)
+        verify_type("path", path, (str, type(None)))
+        if data is not None:
+            verify_type("data", data, (str, bytes, type(None)))
+            verify_max_length("data", data, 10 * 1024**2)
+        verify_type("mime_type", mime_type, (str, type(None)))
+        verify_type("target_basename", target_basename, (str, type(None)))
+        verify_type("target_path", target_path, (str, type(None)))
+
+        if path is None and data is None:
+            raise ValueError("Either `path` or `data` must be provided")
+
+        if path is not None and data is not None:
+            raise ValueError("Only one of `path` or `data` can be provided")
+
+        local_path: Optional[Path] = None
+        if path:
+            verify_non_empty("path", path)
+
+            local_path = Path(path)
+            if not local_path.exists():
+                raise ValueError(f"Path `{path}` does not exist")
+
+            if not local_path.is_file():
+                raise ValueError(f"Path `{path}` is not a file")
+
+        self._file_upload_queue.submit(
+            attribute_path=attribute_path,
+            local_path=local_path,
+            data=data.encode("utf-8") if isinstance(data, str) else data,
+            target_basename=target_basename,
+            target_path=target_path,
+        )
+
     def _wait(
         self,
         phrase: str,
@@ -563,12 +638,14 @@ class Run(WithResources, AbstractContextManager):
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
-        if timeout is None and verbose:
-            logger.warning("No timeout specified. Waiting indefinitely")
+        if timeout is None:
+            timeout = math.inf
+            if verbose:
+                logger.warning("No timeout specified. Waiting indefinitely")
 
-        begin_time = time.time()
-        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        begin_time = time.monotonic()
         last_print_timestamp: Optional[float] = None
+        wait_time = min(sleep_time, timeout)
 
         while True:
             try:
@@ -579,12 +656,20 @@ class Run(WithResources, AbstractContextManager):
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
+                active_uploads = self._file_upload_queue.active_uploads
+                if active_uploads:
+                    last_print_timestamp = print_message(
+                        f"Waiting for {active_uploads} file uploads to complete",
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+
+                with wait_seq:
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
                         break
 
-                with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
 
@@ -594,7 +679,7 @@ class Run(WithResources, AbstractContextManager):
                     if self._operations_queue.last_sequence_id != -1:
                         last_print_timestamp = print_message(
                             f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            self._operations_queue.last_sequence_id + 1,
+                            self._operations_queue.last_sequence_id + 1 + active_uploads,
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
@@ -607,18 +692,29 @@ class Run(WithResources, AbstractContextManager):
                 elif value < last_queued_sequence_id:
                     last_print_timestamp = print_message(
                         f"Waiting for remaining %d operation(s) to be {phrase}",
-                        last_queued_sequence_id - value + 1,
+                        last_queued_sequence_id - value + 1 + active_uploads,
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
                 else:
                     # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                    if value >= last_queued_sequence_id or time.monotonic() - begin_time > timeout:
                         break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
                 return
+
+        if self._file_upload_queue.active_uploads:
+            last_print_timestamp = print_message(
+                f"Waiting for {active_uploads} file uploads to complete",
+                last_print=last_print_timestamp,
+                verbose=verbose,
+            )
+
+        # TODO: properly calculate the timeout based on the actual time passed.
+        # The PR for that is already there, but it's not merged yet.
+        self._file_upload_queue.wait_for_completion(timeout=wait_time)
 
         if verbose:
             logger.info(f"All operations were {phrase}")
