@@ -95,6 +95,7 @@ class FileUploadWorkerThread(Daemon, Resource):
     def _request_upload_url(self, attribute_path: str, file_path: str) -> str:
         assert self._api_token
         # TODO: Make this retryable
+        time.sleep(0.2)
         return ".".join(["http://localhost:8012/", attribute_path, file_path])
 
     def _finalize_upload(self, attribute_path: str, error: Optional[Exception] = None) -> None:
@@ -152,6 +153,7 @@ def determine_path_and_mime_type(
 def upload_file(source: BinaryIO, url: str, mime_type: str) -> None:
     # TODO: do the actual work :)
     assert source and url and mime_type
+    time.sleep(1)
     pass
 
 

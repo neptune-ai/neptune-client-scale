@@ -6,6 +6,11 @@ from collections.abc import (
     Iterator,
 )
 from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -14,6 +19,12 @@ from typing import (
     cast,
 )
 
+from neptune_scale.api.validation import (
+    verify_max_length,
+    verify_non_empty,
+    verify_type,
+)
+from neptune_scale.sync.files.queue import FileUploadQueue
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 
@@ -54,11 +65,14 @@ class AttributeStore:
     end consuming the queue (which would be SyncProcess).
     """
 
-    def __init__(self, project: str, run_id: str, operations_queue: OperationsQueue) -> None:
+    def __init__(
+        self, project: str, run_id: str, operations_queue: OperationsQueue, file_upload_queue: FileUploadQueue
+    ) -> None:
         self._project = project
         self._run_id = run_id
         self._operations_queue = operations_queue
         self._attributes: dict[str, Attribute] = {}
+        self._file_upload_queue = file_upload_queue
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -101,6 +115,22 @@ class AttributeStore:
 
         for operation, metadata_size in splitter:
             self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
+
+    def upload_file(
+        self,
+        attribute_path: str,
+        local_path: Optional[Path],
+        data: Optional[Union[str, bytes]],
+        target_basename: Optional[str],
+        target_path: Optional[str],
+    ) -> None:
+        self._file_upload_queue.submit(
+            attribute_path=attribute_path,
+            local_path=local_path,
+            data=data.encode("utf-8") if isinstance(data, str) else data,
+            target_basename=target_basename,
+            target_path=target_path,
+        )
 
 
 class Attribute:
@@ -172,6 +202,52 @@ class Attribute:
 
         for value, step, timestamp in zip(values, steps, timestamps):
             self.append(value, step=step, timestamp=timestamp, wait=wait)
+
+    @warn_unsupported_params
+    def upload(
+        self,
+        path: Optional[Path] = None,
+        *,
+        data: Optional[Union[str, bytes]] = None,
+        mime_type: Optional[str] = None,
+        target_basename: Optional[str] = None,
+        target_path: Optional[str] = None,
+        wait: bool = False,
+    ) -> None:
+        verify_type("path", path, (str, type(None)))
+
+        if data is not None:
+            verify_type("data", data, (str, bytes, type(None)))
+            verify_max_length("data", data, 10 * 1024**2)
+
+        verify_type("mime_type", mime_type, (str, type(None)))
+        verify_type("target_basename", target_basename, (str, type(None)))
+        verify_type("target_path", target_path, (str, type(None)))
+
+        if path is None and data is None:
+            raise ValueError("Either `path` or `data` must be provided")
+
+        if path is not None and data is not None:
+            raise ValueError("Only one of `path` or `data` can be provided")
+
+        local_path: Optional[Path] = None
+        if path:
+            verify_non_empty("path", path)
+
+            local_path = Path(path)
+            if not local_path.exists():
+                raise ValueError(f"Path `{path}` does not exist")
+
+            if not local_path.is_file():
+                raise ValueError(f"Path `{path}` is not a file")
+
+        self._store.upload_file(
+            attribute_path=self._path,
+            local_path=local_path,
+            data=data.encode("utf-8") if isinstance(data, str) else data,
+            target_basename=target_basename,
+            target_path=target_path,
+        )
 
     # TODO: add value type validation to all the methods
     # TODO: change Run API to typehint timestamp as Union[datetime, float]

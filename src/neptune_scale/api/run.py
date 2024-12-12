@@ -14,7 +14,6 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
-from pathlib import Path
 from typing import (
     Any,
     Literal,
@@ -208,7 +207,10 @@ class Run(WithResources, AbstractContextManager):
             max_size=max_queue_size,
         )
 
-        self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
+        self._file_upload_queue = FileUploadQueue()
+        self._attr_store: AttributeStore = AttributeStore(
+            self._project, self._run_id, self._operations_queue, self._file_upload_queue
+        )
 
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._errors_monitor = ErrorsMonitor(
@@ -224,8 +226,6 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp = SharedFloat(-1)
 
         self._process_link = ProcessLink()
-
-        self._file_upload_queue = FileUploadQueue()
 
         self._sync_process = SyncProcess(
             project=self._project,
@@ -593,38 +593,11 @@ class Run(WithResources, AbstractContextManager):
                 caution is advised, as it is possible to overwrite existing files in the object storage.
         """
 
+        verify_type("attribute_path", attribute_path, str)
         verify_non_empty("attribute_path", attribute_path)
-        verify_type("path", path, (str, type(None)))
-        if data is not None:
-            verify_type("data", data, (str, bytes, type(None)))
-            verify_max_length("data", data, 10 * 1024**2)
-        verify_type("mime_type", mime_type, (str, type(None)))
-        verify_type("target_basename", target_basename, (str, type(None)))
-        verify_type("target_path", target_path, (str, type(None)))
 
-        if path is None and data is None:
-            raise ValueError("Either `path` or `data` must be provided")
-
-        if path is not None and data is not None:
-            raise ValueError("Only one of `path` or `data` can be provided")
-
-        local_path: Optional[Path] = None
-        if path:
-            verify_non_empty("path", path)
-
-            local_path = Path(path)
-            if not local_path.exists():
-                raise ValueError(f"Path `{path}` does not exist")
-
-            if not local_path.is_file():
-                raise ValueError(f"Path `{path}` is not a file")
-
-        self._file_upload_queue.submit(
-            attribute_path=attribute_path,
-            local_path=local_path,
-            data=data.encode("utf-8") if isinstance(data, str) else data,
-            target_basename=target_basename,
-            target_path=target_path,
+        self._attr_store[attribute_path].upload(
+            path, data=data, mime_type=mime_type, target_basename=target_basename, target_path=target_path
         )
 
     def _wait(
