@@ -31,17 +31,35 @@ from neptune_scale.sync.operations_queue import OperationsQueue
 __all__ = ("Attribute", "AttributeStore")
 
 
-def warn_unsupported_params(fn: Callable) -> Callable:
-    # Perform some simple heuristics to detect if a method is called with parameters
-    # that are not supported by Scale
+def _extract_named_kwargs(fn: Callable) -> Set[str]:
+    """Return a set of named arguments of a function, that are not positional-only."""
+    import inspect
+
+    sig = inspect.signature(fn)
+    kwargs = {
+        p.name
+        for p in sig.parameters.values()
+        if p.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
+    }
+
+    return kwargs
+
+
+def warn_unsupported_kwargs(fn: Callable) -> Callable:
+    """Perform some simple heuristics to detect if a method is called with parameters that are not supported by
+    Scale. Some methods in the old client accepted a **kwargs argument, which we currently do not inspect in any
+    way, so it's important to notify the user that an argument is being ignored.
+    """
+
     warn = functools.partial(warnings.warn, stacklevel=3)
+    known_kwargs = _extract_named_kwargs(fn)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):  # type: ignore
         if kwargs.get("wait") is not None:
             warn("The `wait` parameter is not yet implemented and will be ignored.")
 
-        extra_kwargs = set(kwargs.keys()) - {"wait", "step", "timestamp", "steps", "timestamps"}
+        extra_kwargs = set(kwargs.keys()) - known_kwargs
         if extra_kwargs:
             warn(
                 f"`{fn.__name__}()` was called with additional keyword argument(s): `{', '.join(extra_kwargs)}`. "
@@ -148,12 +166,12 @@ class Attribute:
         self._path = path
 
     # TODO: typehint value properly
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def assign(self, value: Any, *, wait: bool = False) -> None:
         data = accumulate_dict_values(value, self._path)
         self._store.log(configs=data)
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def append(
         self,
         value: Union[dict[str, Any], float],
@@ -166,7 +184,7 @@ class Attribute:
         data = accumulate_dict_values(value, self._path)
         self._store.log(metrics=data, step=step, timestamp=timestamp)
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     # TODO: this should be Iterable in Run as well
     # def add(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
     def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
@@ -174,7 +192,7 @@ class Attribute:
             values = (values,)
         self._store.log(tags_add={self._path: values})
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     # TODO: this should be Iterable in Run as well
     # def remove(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
     def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
@@ -182,7 +200,7 @@ class Attribute:
             values = (values,)
         self._store.log(tags_remove={self._path: values})
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def extend(
         self,
         values: Collection[Union[float, int]],
@@ -203,7 +221,7 @@ class Attribute:
         for value, step, timestamp in zip(values, steps, timestamps):
             self.append(value, step=step, timestamp=timestamp, wait=wait)
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def upload(
         self,
         path: Optional[Path] = None,
