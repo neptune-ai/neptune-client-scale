@@ -12,7 +12,6 @@ from typing import (
     Tuple,
 )
 
-from neptune_scale.exceptions import NeptuneScaleError
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.files.queue import (
     FileUploadQueue,
@@ -65,7 +64,7 @@ class FileUploadWorkerThread(Daemon, Resource):
                 )
                 future.add_done_callback(self._make_done_callback(msg))
             except Exception as e:
-                logger.error(f"Failed to submit file upload task for `{msg.local_path}` as `{msg.attribute_path}`: {e}")
+                logger.error(f"Failed to submit file upload task for `{msg.attribute_path}`: {e}")
                 self._errors_queue.put(e)
 
     def close(self) -> None:
@@ -113,13 +112,11 @@ class FileUploadWorkerThread(Daemon, Resource):
         def _on_task_completed(future: futures.Future) -> None:
             self._input_queue.decrement_active()
 
-            exc = future.exception()
-            if future.cancelled() and exc is None:
-                exc = NeptuneScaleError("Operation cancelled")
-
-            if exc:
-                logger.error(f"Failed to upload file `{message.local_path}` as `{message.attribute_path}`: {exc}")
-                self._errors_queue.put(exc)
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Failed to upload file as `{message.attribute_path}`: {e}")
+                self._errors_queue.put(e)
 
         return _on_task_completed
 

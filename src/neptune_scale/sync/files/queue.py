@@ -45,14 +45,17 @@ class FileUploadQueue(Resource):
         target_path: Optional[str],
         target_basename: Optional[str],
     ) -> None:
-        assert data or local_path
+        assert data is not None or local_path
         with self._active_uploads:
             self._active_uploads.value += 1
             self._queue.put(UploadMessage(attribute_path, local_path, data, target_path, target_basename))
 
-    def wait_for_completion(self, timeout: Optional[float] = None) -> None:
+    def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
+        """Blocks until all uploads are completed or the timeout is reached.
+        Returns True if all uploads completed, False if the timeout was reached.
+        """
         with self._active_uploads:
-            self._active_uploads.wait_for(lambda: self._active_uploads.value == 0, timeout=timeout)
+            return self._active_uploads.wait_for(lambda: self._active_uploads.value == 0, timeout=timeout)
 
     def close(self) -> None:
         self._queue.close()
