@@ -25,7 +25,7 @@ class SharedVar(Generic[T]):
         # In one process
         with var:
             var.value += 1
-            var.notify() # Notify the waiting process
+            var.notify_all() # Notify the waiting process
 
         # In another process
         with var:
@@ -47,13 +47,13 @@ class SharedVar(Generic[T]):
         with self._condition:
             self._value.value = new_value
 
-    def wait(self, timeout: Optional[float] = None) -> None:
+    def wait(self, timeout: Optional[float] = None) -> bool:
         with self._condition:
-            self._condition.wait(timeout)
+            return self._condition.wait(timeout)
 
-    def wait_for(self, predicate: Callable[[], bool], timeout: Optional[float] = None) -> None:
+    def wait_for(self, predicate: Callable[[], bool], timeout: Optional[float] = None) -> bool:
         with self._condition:
-            self._condition.wait_for(predicate, timeout)
+            return self._condition.wait_for(predicate, timeout)
 
     def notify_all(self) -> None:
         with self._condition:
