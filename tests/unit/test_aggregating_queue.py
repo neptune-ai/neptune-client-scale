@@ -501,4 +501,66 @@ def test__merge_step_with_none():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update1, update2]
+    assert batch.update_batch.snapshots == [update2, update1]  # None is always first
+
+
+@freeze_time("2024-09-01")
+def test__merge_two_steps_two_metrics():
+    # given
+    update1a = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={"aa": Value(int64=10)})
+    update2a = UpdateRunSnapshot(step=Step(whole=2, micro=0), assign={"aa": Value(int64=20)})
+    update1b = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={"bb": Value(int64=100)})
+    update2b = UpdateRunSnapshot(step=Step(whole=2, micro=0), assign={"bb": Value(int64=200)})
+
+    # and
+    operations = [
+        RunOperation(update=update, project="project", run_id="run_id")
+        for update in [update1a, update2a, update1b, update2b]
+    ]
+
+    # and
+    elements = [
+        SingleOperation(
+            sequence_id=sequence_id,
+            timestamp=time.process_time(),
+            operation=operation.SerializeToString(),
+            is_batchable=True,
+            metadata_size=0,
+            batch_key=batch_key,
+        )
+        for sequence_id, batch_key, operation in [
+            (1, 1.0, operations[0]),
+            (2, 2.0, operations[1]),
+            (3, 1.0, operations[2]),
+            (4, 2.0, operations[3]),
+        ]
+    ]
+
+    # and
+    queue = AggregatingQueue(max_queue_size=4, max_elements_in_batch=4)
+
+    # and
+    for element in elements:
+        queue.put_nowait(element=element)
+
+    # when
+    result = queue.get()
+
+    # then
+    assert result.sequence_id == elements[-1].sequence_id
+    assert result.timestamp == elements[-1].timestamp
+
+    # and
+    batch = RunOperation()
+    batch.ParseFromString(result.operation)
+
+    update1_merged = UpdateRunSnapshot(
+        step=Step(whole=1, micro=0), assign={"aa": Value(int64=10), "bb": Value(int64=100)}
+    )
+    update2_merged = UpdateRunSnapshot(
+        step=Step(whole=2, micro=0), assign={"aa": Value(int64=20), "bb": Value(int64=200)}
+    )
+
+    assert batch.project == "project"
+    assert batch.run_id == "run_id"
+    assert batch.update_batch.snapshots == [update1_merged, update2_merged]
