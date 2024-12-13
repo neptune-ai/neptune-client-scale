@@ -14,7 +14,8 @@ T = TypeVar("T", int, float)
 
 
 class SharedVar(Generic[T]):
-    """A convenience wrapper around multiprocessing.Value and multiprocessing.Condition.
+    """
+    A convenience wrapper around multiprocessing.Value and multiprocessing.Condition.
 
     Access the Value using the `value` property. Other methods, as well as context management
     delegate to the Condition object.
@@ -25,7 +26,7 @@ class SharedVar(Generic[T]):
         # In one process
         with var:
             var.value += 1
-            var.notify() # Notify the waiting process
+            var.notify_all() # Notify the waiting process
 
         # In another process
         with var:
@@ -47,15 +48,26 @@ class SharedVar(Generic[T]):
         with self._condition:
             self._value.value = new_value
 
-    def wait(self, timeout: Optional[float] = None) -> None:
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        """
+        Wait until notify_all() is called or timeout is reached.
+        The return value is True unless a given timeout expired, in which case it is False.
+        """
         with self._condition:
-            self._condition.wait(timeout)
+            return self._condition.wait(timeout)
 
-    def wait_for(self, predicate: Callable[[], bool], timeout: Optional[float] = None) -> None:
+    def wait_for(self, predicate: Callable[[], bool], timeout: Optional[float] = None) -> bool:
+        """
+        Wait until notify_all() is called and `predicate()` returns True, or timeout is reached.
+        The return value is True unless a given timeout expired, in which case it is False.
+        """
         with self._condition:
-            self._condition.wait_for(predicate, timeout)
+            return self._condition.wait_for(predicate, timeout)
 
     def notify_all(self) -> None:
+        """
+        Wake up all the callers blocked on wait() or wait_for() methods.
+        """
         with self._condition:
             self._condition.notify_all()
 
