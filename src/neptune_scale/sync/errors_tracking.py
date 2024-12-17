@@ -17,7 +17,10 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedError,
 )
 from neptune_scale.sync.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
-from neptune_scale.util import get_logger
+from neptune_scale.util import (
+    envs,
+    get_logger,
+)
 from neptune_scale.util.abstract import Resource
 from neptune_scale.util.daemon import Daemon
 from neptune_scale.util.process_killer import kill_me
@@ -30,6 +33,10 @@ class ErrorsQueue(Resource):
         self._errors_queue: multiprocessing.Queue[BaseException] = multiprocessing.Queue()
 
     def put(self, error: BaseException) -> None:
+        if envs.get_bool(envs.LOG_TRACEBACKS, True):
+            logger.error("An error occurred in Neptune:")
+            logger.error("".join(traceback.format_exception(type(error), error, error.__traceback__)))
+
         self._errors_queue.put(error)
 
     def get(self, block: bool = True, timeout: Optional[float] = None) -> BaseException:
