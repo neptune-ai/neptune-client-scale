@@ -1,10 +1,12 @@
 from datetime import datetime
 from pathlib import Path
+from queue import Empty
 from unittest.mock import (
     Mock,
     patch,
 )
 
+import pytest
 from pytest import (
     fixture,
     mark,
@@ -26,7 +28,7 @@ def queue():
 
 @fixture
 def errors_queue():
-    return Mock(spec=ErrorsQueue)
+    return ErrorsQueue()
 
 
 @fixture
@@ -135,7 +137,8 @@ def test_successful_upload(worker, queue, errors_queue):
         worker._wait_for_completion.assert_called_once()
 
         upload_file.assert_called_once()
-        errors_queue.put.assert_not_called()
+        with pytest.raises(Empty):
+            errors_queue.get(timeout=1)
 
 
 def test_upload_error(worker, queue, errors_queue):
@@ -161,4 +164,4 @@ def test_upload_error(worker, queue, errors_queue):
     worker._wait_for_completion.assert_not_called()
 
     upload_file.assert_called_once()
-    errors_queue.put.assert_called_once_with(error)
+    assert errors_queue.get(timeout=1).message == error.message
