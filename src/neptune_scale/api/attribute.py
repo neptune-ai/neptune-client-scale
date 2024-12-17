@@ -6,10 +6,6 @@ from collections.abc import (
     Iterator,
 )
 from datetime import datetime
-from datetime import (
-    datetime,
-    timezone,
-)
 from pathlib import Path
 from typing import (
     Any,
@@ -27,6 +23,7 @@ from neptune_scale.api.validation import (
 from neptune_scale.sync.files.queue import FileUploadQueue
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.util import arg_to_datetime
 
 __all__ = ("Attribute", "AttributeStore")
 
@@ -124,7 +121,7 @@ class AttributeStore:
             project=self._project,
             run_id=self._run_id,
             step=step,
-            timestamp=timestamp,
+            timestamp=arg_to_datetime(timestamp),
             configs=configs,
             metrics=metrics,
             add_tags=tags_add,
