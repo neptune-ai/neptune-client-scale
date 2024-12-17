@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import (
     Mock,
@@ -16,6 +17,37 @@ from neptune_scale.sync.files.worker import (
     FileUploadWorkerThread,
     determine_path_and_mime_type,
 )
+
+
+@fixture
+def queue():
+    return FileUploadQueue()
+
+
+@fixture
+def errors_queue():
+    return Mock(spec=ErrorsQueue)
+
+
+@fixture
+def worker(queue, api_token, errors_queue):
+    worker = FileUploadWorkerThread(
+        project="project",
+        run_id="run_id",
+        api_token=api_token,
+        family="family",
+        input_queue=queue,
+        errors_queue=errors_queue,
+        mode="disabled",
+    )
+
+    worker._request_upload_url = Mock(return_value="http://DUMMY.localhost/")
+    worker._submit_attribute = Mock()
+    worker._wait_for_completion = Mock()
+
+    worker.start()
+
+    return worker
 
 
 @mark.parametrize(
@@ -47,43 +79,30 @@ def test_determine_mime_type(attr, local, expected):
     assert mimetype == expected
 
 
-@fixture
-def queue():
-    return FileUploadQueue()
-
-
-@fixture
-def errors_queue():
-    return Mock(spec=ErrorsQueue)
-
-
-@fixture
-def worker(queue, api_token, errors_queue):
-    worker = FileUploadWorkerThread(
-        project="project",
-        run_id="run_id",
-        api_token=api_token,
-        family="family",
-        input_queue=queue,
-        errors_queue=errors_queue,
-    )
-
-    worker._request_upload_url = Mock(return_value="URL")
-    worker._finalize_upload = Mock()
-
-    worker.start()
-
-    return worker
-
-
 def test_queue_wait_for_completion(queue):
-    queue.submit(attribute_path="attr", local_path=None, data=b"test", target_path=None, target_basename=None)
-    queue.submit(attribute_path="attr2", local_path=None, data=b"test", target_path=None, target_basename=None)
+    queue.submit(
+        attribute_path="attr",
+        local_path=None,
+        data=b"test",
+        target_path=None,
+        target_basename=None,
+        timestamp=datetime.now(),
+    )
+    queue.submit(
+        attribute_path="attr2",
+        local_path=None,
+        data=b"test",
+        target_path=None,
+        target_basename=None,
+        timestamp=datetime.now(),
+    )
 
     assert queue.active_uploads == 2
 
     queue.decrement_active()
     assert queue.active_uploads == 1
+
+    assert not queue.wait_for_completion(timeout=0.5)
 
     queue.decrement_active()
     assert queue.active_uploads == 0
@@ -98,14 +117,22 @@ def test_successful_upload(worker, queue, errors_queue):
         assert source.read() == data
 
     with patch("neptune_scale.sync.files.worker.upload_file", Mock(side_effect=expect_bytes)) as upload_file:
-        queue.submit(attribute_path="attr.txt", local_path=None, data=data, target_path=None, target_basename=None)
+        queue.submit(
+            attribute_path="attr.txt",
+            local_path=None,
+            data=data,
+            target_path=None,
+            target_basename=None,
+            timestamp=datetime.now(),
+        )
         assert queue.wait_for_completion(timeout=10)
         assert queue.active_uploads == 0
 
         worker.close()
 
         worker._request_upload_url.assert_called_once()
-        worker._finalize_upload.assert_called_once()
+        worker._submit_attribute.assert_called_once()
+        worker._wait_for_completion.assert_called_once()
 
         upload_file.assert_called_once()
         errors_queue.put.assert_not_called()
@@ -113,23 +140,25 @@ def test_successful_upload(worker, queue, errors_queue):
 
 def test_upload_error(worker, queue, errors_queue):
     """Trigger an error in upload_file and check if the error is propagated to the errors_queue."""
-    error = NeptuneScaleError()
-
-    def check_exception(attr, exc):
-        assert attr.startswith("run_id/attr.txt")
-        assert exc is error
-
-    worker._finalize_upload.side_effect = check_exception
+    error = NeptuneScaleError(message="This error is expected to happen")
 
     with patch("neptune_scale.sync.files.worker.upload_file", Mock(side_effect=error)) as upload_file:
-        queue.submit(attribute_path="attr.txt", local_path=None, data=b"", target_path=None, target_basename=None)
+        queue.submit(
+            attribute_path="attr.txt",
+            local_path=None,
+            data=b"",
+            target_path=None,
+            target_basename=None,
+            timestamp=datetime.now(),
+        )
         assert queue.wait_for_completion(timeout=10)
         assert queue.active_uploads == 0
 
     worker.close()
 
     worker._request_upload_url.assert_called_once()
-    worker._finalize_upload.assert_called_once()
+    worker._submit_attribute.assert_not_called()
+    worker._wait_for_completion.assert_not_called()
 
     upload_file.assert_called_once()
     errors_queue.put.assert_called_once_with(error)
