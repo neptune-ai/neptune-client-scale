@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+from datetime import datetime
 from typing import (
     NamedTuple,
     Optional,
@@ -10,6 +11,7 @@ from neptune_scale.util.abstract import Resource
 
 
 class UploadMessage(NamedTuple):
+    timestamp: datetime
     attribute_path: str
     local_path: Optional[pathlib.Path]
     data: Optional[bytes]
@@ -39,6 +41,7 @@ class FileUploadQueue(Resource):
     def submit(
         self,
         *,
+        timestamp: datetime,
         attribute_path: str,
         local_path: Optional[pathlib.Path],
         data: Optional[bytes],
@@ -48,7 +51,7 @@ class FileUploadQueue(Resource):
         assert data is not None or local_path
         with self._active_uploads:
             self._active_uploads.value += 1
-            self._queue.put(UploadMessage(attribute_path, local_path, data, target_path, target_basename))
+            self._queue.put(UploadMessage(timestamp, attribute_path, local_path, data, target_path, target_basename))
 
     def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
         """Blocks until all uploads are completed or the timeout is reached.

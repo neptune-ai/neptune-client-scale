@@ -138,8 +138,10 @@ class AttributeStore:
         data: Optional[Union[str, bytes]],
         target_basename: Optional[str],
         target_path: Optional[str],
+        timestamp: Optional[Union[float, datetime]] = None,
     ) -> None:
         self._file_upload_queue.submit(
+            timestamp=arg_to_datetime(timestamp),
             attribute_path=attribute_path,
             local_path=local_path,
             data=data.encode("utf-8") if isinstance(data, str) else data,
@@ -227,6 +229,7 @@ class Attribute:
         mime_type: Optional[str] = None,
         target_basename: Optional[str] = None,
         target_path: Optional[str] = None,
+        timestamp: Optional[Union[float, datetime]] = None,
         wait: bool = False,
     ) -> None:
         verify_type("path", path, (str, type(None)))
@@ -262,6 +265,7 @@ class Attribute:
             data=data.encode("utf-8") if isinstance(data, str) else data,
             target_basename=target_basename,
             target_path=target_path,
+            timestamp=timestamp,
         )
 
     # TODO: add value type validation to all the methods

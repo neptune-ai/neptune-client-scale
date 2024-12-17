@@ -569,6 +569,7 @@ class Run(WithResources, AbstractContextManager):
         mime_type: Optional[str] = None,
         target_basename: Optional[str] = None,
         target_path: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
     ) -> None:
         """
         Uploads a file under the specified attribute path. The file contents can be read from a local
@@ -591,13 +592,19 @@ class Run(WithResources, AbstractContextManager):
                 will be generated automatically, using the local file's basename, or randomly, if `data` is provided.
             target_path: the full path to the file in the underlying object storage. It always takes precedence, so
                 caution is advised, as it is possible to overwrite existing files in the object storage.
+            timestamp: timestamp to be recorded for the operation. Defaults to `datetime.now()`.
         """
 
         verify_type("attribute_path", attribute_path, str)
         verify_non_empty("attribute_path", attribute_path)
 
         self._attr_store[attribute_path].upload(
-            path, data=data, mime_type=mime_type, target_basename=target_basename, target_path=target_path
+            path,
+            data=data,
+            mime_type=mime_type,
+            target_basename=target_basename,
+            target_path=target_path,
+            timestamp=timestamp,
         )
 
     def _wait(
