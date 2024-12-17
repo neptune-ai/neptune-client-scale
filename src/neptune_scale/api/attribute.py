@@ -23,6 +23,7 @@ from neptune_scale.api.validation import (
 from neptune_scale.sync.files.queue import FileUploadQueue
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.parameters import MAX_FILE_UPLOAD_BUFFER_SIZE
 from neptune_scale.sync.util import arg_to_datetime
 
 __all__ = ("Attribute", "AttributeStore")
@@ -223,7 +224,7 @@ class Attribute:
     @warn_unsupported_kwargs
     def upload(
         self,
-        path: Optional[Path] = None,
+        path: Optional[str] = None,
         *,
         data: Optional[Union[str, bytes]] = None,
         mime_type: Optional[str] = None,
@@ -236,7 +237,7 @@ class Attribute:
 
         if data is not None:
             verify_type("data", data, (str, bytes, type(None)))
-            verify_max_length("data", data, 10 * 1024**2)
+            verify_max_length("data", data, MAX_FILE_UPLOAD_BUFFER_SIZE)
 
         verify_type("mime_type", mime_type, (str, type(None)))
         verify_type("target_basename", target_basename, (str, type(None)))
@@ -254,7 +255,7 @@ class Attribute:
 
             local_path = Path(path)
             if not local_path.exists():
-                raise ValueError(f"Path `{path}` does not exist")
+                raise FileNotFoundError(f"Path `{path}` does not exist")
 
             if not local_path.is_file():
                 raise ValueError(f"Path `{path}` is not a file")
