@@ -16,6 +16,7 @@ from typing import (
 
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.parameters import MAX_FILE_UPLOAD_BUFFER_SIZE
 
 __all__ = ("Attribute", "AttributeStore")
 

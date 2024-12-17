@@ -1,3 +1,4 @@
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from queue import Empty
@@ -112,7 +113,7 @@ def test_queue_wait_for_completion(queue):
     assert queue.wait_for_completion(timeout=1)
 
 
-def test_successful_upload(worker, queue, errors_queue):
+def test_successful_upload_from_buffer(worker, queue, errors_queue):
     data = b"test"
 
     def expect_bytes(source, _url, _mime_type):
@@ -139,6 +140,56 @@ def test_successful_upload(worker, queue, errors_queue):
         upload_file.assert_called_once()
         with pytest.raises(Empty):
             errors_queue.get(timeout=1)
+
+
+def test_successful_upload_from_file(worker, queue, errors_queue):
+    data = b"test"
+
+    def expect_bytes(source, _url, _mime_type):
+        assert source.read() == data
+
+    with (
+        patch("neptune_scale.sync.files.worker.upload_file", Mock(side_effect=expect_bytes)) as upload_file,
+        tempfile.NamedTemporaryFile("w+b") as temp_file,
+    ):
+        temp_file.write(data)
+        temp_file.flush()
+
+        queue.submit(
+            attribute_path="attr.txt",
+            local_path=Path(temp_file.name),
+            data=None,
+            target_path=None,
+            target_basename=None,
+            timestamp=datetime.now(),
+        )
+        assert queue.wait_for_completion(timeout=10)
+        assert queue.active_uploads == 0
+
+        worker.close()
+
+    worker._request_upload_url.assert_called_once()
+    worker._submit_attribute.assert_called_once()
+    worker._wait_for_completion.assert_called_once()
+
+    upload_file.assert_called_once()
+    with pytest.raises(Empty):
+        errors_queue.get(timeout=1)
+
+
+def test_file_does_not_exist(worker, queue, errors_queue):
+    queue.submit(
+        attribute_path="attr.txt",
+        local_path=Path("/does/not/exist"),
+        data=None,
+        target_path=None,
+        target_basename=None,
+        timestamp=datetime.now(),
+    )
+    assert queue.wait_for_completion(timeout=10)
+    assert queue.active_uploads == 0
+
+    assert isinstance(errors_queue.get(timeout=1), FileNotFoundError)
 
 
 def test_upload_error(worker, queue, errors_queue):
