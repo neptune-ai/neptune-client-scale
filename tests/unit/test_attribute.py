@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from unittest.mock import Mock
 
@@ -69,8 +70,9 @@ def test_tags(run, store):
 
 
 def test_series(run, store):
-    run["my/series"].append(1, step=1, timestamp=10)
-    store.log.assert_called_with(metrics={"my/series": 1}, step=1, timestamp=10)
+    now = time.time()
+    run["my/series"].append(1, step=1, timestamp=now)
+    store.log.assert_called_with(metrics={"my/series": 1}, step=1, timestamp=now)
 
     run["my/series"].append({"foo": 1, "bar": 2}, step=2)
     store.log.assert_called_with(metrics={"my/series/foo": 1, "my/series/bar": 2}, step=2, timestamp=None)
