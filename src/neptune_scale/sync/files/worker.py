@@ -105,6 +105,7 @@ class FileUploadWorkerThread(Daemon, Resource):
                 future.add_done_callback(self._make_done_callback(msg))
             except Exception as e:
                 logger.error(f"Failed to submit file upload task for `{msg.attribute_path}`: {e}")
+                self._input_queue.decrement_active()
                 self._errors_queue.put(e)
 
     def close(self) -> None:
