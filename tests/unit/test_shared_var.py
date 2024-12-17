@@ -13,7 +13,7 @@ def _child(var):
         var.value = 1
         var.notify_all()
 
-    var.wait(timeout=1)
+    assert var.wait(timeout=10)
     assert var.value == 2
 
 
@@ -24,7 +24,7 @@ def test_set_and_notify(tp):
     process = Process(target=_child, args=(var,))
     process.start()
 
-    var.wait(timeout=1)
+    assert var.wait(timeout=10)
     assert var.value == 1
 
     with var:
