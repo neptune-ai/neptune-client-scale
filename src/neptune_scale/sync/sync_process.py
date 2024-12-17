@@ -242,6 +242,7 @@ class SyncProcessWorker(WithResources):
             run_id=run_id,
             api_token=api_token,
             family=family,
+            mode=mode,
             input_queue=file_upload_queue,
             errors_queue=self._errors_queue,
         )
