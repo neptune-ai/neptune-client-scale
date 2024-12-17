@@ -127,7 +127,8 @@ class FileUploadWorkerThread(Daemon, Resource):
         try:
             url = self._request_upload_url(path)
             src = local_path.open("rb") if local_path else io.BytesIO(data)  # type: ignore
-            upload_file(src, url, mime_type)
+            with src:
+                upload_file(src, url, mime_type)
 
             request_id = self._submit_attribute(attribute_path, path, timestamp)
             self._wait_for_completion(request_id)
