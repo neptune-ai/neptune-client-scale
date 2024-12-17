@@ -129,6 +129,9 @@ class ApiClient(Resource, abc.ABC):
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
 
+    @abc.abstractmethod
+    def fetch_file_storage_info(self, project: str, file_path: str, permission: Literal["read", "write"]) -> str: ...
+
 
 class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
@@ -152,6 +155,9 @@ class HostedApiClient(ApiClient):
             project_identifier=project,
             body=RequestIdList(ids=[RequestId(value=request_id) for request_id in request_ids]),
         )
+
+    def fetch_file_storage_info(self, project: str, file_path: str, permission: Literal["read", "write"]) -> str:
+        return f"https://DUMMY.localhost/{project}/{file_path}"
 
     def close(self) -> None:
         logger.debug("Closing API client")
@@ -180,6 +186,10 @@ class MockedApiClient(ApiClient):
             )
         )
         return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
+
+    def fetch_file_storage_info(self, project: str, file_path: str, permission: Literal["read", "write"]) -> str:
+        # TODO: request the actual endpoint
+        return f"https://localhost:65530/{project}/{file_path}"
 
 
 def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
