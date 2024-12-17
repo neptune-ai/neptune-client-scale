@@ -22,7 +22,6 @@ from typing import (
 
 import backoff
 from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     SubmitResponse,
@@ -30,30 +29,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
-    NeptuneAttributePathEmpty,
-    NeptuneAttributePathExceedsSizeLimit,
-    NeptuneAttributePathInvalid,
-    NeptuneAttributePathNonWritable,
-    NeptuneAttributeTypeMismatch,
-    NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
-    NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
-    NeptuneProjectInvalidName,
-    NeptuneProjectNotFound,
     NeptuneRetryableError,
-    NeptuneRunConflicting,
-    NeptuneRunDuplicate,
-    NeptuneRunForkParentNotFound,
-    NeptuneRunInvalidCreationParameters,
-    NeptuneRunNotFound,
-    NeptuneSeriesPointDuplicate,
-    NeptuneSeriesStepNonIncreasing,
-    NeptuneSeriesStepNotAfterForkPoint,
-    NeptuneSeriesTimestampDecreasing,
-    NeptuneStringSetExceedsSizeLimit,
-    NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
@@ -64,6 +43,7 @@ from neptune_scale.net.api_client import (
     backend_factory,
     with_api_errors_handling,
 )
+from neptune_scale.net.ingest_code import code_to_exception
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.files.queue import FileUploadQueue
@@ -99,41 +79,11 @@ T = TypeVar("T")
 
 logger = get_logger()
 
-CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
-    IngestCode.OK: None,
-    IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
-    IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
-    IngestCode.RUN_NOT_FOUND: NeptuneRunNotFound,
-    IngestCode.RUN_DUPLICATE: NeptuneRunDuplicate,
-    IngestCode.RUN_CONFLICTING: NeptuneRunConflicting,
-    IngestCode.RUN_FORK_PARENT_NOT_FOUND: NeptuneRunForkParentNotFound,
-    IngestCode.RUN_INVALID_CREATION_PARAMETERS: NeptuneRunInvalidCreationParameters,
-    IngestCode.FIELD_PATH_EXCEEDS_SIZE_LIMIT: NeptuneAttributePathExceedsSizeLimit,
-    IngestCode.FIELD_PATH_EMPTY: NeptuneAttributePathEmpty,
-    IngestCode.FIELD_PATH_INVALID: NeptuneAttributePathInvalid,
-    IngestCode.FIELD_PATH_NON_WRITABLE: NeptuneAttributePathNonWritable,
-    IngestCode.FIELD_TYPE_UNSUPPORTED: NeptuneAttributeTypeUnsupported,
-    IngestCode.FIELD_TYPE_CONFLICTING: NeptuneAttributeTypeMismatch,
-    IngestCode.SERIES_POINT_DUPLICATE: NeptuneSeriesPointDuplicate,
-    IngestCode.SERIES_STEP_NON_INCREASING: NeptuneSeriesStepNonIncreasing,
-    IngestCode.SERIES_STEP_NOT_AFTER_FORK_POINT: NeptuneSeriesStepNotAfterForkPoint,
-    IngestCode.SERIES_TIMESTAMP_DECREASING: NeptuneSeriesTimestampDecreasing,
-    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: NeptuneFloatValueNanInfUnsupported,
-    IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
-    IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
-}
-
 
 class StatusTrackingElement(NamedTuple):
     sequence_id: int
     timestamp: float
     request_id: str
-
-
-def code_to_exception(code: IngestCode.ValueType) -> Optional[type[Exception]]:
-    if code in CODE_TO_ERROR:
-        return CODE_TO_ERROR[code]
-    return NeptuneUnexpectedError
 
 
 class PeekableQueue(Generic[T]):
@@ -560,8 +510,9 @@ class StatusTrackingThread(Daemon, WithResources):
                         break
 
                     for code_status in request_status.code_by_count:
-                        if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
-                            self._errors_queue.put(error())
+                        if code_status.code != Code.OK:
+                            exc_class = code_to_exception(code_status.detail)
+                            self._errors_queue.put(exc_class())
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
