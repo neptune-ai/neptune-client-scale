@@ -15,12 +15,8 @@ from datetime import datetime
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Literal,
     Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -401,7 +397,7 @@ class Run(WithResources, AbstractContextManager):
 
     def log_metrics(
         self,
-        data: Dict[str, Union[float, int]],
+        data: dict[str, Union[float, int]],
         step: Union[float, int],
         *,
         timestamp: Optional[datetime] = None,
@@ -442,7 +438,7 @@ class Run(WithResources, AbstractContextManager):
         self.log(step=step, timestamp=timestamp, metrics=data)
 
     def log_configs(
-        self, data: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
+        self, data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
@@ -477,7 +473,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self.log(configs=data)
 
-    def add_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
+    def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
 
@@ -496,7 +492,7 @@ class Run(WithResources, AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_add={name: tags})
 
-    def remove_tags(self, tags: Union[List[str], Set[str], Tuple[str]], group_tags: bool = False) -> None:
+    def remove_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Removes the specified tags from the run.
 
@@ -519,10 +515,10 @@ class Run(WithResources, AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Dict[str, Union[float, int]]] = None,
-        tags_add: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
-        tags_remove: Optional[Dict[str, Union[List[str], Set[str], Tuple[str]]]] = None,
+        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        metrics: Optional[dict[str, Union[float, int]]] = None,
+        tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
+        tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
         """
         See one of the following instead:

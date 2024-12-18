@@ -10,16 +10,15 @@ __all__ = (
 
 from typing import (
     Any,
-    Type,
     Union,
 )
 
 
-def get_type_name(var_type: Union[Type, tuple]) -> str:
+def get_type_name(var_type: Union[type, tuple]) -> str:
     return var_type.__name__ if hasattr(var_type, "__name__") else str(var_type)
 
 
-def verify_type(var_name: str, var: Any, expected_type: Union[Type, tuple]) -> None:
+def verify_type(var_name: str, var: Any, expected_type: Union[type, tuple]) -> None:
     try:
         if isinstance(expected_type, tuple):
             type_name = " or ".join(get_type_name(t) for t in expected_type)

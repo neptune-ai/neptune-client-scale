@@ -1,8 +1,6 @@
 import re
 from typing import (
-    List,
     Optional,
-    Tuple,
     cast,
 )
 
@@ -66,7 +64,7 @@ def create_project(
     return normalize_project_name(name, workspace)
 
 
-def extract_workspace_and_project(name: str, workspace: Optional[str] = None) -> Tuple[str, str]:
+def extract_workspace_and_project(name: str, workspace: Optional[str] = None) -> tuple[str, str]:
     """Return a tuple of (workspace name, project name) from the provided
     fully qualified project name, or a name + workspace
 
@@ -118,7 +116,7 @@ def normalize_project_name(name: str, workspace: Optional[str] = None) -> str:
     return f"{extracted_workspace_name}/{extracted_project_name}"
 
 
-def list_projects(*, api_token: Optional[str] = None) -> List[str]:
+def list_projects(*, api_token: Optional[str] = None) -> list[str]:
     """Lists projects that the account has access to.
 
     Args:

@@ -12,13 +12,10 @@ from multiprocessing import (
 )
 from types import FrameType
 from typing import (
-    Dict,
     Generic,
-    List,
     Literal,
     NamedTuple,
     Optional,
-    Type,
     TypeVar,
 )
 
@@ -99,7 +96,7 @@ T = TypeVar("T")
 
 logger = get_logger()
 
-CODE_TO_ERROR: Dict[IngestCode.ValueType, Optional[Type[Exception]]] = {
+CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.OK: None,
     IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
     IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
@@ -130,7 +127,7 @@ class StatusTrackingElement(NamedTuple):
     request_id: str
 
 
-def code_to_exception(code: IngestCode.ValueType) -> Optional[Type[Exception]]:
+def code_to_exception(code: IngestCode.ValueType) -> Optional[type[Exception]]:
     if code in CODE_TO_ERROR:
         return CODE_TO_ERROR[code]
     return NeptuneUnexpectedError
@@ -145,7 +142,7 @@ class PeekableQueue(Generic[T]):
         with self._lock:
             self._queue.put(element)
 
-    def peek(self, max_size: int) -> Optional[List[T]]:
+    def peek(self, max_size: int) -> Optional[list[T]]:
         with self._lock:
             size = self._queue.qsize()
             if size == 0:
@@ -485,7 +482,7 @@ class StatusTrackingThread(Daemon, WithResources):
             return (self._backend,)
         return ()
 
-    def get_next(self) -> Optional[List[StatusTrackingElement]]:
+    def get_next(self) -> Optional[list[StatusTrackingElement]]:
         try:
             return self._status_tracking_queue.peek(max_size=MAX_REQUESTS_STATUS_BATCH_SIZE)
         except queue.Empty:
@@ -493,7 +490,7 @@ class StatusTrackingThread(Daemon, WithResources):
 
     @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def check_batch(self, *, request_ids: List[str]) -> Optional[BulkRequestStatus]:
+    def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
             self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
 
