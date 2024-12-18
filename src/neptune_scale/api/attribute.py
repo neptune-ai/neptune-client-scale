@@ -29,7 +29,7 @@ from neptune_scale.sync.util import arg_to_datetime
 __all__ = ("Attribute", "AttributeStore")
 
 
-def _extract_named_kwargs(fn: Callable) -> Set[str]:
+def _extract_named_kwargs(fn: Callable) -> set[str]:
     """Return a set of named arguments of a function, that are not positional-only."""
     import inspect
 

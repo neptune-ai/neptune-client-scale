@@ -2,18 +2,18 @@ import io
 import mimetypes
 import time
 import uuid
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from concurrent import futures
 from datetime import datetime
 from pathlib import Path
 from queue import Empty
 from typing import (
     BinaryIO,
-    Callable,
-    List,
     Literal,
     Optional,
-    Sequence,
-    Tuple,
 )
 
 import backoff
@@ -167,7 +167,7 @@ class FileUploadWorkerThread(Daemon, Resource):
 
     @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
-    def _wait_for_completion(self, request_ids: List[str]) -> None:
+    def _wait_for_completion(self, request_ids: list[str]) -> None:
         assert self._backend is not None  # mypy
 
         while self.is_running():
@@ -212,7 +212,7 @@ def determine_path_and_mime_type(
     local_path: Optional[Path],
     target_path: Optional[str],
     target_basename: Optional[str],
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     mime_type = guess_mime_type(attribute_path, local_path)
 
     # Target path always takes precedence as-is

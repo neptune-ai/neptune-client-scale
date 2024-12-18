@@ -1,8 +1,3 @@
-from typing import (
-    Dict,
-    Type,
-)
-
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 
 from neptune_scale.exceptions import (
@@ -29,7 +24,7 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedError,
 )
 
-CODE_TO_ERROR: Dict[IngestCode.ValueType, Type[Exception]] = {
+CODE_TO_ERROR: dict[IngestCode.ValueType, type[Exception]] = {
     IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
     IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
     IngestCode.RUN_NOT_FOUND: NeptuneRunNotFound,
@@ -53,7 +48,7 @@ CODE_TO_ERROR: Dict[IngestCode.ValueType, Type[Exception]] = {
 }
 
 
-def code_to_exception(code: IngestCode.ValueType) -> Type[Exception]:
+def code_to_exception(code: IngestCode.ValueType) -> type[Exception]:
     if exc_class := CODE_TO_ERROR.get(code):
         return exc_class
 

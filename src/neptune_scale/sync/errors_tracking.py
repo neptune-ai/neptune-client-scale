@@ -5,6 +5,7 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 import multiprocessing
 import queue
 import time
+import traceback
 from collections.abc import Callable
 from typing import Optional
 
