@@ -148,21 +148,26 @@ def test_successful_upload_from_file(worker, queue, errors_queue):
     def expect_bytes(source, _url, _mime_type):
         assert source.read() == data
 
+    # Note that we cannot use NamedTemporaryFile here, because the test will fail on Windows. Windows opens
+    # temporary files in a way that prevents them from being opened by another process / thread, which is
+    # exactly our case.
     with (
         patch("neptune_scale.sync.files.worker.upload_file", Mock(side_effect=expect_bytes)) as upload_file,
-        tempfile.NamedTemporaryFile("w+b") as temp_file,
+        tempfile.TemporaryDirectory() as temp_dir,
     ):
-        temp_file.write(data)
-        temp_file.flush()
+        file_path = Path(temp_dir) / "file.txt"
+        with file_path.open("wb") as temp_file:
+            temp_file.write(data)
 
         queue.submit(
             attribute_path="attr.txt",
-            local_path=Path(temp_file.name),
+            local_path=file_path,
             data=None,
             target_path=None,
             target_basename=None,
             timestamp=datetime.now(),
         )
+
         assert queue.wait_for_completion(timeout=10)
         assert queue.active_uploads == 0
 
