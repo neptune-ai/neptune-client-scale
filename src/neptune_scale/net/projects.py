@@ -4,8 +4,6 @@ from enum import Enum
 from json import JSONDecodeError
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     cast,
 )
@@ -93,7 +91,7 @@ def _safe_json(response: httpx.Response) -> Any:
         return {}
 
 
-def get_project_list(*, api_token: Optional[str] = None) -> List[Dict]:
+def get_project_list(*, api_token: Optional[str] = None) -> list[dict]:
     client = HostedApiClient(api_token=_get_api_token(api_token))
 
     params = {
@@ -102,4 +100,4 @@ def get_project_list(*, api_token: Optional[str] = None) -> List[Dict]:
     }
 
     response = client.backend.get_httpx_client().request("get", PROJECTS_PATH_BASE, params=params)
-    return cast(List[Dict], response.json()["entries"])
+    return cast(list[dict], response.json()["entries"])

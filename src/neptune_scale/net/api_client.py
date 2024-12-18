@@ -21,11 +21,11 @@ import abc
 import functools
 import os
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import (
     Any,
-    Callable,
     Literal,
 )
 

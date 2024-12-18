@@ -2,11 +2,11 @@ import multiprocessing
 import os
 import queue
 import threading
+from collections.abc import Callable
 from functools import partial
 from multiprocessing.connection import Connection
 from typing import (
     Any,
-    Callable,
     Optional,
 )
 

@@ -5,11 +5,8 @@ __all__ = ("ErrorsQueue", "ErrorsMonitor")
 import multiprocessing
 import queue
 import time
-from typing import (
-    Callable,
-    Optional,
-    Type,
-)
+from collections.abc import Callable
+from typing import Optional
 
 from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
@@ -90,7 +87,7 @@ class ErrorsMonitor(Daemon, Resource):
             on_warning_callback or default_warning_callback
         )
 
-        self._last_raised_timestamps: dict[Type[BaseException], float] = {}
+        self._last_raised_timestamps: dict[type[BaseException], float] = {}
 
     def get_next(self) -> Optional[BaseException]:
         try:

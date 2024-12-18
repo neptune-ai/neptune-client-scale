@@ -4,16 +4,14 @@ __all__ = ("MetadataSplitter",)
 
 import math
 import warnings
+from collections.abc import (
+    Callable,
+    Iterator,
+)
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
-    Dict,
-    Iterator,
-    List,
     Optional,
-    Set,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -46,7 +44,7 @@ logger = get_logger()
 T = TypeVar("T", bound=Any)
 
 
-class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
+class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
     def __init__(
         self,
         *,
@@ -54,10 +52,10 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         run_id: str,
         step: Optional[Union[int, float]],
         timestamp: datetime,
-        configs: Dict[str, Union[float, bool, int, str, datetime, list, set, tuple]],
-        metrics: Dict[str, float],
-        add_tags: Dict[str, Union[List[str], Set[str], Tuple[str]]],
-        remove_tags: Dict[str, Union[List[str], Set[str], Tuple[str]]],
+        configs: dict[str, Union[float, bool, int, str, datetime, list, set, tuple]],
+        metrics: dict[str, float],
+        add_tags: dict[str, Union[list[str], set[str], tuple[str]]],
+        remove_tags: dict[str, Union[list[str], set[str], tuple[str]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
@@ -85,7 +83,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
         self._has_returned = False
         return self
 
-    def __next__(self) -> Tuple[RunOperation, int]:
+    def __next__(self) -> tuple[RunOperation, int]:
         update = UpdateRunSnapshot(
             step=self._step,
             timestamp=self._timestamp,
@@ -179,7 +177,7 @@ class MetadataSplitter(Iterator[Tuple[RunOperation, int]]):
 
         return size
 
-    def _skip_non_finite(self, step: Optional[float | int], metrics: Dict[str, float]) -> Iterator[Tuple[str, float]]:
+    def _skip_non_finite(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
         """Yields (metric, value) pairs, skipping non-finite values depending on the env setting."""
 
         for k, v in metrics.items():
