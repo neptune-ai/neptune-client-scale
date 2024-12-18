@@ -192,29 +192,34 @@ def cleanup_path(path: str) -> str:
     >>> cleanup_path('a/ /b/c')
     Traceback (most recent call last):
     ...
-    ValueError: Invalid path: `a/ /b/c`. Path components must not be empty.
+    ValueError: Invalid path: `a/ /b/c`. Path components cannot contain leading or trailing whitespace.
     >>> cleanup_path('a/b/c ')
     Traceback (most recent call last):
     ...
-    ValueError: Invalid path: `a/b/c `. Path cannot contain leading or trailing whitespace.
+    ValueError: Invalid path: `a/b/c `. Path components cannot contain leading or trailing whitespace.
     """
 
     if path.strip() in ("", "/"):
         raise ValueError(f"Invalid path: `{path}`.")
 
-    if path.startswith("/"):
-        path = path[1:]
+    orig_parts = path.split("/")
+    parts = [x.strip() for x in orig_parts]
 
-    if path.endswith("/"):
+    for i, part in enumerate(parts):
+        if part != orig_parts[i]:
+            raise ValueError(f"Invalid path: `{path}`. Path components cannot contain leading or trailing whitespace.")
+
+    # Skip the first slash, if present
+    if parts[0] == "":
+        parts = parts[1:]
+
+    if parts[-1] == "":
         raise ValueError(f"Invalid path: `{path}`. Path must not end with a slash.")
 
-    if not all(x.strip() for x in path.split("/")):
+    if not all(parts):
         raise ValueError(f"Invalid path: `{path}`. Path components must not be empty.")
 
-    if path[0].lstrip() != path[0] or path[-1].rstrip() != path[-1]:
-        raise ValueError(f"Invalid path: `{path}`. Path cannot contain leading or trailing whitespace.")
-
-    return path
+    return "/".join(parts)
 
 
 def accumulate_dict_values(value: Union[ValueType, dict[str, ValueType]], path_or_base: str) -> dict[str, Any]:
