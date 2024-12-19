@@ -51,8 +51,8 @@ class NeptuneScaleError(Exception):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
-        message = kwargs.pop("message", self.message)
-        super().__init__(message.format(*args, **STYLES, **kwargs))
+        self.message = kwargs.pop("message", self.message)
+        super().__init__(self.message.format(*args, **STYLES, **kwargs))
 
 
 class NeptuneScaleWarning(Warning):
