@@ -24,10 +24,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.attribute import (
-    Attribute,
-    AttributeStore,
-)
+from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.api.validation import (
     verify_dict_type,
     verify_max_length,
@@ -389,12 +386,6 @@ class Run(WithResources, AbstractContextManager):
             ),
         )
         self._operations_queue.enqueue(operation=operation)
-
-    def __getitem__(self, key: str) -> Attribute:
-        return self._attr_store[key]
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        self._attr_store[key] = value
 
     def log_metrics(
         self,

@@ -7,8 +7,8 @@ from pytest import (
     mark,
 )
 
-from neptune_scale import Run
 from neptune_scale.api.attribute import cleanup_path
+from neptune_scale.legacy import Run
 
 
 @fixture
