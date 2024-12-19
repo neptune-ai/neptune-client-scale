@@ -1,6 +1,7 @@
 -e .
 
 # dev
+black
 pre-commit
 pytest
 pytest-timeout

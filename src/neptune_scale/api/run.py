@@ -29,7 +29,7 @@ from neptune_scale.api.attribute import (
     AttributeStore,
 )
 from neptune_scale.api.validation import (
-    verify_collection_type,
+    verify_dict_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
@@ -48,7 +48,6 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
-from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
@@ -199,13 +198,15 @@ class Run(WithResources, AbstractContextManager):
 
         self._project: str = input_project
         self._run_id: str = run_id
-        self._attr_store: AttributeStore = AttributeStore(self)
 
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(
             lock=self._lock,
             max_size=max_queue_size,
         )
+
+        self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
+
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
@@ -536,25 +537,10 @@ class Run(WithResources, AbstractContextManager):
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
-        timestamp = datetime.now() if timestamp is None else timestamp
-        # TODO: move this into AttributeStore
-        configs = {} if configs is None else configs
-        metrics = {} if metrics is None else metrics
-        tags_add = {} if tags_add is None else tags_add
-        tags_remove = {} if tags_remove is None else tags_remove
-
-        # TODO: refactor this into something like `verify_dict_types(name, allowed_key_types, allowed_value_types)`
-        verify_collection_type("`configs` keys", list(configs.keys()), str)
-        verify_collection_type("`metrics` keys", list(metrics.keys()), str)
-        verify_collection_type("`tags_add` keys", list(tags_add.keys()), str)
-        verify_collection_type("`tags_remove` keys", list(tags_remove.keys()), str)
-
-        verify_collection_type(
-            "`configs` values", list(configs.values()), (float, bool, int, str, datetime, list, set, tuple)
-        )
-        verify_collection_type("`metrics` values", list(metrics.values()), (float, int))
-        verify_collection_type("`tags_add` values", list(tags_add.values()), (list, set, tuple))
-        verify_collection_type("`tags_remove` values", list(tags_remove.values()), (list, set, tuple))
+        verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
+        verify_dict_type("metrics", metrics, (float, int))
+        verify_dict_type("tags_add", tags_add, (list, set, tuple))
+        verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -562,20 +548,9 @@ class Run(WithResources, AbstractContextManager):
         if self._is_closing:
             return
 
-        # TODO: move this to a separate process or thread, to make the .log call as lightweight as possible
-        splitter: MetadataSplitter = MetadataSplitter(
-            project=self._project,
-            run_id=self._run_id,
-            step=step,
-            timestamp=timestamp,
-            configs=configs,
-            metrics=metrics,
-            add_tags=tags_add,
-            remove_tags=tags_remove,
+        self._attr_store.log(
+            step=step, timestamp=timestamp, configs=configs, metrics=metrics, tags_add=tags_add, tags_remove=tags_remove
         )
-
-        for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
 
     def _wait(
         self,

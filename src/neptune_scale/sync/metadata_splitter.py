@@ -52,20 +52,20 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         run_id: str,
         step: Optional[Union[int, float]],
         timestamp: datetime,
-        configs: dict[str, Union[float, bool, int, str, datetime, list, set, tuple]],
-        metrics: dict[str, float],
-        add_tags: dict[str, Union[list[str], set[str], tuple[str]]],
-        remove_tags: dict[str, Union[list[str], set[str], tuple[str]]],
+        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
+        metrics: Optional[dict[str, float]],
+        add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
+        remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
-        self._configs = peekable(configs.items())
-        self._metrics = peekable(self._skip_non_finite(step, metrics))
-        self._add_tags = peekable(add_tags.items())
-        self._remove_tags = peekable(remove_tags.items())
+        self._configs = peekable(configs.items()) if configs else None
+        self._metrics = peekable(self._skip_non_finite(step, metrics)) if metrics else None
+        self._add_tags = peekable(add_tags.items()) if add_tags else None
+        self._remove_tags = peekable(remove_tags.items()) if remove_tags else None
 
         self._max_update_bytes_size = (
             max_message_bytes_size
@@ -124,10 +124,13 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
 
     def populate(
         self,
-        assets: peekable[Any],
+        assets: Optional[peekable[Any]],
         update_producer: Callable[[str, Value], None],
         size: int,
     ) -> int:
+        if not assets:
+            return size
+
         while size < self._max_update_bytes_size:
             try:
                 key, value = assets.peek()
@@ -146,8 +149,11 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         return size
 
     def populate_tags(
-        self, update: UpdateRunSnapshot, assets: peekable[Any], operation: SET_OPERATION.ValueType, size: int
+        self, update: UpdateRunSnapshot, assets: Optional[peekable[Any]], operation: SET_OPERATION.ValueType, size: int
     ) -> int:
+        if not assets:
+            return size
+
         while size < self._max_update_bytes_size:
             try:
                 key, values = assets.peek()

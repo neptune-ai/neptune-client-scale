@@ -8,6 +8,7 @@ from pytest import (
 )
 
 from neptune_scale import Run
+from neptune_scale.api.attribute import cleanup_path
 
 
 @fixture
@@ -71,3 +72,25 @@ def test_series(run, store):
 
     run["sys/series"].append({"foo": 1, "bar": 2}, step=2)
     store.log.assert_called_with(metrics={"sys/series/foo": 1, "sys/series/bar": 2}, step=2, timestamp=None)
+
+
+@pytest.mark.parametrize(
+    "path", ["", " ", "/", " /", "/ ", "///", "/a ", "/a/b /", "a/b /c", "a /b/c", "a/b/", "a/b ", " /a/b"]
+)
+def test_cleanup_path_invalid_path(path):
+    with pytest.raises(ValueError) as exc:
+        cleanup_path(path)
+
+    exc.match("Invalid path:")
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    (
+        ("/a/b/c", "a/b/c"),
+        ("a a/b/c", "a a/b/c"),
+        ("/a a/b/c", "a a/b/c"),
+    ),
+)
+def test_cleanup_path_valid_path(path, expected):
+    assert cleanup_path(path) == expected
