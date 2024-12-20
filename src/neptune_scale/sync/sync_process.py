@@ -18,6 +18,7 @@ from typing import (
     Optional,
     Protocol,
     TypeVar,
+    cast,
 )
 
 import backoff
@@ -258,55 +259,62 @@ class SyncProcessWorker(WithResources):
 
         self._internal_operations_queue: AggregatingQueue = AggregatingQueue(max_queue_size=max_queue_size)
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
-        self._sync_thread = SenderThread(
-            api_token=api_token,
-            operations_queue=self._internal_operations_queue,
-            status_tracking_queue=self._status_tracking_queue,
-            errors_queue=self._errors_queue,
-            family=family,
-            last_queued_seq=last_queued_seq,
-            mode=mode,
-        )
 
-        self._status_tracking_thread = StatusTrackingThread(
-            api_token=api_token,
-            mode=mode,
-            project=project,
-            errors_queue=self._errors_queue,
-            status_tracking_queue=self._status_tracking_queue,
-            last_ack_seq=last_ack_seq,
-            last_ack_timestamp=last_ack_timestamp,
-        )
+        workers: list[Daemon] = [
+            OperationDispatcherThread(
+                input_queue=input_queue, consumers=[self._internal_operations_queue], errors_queue=self._errors_queue
+            )
+        ]
 
-        self._operation_dispatcher_thread = OperationDispatcherThread(
-            input_queue=input_queue,
-            consumers=[self._internal_operations_queue],
-            errors_queue=self._errors_queue,
-        )
+        if mode != "offline":
+            workers.append(
+                SenderThread(
+                    api_token=api_token,
+                    operations_queue=self._internal_operations_queue,
+                    status_tracking_queue=self._status_tracking_queue,
+                    errors_queue=self._errors_queue,
+                    family=family,
+                    last_queued_seq=last_queued_seq,
+                    mode=mode,
+                )
+            )
 
-    @property
-    def threads(self) -> tuple[Daemon, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+            workers.append(
+                StatusTrackingThread(
+                    api_token=api_token,
+                    mode=mode,
+                    project=project,
+                    errors_queue=self._errors_queue,
+                    status_tracking_queue=self._status_tracking_queue,
+                    last_ack_seq=last_ack_seq,
+                    last_ack_timestamp=last_ack_timestamp,
+                )
+            )
+        else:
+            # workers.append(...)
+            ...
+
+        self._workers = tuple(workers)
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+        return cast(tuple[Resource, ...], self._workers)
 
     def interrupt(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.interrupt()
 
     def wake_up(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.wake_up()
 
     def start(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.start()
 
     def join(self, timeout: Optional[int] = None) -> None:
         # The same timeout will be applied to each thread separately
-        for thread in self.threads:
+        for thread in self._workers:
             thread.join(timeout=timeout)
 
 
