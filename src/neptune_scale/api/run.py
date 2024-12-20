@@ -15,7 +15,6 @@ from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import (
     Any,
-    Literal,
     Optional,
     Union,
 )
@@ -55,6 +54,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.types import RunMode
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -85,7 +85,7 @@ class Run(WithResources, AbstractContextManager):
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
-        mode: Literal["async", "disabled"] = "async",
+        mode: RunMode = "async",
         experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
         fork_run_id: Optional[str] = None,

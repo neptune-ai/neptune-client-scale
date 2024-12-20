@@ -24,10 +24,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import (
-    Any,
-    Literal,
-)
+from typing import Any
 
 import httpx
 from httpx import Timeout
@@ -71,6 +68,7 @@ from neptune_scale.exceptions import (
     NeptuneUnableToAuthenticateError,
 )
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
+from neptune_scale.types import RunMode
 from neptune_scale.util.abstract import Resource
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.util.logger import get_logger
@@ -182,7 +180,7 @@ class MockedApiClient(ApiClient):
         return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
 
 
-def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
+def backend_factory(api_token: str, mode: RunMode) -> ApiClient:
     if mode == "disabled":
         return MockedApiClient()
     return HostedApiClient(api_token=api_token)

@@ -14,7 +14,6 @@ from multiprocessing import (
 from types import FrameType
 from typing import (
     Generic,
-    Literal,
     NamedTuple,
     Optional,
     Protocol,
@@ -81,6 +80,7 @@ from neptune_scale.sync.queue_element import (
     SingleOperation,
 )
 from neptune_scale.sync.util import safe_signal_name
+from neptune_scale.types import RunMode
 from neptune_scale.util import (
     Daemon,
     ProcessLink,
@@ -171,7 +171,7 @@ class SyncProcess(Process):
         api_token: str,
         project: str,
         family: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -189,7 +189,7 @@ class SyncProcess(Process):
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
         self._max_queue_size: int = max_queue_size
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
 
         # This flag is set when a termination signal is caught
         self._stop_event = multiprocessing.Event()
@@ -246,7 +246,7 @@ class SyncProcessWorker(WithResources):
         api_token: str,
         project: str,
         family: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         errors_queue: ErrorsQueue,
         input_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
@@ -378,7 +378,7 @@ class SenderThread(Daemon, WithResources):
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         last_queued_seq: SharedInt,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
@@ -388,7 +388,7 @@ class SenderThread(Daemon, WithResources):
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._last_queued_seq: SharedInt = last_queued_seq
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
 
         self._backend: Optional[ApiClient] = None
         self._latest_unprocessed: Optional[BatchedOperations] = None
@@ -474,7 +474,7 @@ class StatusTrackingThread(Daemon, WithResources):
     def __init__(
         self,
         api_token: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         project: str,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
@@ -484,7 +484,7 @@ class StatusTrackingThread(Daemon, WithResources):
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
         self._project: str = project
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
