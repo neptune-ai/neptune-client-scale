@@ -491,6 +491,9 @@ class StatusTrackingThread(Daemon, WithResources):
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
+        if mode == "offline":
+            raise ValueError("Status tracking should not be used in offline mode. This is a bug in Neptune.")
+
         self._api_token: str = api_token
         self._mode: RunMode = mode
         self._project: str = project
