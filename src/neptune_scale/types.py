@@ -3,4 +3,4 @@ from typing import (
     TypeAlias,
 )
 
-RunMode: TypeAlias = Literal["async", "disabled"]
+RunMode: TypeAlias = Literal["async", "offline", "disabled"]
