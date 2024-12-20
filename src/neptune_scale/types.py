@@ -15,7 +15,9 @@
 
 from typing import (
     Callable,
+    Literal,
     Optional,
 )
 
+RunMode = Literal["async", "disabled"]
 RunCallback = Callable[[BaseException, Optional[float]], None]
