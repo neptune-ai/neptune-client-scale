@@ -169,8 +169,9 @@ class SyncProcess(Process):
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
         process_link: ProcessLink,
-        api_token: str,
+        api_token: Optional[str],
         project: str,
+        run_id: str,
         family: str,
         mode: RunMode,
         last_queued_seq: SharedInt,
@@ -183,8 +184,9 @@ class SyncProcess(Process):
         self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
-        self._api_token: str = api_token
+        self._api_token: Optional[str] = api_token
         self._project: str = project
+        self._run_id: str = run_id
         self._family: str = family
         self._last_queued_seq: SharedInt = last_queued_seq
         self._last_ack_seq: SharedInt = last_ack_seq
@@ -211,6 +213,7 @@ class SyncProcess(Process):
 
         worker = SyncProcessWorker(
             project=self._project,
+            run_id=self._run_id,
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
@@ -244,8 +247,9 @@ class SyncProcessWorker(WithResources):
     def __init__(
         self,
         *,
-        api_token: str,
+        api_token: Optional[str],
         project: str,
+        run_id: str,
         family: str,
         mode: RunMode,
         errors_queue: ErrorsQueue,
@@ -267,6 +271,8 @@ class SyncProcessWorker(WithResources):
         ]
 
         if mode != "offline":
+            assert api_token is not None
+
             workers.append(
                 SenderThread(
                     api_token=api_token,
