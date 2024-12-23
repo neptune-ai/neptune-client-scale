@@ -57,6 +57,7 @@ from neptune_scale.net.serialization import (
     datetime_to_proto,
     make_step,
 )
+from neptune_scale.sync import offline
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
@@ -220,6 +221,9 @@ class Run(WithResources, AbstractContextManager):
         self._project: str = input_project
         self._run_id: str = run_id
 
+        if mode == "offline":
+            offline.init_offline_mode(project=self._project, run_id=self._run_id, resume=resume)
+
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(
             lock=self._lock,
@@ -276,7 +280,7 @@ class Run(WithResources, AbstractContextManager):
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        if not resume:
+        if not resume and mode != "offline":
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
                 experiment_name=experiment_name,

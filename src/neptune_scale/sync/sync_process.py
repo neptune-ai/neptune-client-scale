@@ -79,6 +79,7 @@ from neptune_scale.net.api_client import (
 from neptune_scale.net.util import raise_for_http_status
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.offline import OfflineModeWriterThread
 from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
@@ -93,6 +94,7 @@ from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
+from neptune_scale.sync.storage.operations import OperationWriter
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.types import RunMode
 from neptune_scale.util import (
@@ -277,11 +279,8 @@ class SyncProcessWorker(WithResources):
         self._internal_operations_queue: AggregatingQueue = AggregatingQueue(max_queue_size=max_queue_size)
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
 
-        workers: list[Daemon] = [
-            OperationDispatcherThread(
-                input_queue=input_queue, consumers=[self._internal_operations_queue], errors_queue=self._errors_queue
-            )
-        ]
+        workers: list[Daemon] = []
+        consumers: list[SupportsPutNowait] = [self._internal_operations_queue]
 
         if mode != "offline":
             assert api_token is not None
@@ -310,8 +309,18 @@ class SyncProcessWorker(WithResources):
                 )
             )
         else:
-            # workers.append(...)
-            ...
+            store = OperationWriter(project, run_id)
+            q: queue.Queue[SingleOperation] = queue.Queue()
+            consumers.append(q)
+            workers.append(
+                OfflineModeWriterThread(
+                    store=store, input_queue=q, last_ack_seq=last_ack_seq, errors_queue=self._errors_queue
+                )
+            )
+
+        workers.append(
+            OperationDispatcherThread(input_queue=input_queue, consumers=consumers, errors_queue=self._errors_queue)
+        )
 
         self._workers = tuple(workers)
 
