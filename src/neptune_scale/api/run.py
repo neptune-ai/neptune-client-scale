@@ -192,10 +192,8 @@ class Run(WithResources, AbstractContextManager):
         input_project: str = project
 
         api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        if api_token is None:
+        if api_token is None and mode != "offline":
             raise NeptuneApiTokenNotProvided()
-        assert api_token is not None  # mypy
-        input_api_token: str = api_token
 
         verify_non_empty("run_id", run_id)
         if experiment_name is not None:
@@ -248,11 +246,12 @@ class Run(WithResources, AbstractContextManager):
         self._process_link = ProcessLink()
         self._sync_process = SyncProcess(
             project=self._project,
+            run_id=self._run_id,
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             process_link=self._process_link,
-            api_token=input_api_token,
+            api_token=api_token,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
