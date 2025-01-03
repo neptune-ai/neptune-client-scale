@@ -44,6 +44,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_scale.storage.operations import OperationWriter
+from neptune_scale.sync.offline import OfflineModeWriterThread
 
 from neptune_scale.exceptions import (
     NeptuneAttributePathEmpty,
@@ -52,7 +54,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributePathNonWritable,
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
-    NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -79,22 +80,14 @@ from neptune_scale.net.api_client import (
 from neptune_scale.net.util import raise_for_http_status
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
-from neptune_scale.sync.offline import OfflineModeWriterThread
-from neptune_scale.sync.parameters import (
-    INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
-    MAX_QUEUE_SIZE,
-    MAX_REQUEST_RETRY_SECONDS,
-    MAX_REQUESTS_STATUS_BATCH_SIZE,
-    SHUTDOWN_TIMEOUT,
-    STATUS_TRACKING_THREAD_SLEEP_TIME,
-    SYNC_PROCESS_SLEEP_TIME,
-    SYNC_THREAD_SLEEP_TIME,
-)
+from neptune_scale.sync.parameters import (INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME, MAX_QUEUE_SIZE,
+                                           MAX_REQUESTS_STATUS_BATCH_SIZE, MAX_REQUEST_RETRY_SECONDS, SHUTDOWN_TIMEOUT,
+                                           STATUS_TRACKING_THREAD_SLEEP_TIME, SYNC_PROCESS_SLEEP_TIME,
+                                           SYNC_THREAD_SLEEP_TIME)
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.sync.storage.operations import OperationWriter
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.types import RunMode
 from neptune_scale.util import (

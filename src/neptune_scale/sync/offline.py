@@ -1,12 +1,12 @@
 import queue
 
-from neptune_scale.sync.errors_tracking import ErrorsQueue
-from neptune_scale.sync.queue_element import SingleOperation
-from neptune_scale.sync.storage.operations import (
+from neptune_scale.storage.operations import (
     OperationWriter,
     database_path_for_run,
-    init_storage,
+    init_write_storage,
 )
+from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.queue_element import SingleOperation
 from neptune_scale.util import (
     Daemon,
     SharedInt,
@@ -27,7 +27,7 @@ def init_offline_mode(project: str, run_id: str, resume: bool) -> None:
     if (path := database_path_for_run(project, run_id, base_dir)).exists():
         raise ValueError(f"Data for offline Run `{run_id}` already exists at `{path}`")
 
-    init_storage(project, run_id, base_dir)
+    init_write_storage(project, run_id, base_dir)
 
 
 class OfflineModeWriterThread(Daemon, Resource):
@@ -50,7 +50,12 @@ class OfflineModeWriterThread(Daemon, Resource):
         self._errors_queue = errors_queue
 
     def run(self) -> None:
-        self._store.init_db()
+        try:
+            self._store.init_db()
+        except Exception as e:
+            self._errors_queue.put(e)
+            self.interrupt()
+            return
 
         super().run()
 

@@ -147,6 +147,11 @@ class AttributeStore:
 
             self._metric_state[metric] = (step, value)
 
+    def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> None:
+        self._operations_queue.enqueue_raw(
+            serialized_operation=serialized_op, size=len(serialized_op), batch_key=key, is_batchable=is_batchable
+        )
+
 
 class Attribute:
     """Objects of this class are returned on dict-like access to Run. Attributes have a path and
