@@ -64,6 +64,7 @@ from neptune_scale.net.api_client import (
     backend_factory,
     with_api_errors_handling,
 )
+from neptune_scale.storage.operations import OperationWriter
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.offline import OfflineModeWriterThread
@@ -81,7 +82,6 @@ from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.sync.storage.operations import OperationWriter
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.types import RunMode
 from neptune_scale.util import (
