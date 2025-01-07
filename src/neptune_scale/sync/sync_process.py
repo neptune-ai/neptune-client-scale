@@ -54,6 +54,7 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
+    NeptuneTooManyRequestsResponseError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
@@ -410,6 +411,10 @@ class SenderThread(Daemon, WithResources):
             logger.error("HTTP response error: %s", response.status_code)
             if response.status_code // 100 == 5:
                 raise NeptuneInternalServerError()
+            elif response.status_code == 429:
+                raise NeptuneTooManyRequestsResponseError()
+            elif response.status_code == 408:
+                raise NeptuneConnectionLostError()
             else:
                 raise NeptuneUnexpectedResponseError()
 
@@ -503,6 +508,10 @@ class StatusTrackingThread(Daemon, WithResources):
             logger.error("HTTP response error: %s", response.status_code)
             if response.status_code // 100 == 5:
                 raise NeptuneInternalServerError()
+            elif response.status_code == 429:
+                raise NeptuneTooManyRequestsResponseError()
+            elif response.status_code == 408:
+                raise NeptuneConnectionLostError()
             else:
                 raise NeptuneUnexpectedResponseError()
 

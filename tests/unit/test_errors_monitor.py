@@ -11,6 +11,7 @@ from neptune_scale.exceptions import (
     NeptuneScaleError,
     NeptuneScaleWarning,
     NeptuneSeriesPointDuplicate,
+    NeptuneTooManyRequestsResponseError,
 )
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
@@ -29,6 +30,7 @@ from neptune_scale.sync.errors_tracking import (
         (NeptuneOperationsQueueMaxSizeExceeded("error5"), "on_queue_full_callback"),
         (NeptuneConnectionLostError("error6"), "on_network_error_callback"),
         (NeptuneAsyncLagThresholdExceeded("error7"), "on_async_lag_callback"),
+        (NeptuneTooManyRequestsResponseError(), "on_warning_callback"),
     ],
 )
 def test_errors_monitor_callbacks_called(error, callback_name):
