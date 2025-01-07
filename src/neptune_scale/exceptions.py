@@ -195,7 +195,7 @@ This is a temporary problem. If the problem persists, please contact us at suppo
 class NeptuneTooManyRequestsResponseError(NeptuneRetryableError):
     message = """
 {h1}
-NeptuneTooManyRequestsResponseError: The Neptune server returned 429 response.
+NeptuneTooManyRequestsResponseError: The Neptune server reported receiving too many requests.
 {end}
 This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
 """
