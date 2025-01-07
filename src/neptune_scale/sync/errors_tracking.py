@@ -12,6 +12,7 @@ from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
     NeptuneConnectionLostError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptuneRetryableError,
     NeptuneScaleError,
     NeptuneScaleWarning,
     NeptuneTooManyRequestsResponseError,
@@ -111,6 +112,8 @@ class ErrorsMonitor(Daemon, Resource):
                 elif isinstance(error, NeptuneScaleWarning):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneTooManyRequestsResponseError):
+                    self._on_warning_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneRetryableError):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneScaleError):
                     self._on_error_callback(error, last_raised_at)
