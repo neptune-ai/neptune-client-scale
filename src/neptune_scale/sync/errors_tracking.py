@@ -12,8 +12,10 @@ from neptune_scale.exceptions import (
     NeptuneAsyncLagThresholdExceeded,
     NeptuneConnectionLostError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptuneRetryableError,
     NeptuneScaleError,
     NeptuneScaleWarning,
+    NeptuneTooManyRequestsResponseError,
     NeptuneUnexpectedError,
 )
 from neptune_scale.sync.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
@@ -108,6 +110,10 @@ class ErrorsMonitor(Daemon, Resource):
                 elif isinstance(error, NeptuneAsyncLagThresholdExceeded):
                     self._on_async_lag_callback()
                 elif isinstance(error, NeptuneScaleWarning):
+                    self._on_warning_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneTooManyRequestsResponseError):
+                    self._on_warning_callback(error, last_raised_at)
+                elif isinstance(error, NeptuneRetryableError):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneScaleError):
                     self._on_error_callback(error, last_raised_at)
