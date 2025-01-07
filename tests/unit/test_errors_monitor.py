@@ -23,7 +23,7 @@ from neptune_scale.sync.errors_tracking import (
     ["error", "callback_name"],
     [
         (NeptuneScaleError("error1"), "on_error_callback"),
-        (NeptuneRetryableError("error1"), "on_error_callback"),
+        (NeptuneRetryableError("error1"), "on_warning_callback"),
         (ValueError("error2"), "on_error_callback"),
         (NeptuneScaleWarning("error3"), "on_warning_callback"),
         (NeptuneSeriesPointDuplicate("error4"), "on_warning_callback"),
