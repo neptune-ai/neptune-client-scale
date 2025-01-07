@@ -177,3 +177,43 @@ def test_sender_thread_fails_on_regular_error():
 
     # then should throw NeptuneInternalServerError
     errors_queue.put.assert_called_once()
+
+
+def test_sender_thread_processes_element_on_429_and_408_http_statuses():
+    # given
+    operations_queue = Mock()
+    status_tracking_queue = Mock()
+    errors_queue = Mock()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="",
+        family="",
+        operations_queue=operations_queue,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+        mode="disabled",
+    )
+    sender_thread._backend = backend
+
+    # and
+    update = UpdateRunSnapshot(assign={"key": Value(string="a")})
+    element = single_operation(update, sequence_id=2)
+    operations_queue.get.side_effect = [
+        BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
+        queue.Empty,
+    ]
+
+    # and
+    backend.submit.side_effect = [
+        response([], status_code=408),
+        response([], status_code=429),
+        response(["a"], status_code=200),
+    ]
+
+    # when
+    sender_thread.work()
+
+    # then
+    assert backend.submit.call_count == 3
