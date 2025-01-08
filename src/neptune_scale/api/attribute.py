@@ -104,7 +104,7 @@ class AttributeStore:
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
-    ) -> None:
+    ) -> int:
         if timestamp is None:
             timestamp = datetime.now()
         elif isinstance(timestamp, (float, int)):
@@ -129,8 +129,11 @@ class AttributeStore:
         with self._lock:
             self._verify_and_update_metrics_state(step, metrics)
 
+            last_seq = -1
             for operation, metadata_size in chunks:
-                self._operations_queue.enqueue(operation=operation, size=metadata_size)
+                last_seq = self._operations_queue.enqueue(operation=operation, size=metadata_size)
+
+        return last_seq
 
     def _verify_and_update_metrics_state(self, step: Optional[float], metrics: Optional[dict[str, float]]) -> None:
         """Check if step in provided metrics is increasing, raise `NeptuneSeriesStepNonIncreasing` if not."""
@@ -147,8 +150,10 @@ class AttributeStore:
 
             self._metric_state[metric] = (step, value)
 
-    def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> None:
-        self._operations_queue.enqueue_raw(
+        return last_seq
+
+    def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> int:
+        return self._operations_queue.enqueue_raw(
             serialized_operation=serialized_op, size=len(serialized_op), batch_key=key, is_batchable=is_batchable
         )
 
