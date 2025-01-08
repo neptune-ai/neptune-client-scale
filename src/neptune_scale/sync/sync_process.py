@@ -17,11 +17,11 @@ from typing import (
     NamedTuple,
     Optional,
     TypeVar,
+    cast,
 )
 
 import backoff
 from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     SubmitResponse,
@@ -29,30 +29,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
-    NeptuneAttributePathEmpty,
-    NeptuneAttributePathExceedsSizeLimit,
-    NeptuneAttributePathInvalid,
-    NeptuneAttributePathNonWritable,
-    NeptuneAttributeTypeMismatch,
-    NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
-    NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
-    NeptuneProjectInvalidName,
-    NeptuneProjectNotFound,
     NeptuneRetryableError,
-    NeptuneRunConflicting,
-    NeptuneRunDuplicate,
-    NeptuneRunForkParentNotFound,
-    NeptuneRunInvalidCreationParameters,
-    NeptuneRunNotFound,
-    NeptuneSeriesPointDuplicate,
-    NeptuneSeriesStepNonIncreasing,
-    NeptuneSeriesStepNotAfterForkPoint,
-    NeptuneSeriesTimestampDecreasing,
-    NeptuneStringSetExceedsSizeLimit,
-    NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
     NeptuneTooManyRequestsResponseError,
     NeptuneUnauthorizedError,
@@ -64,8 +44,11 @@ from neptune_scale.net.api_client import (
     backend_factory,
     with_api_errors_handling,
 )
+from neptune_scale.net.ingest_code import code_to_exception
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.files.queue import FileUploadQueue
+from neptune_scale.sync.files.worker import FileUploadWorkerThread
 from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
@@ -97,41 +80,11 @@ T = TypeVar("T")
 
 logger = get_logger()
 
-CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
-    IngestCode.OK: None,
-    IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
-    IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
-    IngestCode.RUN_NOT_FOUND: NeptuneRunNotFound,
-    IngestCode.RUN_DUPLICATE: NeptuneRunDuplicate,
-    IngestCode.RUN_CONFLICTING: NeptuneRunConflicting,
-    IngestCode.RUN_FORK_PARENT_NOT_FOUND: NeptuneRunForkParentNotFound,
-    IngestCode.RUN_INVALID_CREATION_PARAMETERS: NeptuneRunInvalidCreationParameters,
-    IngestCode.FIELD_PATH_EXCEEDS_SIZE_LIMIT: NeptuneAttributePathExceedsSizeLimit,
-    IngestCode.FIELD_PATH_EMPTY: NeptuneAttributePathEmpty,
-    IngestCode.FIELD_PATH_INVALID: NeptuneAttributePathInvalid,
-    IngestCode.FIELD_PATH_NON_WRITABLE: NeptuneAttributePathNonWritable,
-    IngestCode.FIELD_TYPE_UNSUPPORTED: NeptuneAttributeTypeUnsupported,
-    IngestCode.FIELD_TYPE_CONFLICTING: NeptuneAttributeTypeMismatch,
-    IngestCode.SERIES_POINT_DUPLICATE: NeptuneSeriesPointDuplicate,
-    IngestCode.SERIES_STEP_NON_INCREASING: NeptuneSeriesStepNonIncreasing,
-    IngestCode.SERIES_STEP_NOT_AFTER_FORK_POINT: NeptuneSeriesStepNotAfterForkPoint,
-    IngestCode.SERIES_TIMESTAMP_DECREASING: NeptuneSeriesTimestampDecreasing,
-    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: NeptuneFloatValueNanInfUnsupported,
-    IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
-    IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
-}
-
 
 class StatusTrackingElement(NamedTuple):
     sequence_id: int
     timestamp: float
     request_id: str
-
-
-def code_to_exception(code: IngestCode.ValueType) -> Optional[type[Exception]]:
-    if code in CODE_TO_ERROR:
-        return CODE_TO_ERROR[code]
-    return NeptuneUnexpectedError
 
 
 class PeekableQueue(Generic[T]):
@@ -168,8 +121,10 @@ class SyncProcess(Process):
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
         process_link: ProcessLink,
+        file_upload_queue: FileUploadQueue,
         api_token: str,
         project: str,
+        run_id: str,
         family: str,
         mode: Literal["async", "disabled"],
         last_queued_seq: SharedInt,
@@ -179,11 +134,13 @@ class SyncProcess(Process):
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self._external_operations_queue: Queue[SingleOperation] = operations_queue
+        self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
+        self._file_upload_queue: FileUploadQueue = file_upload_queue
         self._api_token: str = api_token
         self._project: str = project
+        self._run_id: str = run_id
         self._family: str = family
         self._last_queued_seq: SharedInt = last_queued_seq
         self._last_ack_seq: SharedInt = last_ack_seq
@@ -210,10 +167,12 @@ class SyncProcess(Process):
 
         worker = SyncProcessWorker(
             project=self._project,
+            run_id=self._run_id,
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
-            external_operations_queue=self._external_operations_queue,
+            input_queue=self._input_operations_queue,
+            file_upload_queue=self._file_upload_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             max_queue_size=self._max_queue_size,
@@ -241,10 +200,12 @@ class SyncProcessWorker(WithResources):
         *,
         api_token: str,
         project: str,
+        run_id: str,
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
-        external_operations_queue: multiprocessing.Queue[SingleOperation],
+        input_queue: multiprocessing.Queue[SingleOperation],
+        file_upload_queue: FileUploadQueue,
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -263,9 +224,9 @@ class SyncProcessWorker(WithResources):
             last_queued_seq=last_queued_seq,
             mode=mode,
         )
-        self._external_to_internal_thread = InternalQueueFeederThread(
-            external=external_operations_queue,
-            internal=self._internal_operations_queue,
+        self._operation_dispatcher_thread = OperationDispatcherThread(
+            input_queue=input_queue,
+            operations_queue=self._internal_operations_queue,
             errors_queue=self._errors_queue,
         )
         self._status_tracking_thread = StatusTrackingThread(
@@ -277,14 +238,28 @@ class SyncProcessWorker(WithResources):
             last_ack_seq=last_ack_seq,
             last_ack_timestamp=last_ack_timestamp,
         )
+        self._file_upload_thread = FileUploadWorkerThread(
+            project=project,
+            run_id=run_id,
+            api_token=api_token,
+            family=family,
+            mode=mode,
+            input_queue=file_upload_queue,
+            errors_queue=self._errors_queue,
+        )
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._operation_dispatcher_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return cast(tuple[Resource], self.threads)
 
     def interrupt(self) -> None:
         for thread in self.threads:
@@ -304,17 +279,17 @@ class SyncProcessWorker(WithResources):
             thread.join(timeout=timeout)
 
 
-class InternalQueueFeederThread(Daemon, Resource):
+class OperationDispatcherThread(Daemon, Resource):
     def __init__(
         self,
-        external: multiprocessing.Queue[SingleOperation],
-        internal: AggregatingQueue,
+        input_queue: multiprocessing.Queue[SingleOperation],
+        operations_queue: AggregatingQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
-        super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+        super().__init__(name="OperationDispatcherThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
-        self._external: multiprocessing.Queue[SingleOperation] = external
-        self._internal: AggregatingQueue = internal
+        self._input_queue: multiprocessing.Queue[SingleOperation] = input_queue
+        self._operations_queue: AggregatingQueue = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
 
         self._latest_unprocessed: Optional[SingleOperation] = None
@@ -324,7 +299,7 @@ class InternalQueueFeederThread(Daemon, Resource):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._external.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+            self._latest_unprocessed = self._input_queue.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
             return self._latest_unprocessed
         except queue.Empty:
             return None
@@ -340,11 +315,15 @@ class InternalQueueFeederThread(Daemon, Resource):
                     continue
 
                 try:
-                    self._internal.put_nowait(operation)
+                    self._operations_queue.put_nowait(operation)
                     self.commit()
                 except queue.Full:
-                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
-                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
+                    logger.debug(
+                        "Operations queue is full (%d elements), waiting for free space", self._operations_queue.maxsize
+                    )
+                    self._errors_queue.put(
+                        NeptuneOperationsQueueMaxSizeExceeded(max_size=self._operations_queue.maxsize)
+                    )
                     # Sleep before retry
                     break
         except Exception as e:
@@ -536,8 +515,9 @@ class StatusTrackingThread(Daemon, WithResources):
                         break
 
                     for code_status in request_status.code_by_count:
-                        if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
-                            self._errors_queue.put(error())
+                        if code_status.code != Code.OK:
+                            exc_class = code_to_exception(code_status.detail)
+                            self._errors_queue.put(exc_class())
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp

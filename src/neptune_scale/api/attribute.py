@@ -6,6 +6,7 @@ from collections.abc import (
     Iterator,
 )
 from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -14,23 +15,49 @@ from typing import (
     cast,
 )
 
+from neptune_scale.api.validation import (
+    verify_max_length,
+    verify_non_empty,
+    verify_type,
+)
+from neptune_scale.sync.files.queue import FileUploadQueue
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.parameters import MAX_FILE_UPLOAD_BUFFER_SIZE
+from neptune_scale.sync.util import arg_to_datetime
 
 __all__ = ("Attribute", "AttributeStore")
 
 
-def warn_unsupported_params(fn: Callable) -> Callable:
-    # Perform some simple heuristics to detect if a method is called with parameters
-    # that are not supported by Scale
+def _extract_named_kwargs(fn: Callable) -> set[str]:
+    """Return a set of named arguments of a function, that are not positional-only."""
+    import inspect
+
+    sig = inspect.signature(fn)
+    kwargs = {
+        p.name
+        for p in sig.parameters.values()
+        if p.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
+    }
+
+    return kwargs
+
+
+def warn_unsupported_kwargs(fn: Callable) -> Callable:
+    """Perform some simple heuristics to detect if a method is called with parameters that are not supported by
+    Scale. Some methods in the old client accepted a **kwargs argument, which we currently do not inspect in any
+    way, so it's important to notify the user that an argument is being ignored.
+    """
+
     warn = functools.partial(warnings.warn, stacklevel=3)
+    known_kwargs = _extract_named_kwargs(fn)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):  # type: ignore
         if kwargs.get("wait") is not None:
             warn("The `wait` parameter is not yet implemented and will be ignored.")
 
-        extra_kwargs = set(kwargs.keys()) - {"wait", "step", "timestamp", "steps", "timestamps"}
+        extra_kwargs = set(kwargs.keys()) - known_kwargs
         if extra_kwargs:
             warn(
                 f"`{fn.__name__}()` was called with additional keyword argument(s): `{', '.join(extra_kwargs)}`. "
@@ -54,11 +81,14 @@ class AttributeStore:
     end consuming the queue (which would be SyncProcess).
     """
 
-    def __init__(self, project: str, run_id: str, operations_queue: OperationsQueue) -> None:
+    def __init__(
+        self, project: str, run_id: str, operations_queue: OperationsQueue, file_upload_queue: FileUploadQueue
+    ) -> None:
         self._project = project
         self._run_id = run_id
         self._operations_queue = operations_queue
         self._attributes: dict[str, Attribute] = {}
+        self._file_upload_queue = file_upload_queue
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -92,7 +122,7 @@ class AttributeStore:
             project=self._project,
             run_id=self._run_id,
             step=step,
-            timestamp=timestamp,
+            timestamp=arg_to_datetime(timestamp),
             configs=configs,
             metrics=metrics,
             add_tags=tags_add,
@@ -101,6 +131,24 @@ class AttributeStore:
 
         for operation, metadata_size in splitter:
             self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
+
+    def upload_file(
+        self,
+        attribute_path: str,
+        local_path: Optional[Path],
+        data: Optional[Union[str, bytes]],
+        target_basename: Optional[str],
+        target_path: Optional[str],
+        timestamp: Optional[Union[float, datetime]] = None,
+    ) -> None:
+        self._file_upload_queue.submit(
+            timestamp=arg_to_datetime(timestamp),
+            attribute_path=attribute_path,
+            local_path=local_path,
+            data=data.encode("utf-8") if isinstance(data, str) else data,
+            target_basename=target_basename,
+            target_path=target_path,
+        )
 
 
 class Attribute:
@@ -118,12 +166,12 @@ class Attribute:
         self._path = path
 
     # TODO: typehint value properly
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def assign(self, value: Any, *, wait: bool = False) -> None:
         data = accumulate_dict_values(value, self._path)
         self._store.log(configs=data)
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def append(
         self,
         value: Union[dict[str, Any], float],
@@ -136,7 +184,7 @@ class Attribute:
         data = accumulate_dict_values(value, self._path)
         self._store.log(metrics=data, step=step, timestamp=timestamp)
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     # TODO: this should be Iterable in Run as well
     # def add(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
     def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
@@ -144,7 +192,7 @@ class Attribute:
             values = (values,)
         self._store.log(tags_add={self._path: values})
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     # TODO: this should be Iterable in Run as well
     # def remove(self, values: Union[str, Iterable[str]], *, wait: bool = False) -> None:
     def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
@@ -152,7 +200,7 @@ class Attribute:
             values = (values,)
         self._store.log(tags_remove={self._path: values})
 
-    @warn_unsupported_params
+    @warn_unsupported_kwargs
     def extend(
         self,
         values: Collection[Union[float, int]],
@@ -172,6 +220,54 @@ class Attribute:
 
         for value, step, timestamp in zip(values, steps, timestamps):
             self.append(value, step=step, timestamp=timestamp, wait=wait)
+
+    @warn_unsupported_kwargs
+    def upload(
+        self,
+        path: Optional[str] = None,
+        *,
+        data: Optional[Union[str, bytes]] = None,
+        mime_type: Optional[str] = None,
+        target_basename: Optional[str] = None,
+        target_path: Optional[str] = None,
+        timestamp: Optional[Union[float, datetime]] = None,
+        wait: bool = False,
+    ) -> None:
+        verify_type("path", path, (str, type(None)))
+
+        if data is not None:
+            verify_type("data", data, (str, bytes, type(None)))
+            verify_max_length("data", data, MAX_FILE_UPLOAD_BUFFER_SIZE)
+
+        verify_type("mime_type", mime_type, (str, type(None)))
+        verify_type("target_basename", target_basename, (str, type(None)))
+        verify_type("target_path", target_path, (str, type(None)))
+
+        if path is None and data is None:
+            raise ValueError("Either `path` or `data` must be provided")
+
+        if path is not None and data is not None:
+            raise ValueError("Only one of `path` or `data` can be provided")
+
+        local_path: Optional[Path] = None
+        if path:
+            verify_non_empty("path", path)
+
+            local_path = Path(path)
+            if not local_path.exists():
+                raise FileNotFoundError(f"Path `{path}` does not exist")
+
+            if not local_path.is_file():
+                raise ValueError(f"Path `{path}` is not a file")
+
+        self._store.upload_file(
+            attribute_path=self._path,
+            local_path=local_path,
+            data=data.encode("utf-8") if isinstance(data, str) else data,
+            target_basename=target_basename,
+            target_path=target_path,
+            timestamp=timestamp,
+        )
 
     # TODO: add value type validation to all the methods
     # TODO: change Run API to typehint timestamp as Union[datetime, float]
