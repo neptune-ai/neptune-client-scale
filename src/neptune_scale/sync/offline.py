@@ -1,4 +1,9 @@
 import queue
+from datetime import datetime
+from typing import (
+    Optional,
+    Union,
+)
 
 from neptune_scale.exceptions import NeptuneScaleError
 from neptune_scale.storage.operations import (
@@ -16,7 +21,16 @@ from neptune_scale.util import (
 from neptune_scale.util.abstract import Resource
 
 
-def init_offline_mode(project: str, run_id: str, resume: bool) -> None:
+def init_offline_mode(
+    project: str,
+    run_id: str,
+    resume: bool,
+    *,
+    creation_time: Optional[datetime] = None,
+    experiment_name: Optional[str] = None,
+    fork_run_id: Optional[str] = None,
+    fork_step: Optional[Union[int, float]] = None,
+) -> None:
     """Called by the main process, Run.__init__()"""
 
     base_dir = envs.get_str(envs.BASE_STORAGE_DIR)
@@ -33,7 +47,15 @@ def init_offline_mode(project: str, run_id: str, resume: bool) -> None:
                 reason=f"Unable to resume offline Run `{run_id}`: local data does not exist at `{path}`."
             )
 
-    init_write_storage(project, run_id, base_dir)
+    init_write_storage(
+        project,
+        run_id,
+        base_dir,
+        creation_time=creation_time,
+        experiment_name=experiment_name,
+        fork_run_id=fork_run_id,
+        fork_step=fork_step,
+    )
 
 
 class OfflineModeWriterThread(Daemon, Resource):
