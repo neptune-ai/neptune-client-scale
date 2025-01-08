@@ -1,8 +1,13 @@
 import os
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import (
+    datetime,
+    timezone,
+)
 from pathlib import Path
 from typing import (
     Optional,
@@ -103,9 +108,24 @@ class OperationReader:
             raise FileNotFoundError(f"Database not found at {db_path}")
 
         self._db = sqlite3.connect(db_path, autocommit=False, check_same_thread=False)
-        self.project, self.run_id, self.last_synced_op = self._db.execute(
-            "SELECT project, run_id, last_synced_operation FROM meta"
+        row = self._db.execute(
+            """
+            SELECT
+                project, run_id, last_synced_operation, experiment_name, fork_run_id, fork_step, creation_time
+            FROM meta"""
         ).fetchone()
+
+        (
+            self.project,
+            self.run_id,
+            self.last_synced_op,
+            self.experiment_name,
+            self.fork_run_id,
+            self.fork_step,
+            creation_time,
+        ) = row
+
+        self.creation_time = datetime.fromtimestamp(creation_time, tz=timezone.utc)
 
         if self.project is None or self.run_id is None or self.last_synced_op is None:
             raise ValueError(f"Invalid Neptune database file at {db_path}")
@@ -158,7 +178,16 @@ def database_path_for_run(project: str, run_id: str, base_dir: Optional[str] = N
     return _data_dir(base_dir) / _safe_filename(project, run_id)
 
 
-def init_write_storage(project: str, run_id: str, base_dir: Optional[str] = None) -> Path:
+def init_write_storage(
+    project: str,
+    run_id: str,
+    base_dir: Optional[str] = None,
+    *,
+    creation_time: Optional[datetime] = None,
+    experiment_name: Optional[str] = None,
+    fork_run_id: Optional[str] = None,
+    fork_step: Optional[Union[int, float]] = None,
+) -> Path:
     """Initializes the local SQLite storage for writing operations. This function is called by Run in the
     main process, to give user a chance to react early to any storage-related errors.
 
@@ -176,7 +205,16 @@ def init_write_storage(project: str, run_id: str, base_dir: Optional[str] = None
 
     with sqlite3.connect(path) as conn:
         _init_db_schema(conn)
-        _init_run(conn, project, run_id, resume=False)
+        _init_run(
+            conn,
+            project,
+            run_id,
+            resume=False,
+            creation_time=creation_time,
+            experiment_name=experiment_name,
+            fork_run_id=fork_run_id,
+            fork_step=fork_step,
+        )
 
     return path
 
@@ -199,6 +237,10 @@ def _init_db_schema(db: sqlite3.Connection) -> None:
                 version TEXT NOT NULL,
                 project TEXT NOT NULL,
                 run_id TEXT NOT NULL,
+                creation_time INTEGER NOT NULL,
+                experiment_name TEXT,
+                fork_run_id TEXT,
+                fork_step REAL,
                 last_synced_operation INTEGER,
                 PRIMARY KEY (run_id),
                 FOREIGN KEY (run_id, last_synced_operation) REFERENCES operations(run_id, seq)
@@ -206,20 +248,37 @@ def _init_db_schema(db: sqlite3.Connection) -> None:
         )
 
 
-def _init_run(db: sqlite3.Connection, project: str, run_id: str, *, resume: bool) -> None:
+def _init_run(
+    db: sqlite3.Connection,
+    project: str,
+    run_id: str,
+    *,
+    resume: bool,
+    creation_time: Optional[datetime] = None,
+    experiment_name: Optional[str] = None,
+    fork_run_id: Optional[str] = None,
+    fork_step: Optional[Union[int, float]] = None,
+) -> None:
     with db:
         row = db.execute("SELECT 1 FROM meta WHERE run_id = ?;", (run_id,)).fetchone()
         if row is None:
             if resume:
                 raise ValueError(f"Run {run_id} does not exist in local storage")
         else:
+            if not resume:
+                raise ValueError(f"Run {run_id} already exists in local storage")
             return
 
+        # Note that storing `fork_step` as REAL is safe in terms of precision errors, so we don't need to
+        # do anything like converting to TEXT back and forth.
         db.execute(
             """
-            INSERT INTO meta (version, project, run_id, last_synced_operation)
-            VALUES (?, ?, ?, ?);""",
-            ("1", project, run_id, 0),
+            INSERT INTO meta (
+                version, project, run_id, creation_time, experiment_name,
+                fork_run_id, fork_step, last_synced_operation
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);""",
+            ("1", project, run_id, creation_time or int(time.time()), experiment_name, fork_run_id, fork_step, 0),
         )
 
 

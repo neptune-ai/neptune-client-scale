@@ -222,7 +222,15 @@ class Run(WithResources, AbstractContextManager):
         self._run_id: str = run_id
 
         if mode == "offline":
-            offline.init_offline_mode(project=self._project, run_id=self._run_id, resume=resume)
+            offline.init_offline_mode(
+                project=self._project,
+                run_id=self._run_id,
+                resume=resume,
+                creation_time=creation_time,
+                experiment_name=experiment_name,
+                fork_run_id=fork_run_id,
+                fork_step=fork_step,
+            )
 
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(

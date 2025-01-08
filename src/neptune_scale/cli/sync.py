@@ -104,7 +104,9 @@ def _db_updater_thread(project: str, run_id: str, db_path: Path, state: SyncStat
 
             if db_seq != last_db_seq:
                 while state.run._last_processed_operation_seq < run_seq:
-                    state.run.wait_for_processing(timeout=0.01)
+                    # TODO: allow waiting up until a specifc run seq number, instead of waiting for all of them to be processed
+                    # or just fix how `timeout` argument works.
+                    state.run.wait_for_processing(timeout=1)
 
                 # TODO: this is a hack to work around a race condition, where errors being pulled from the error
                 # queue are reported after we've already marked the operations as synced. Without this, we would
@@ -142,9 +144,13 @@ def _error_callback(state: SyncState, exc: BaseException, ts: Optional[float]) -
     state.set_error(exc)
 
 
-def _warning_callback(exc: BaseException, ts: Optional[float]) -> None:
+def _warning_callback(state: SyncState, exc: BaseException, ts: Optional[float]) -> None:
     if isinstance(exc, NeptuneRunDuplicate):
+        # Silence the warning
         return
+    # elif isinstance(exc, NeptuneRunForkParentNotFound):
+    #     state.set_error(exc)
+    #     return
 
     logger.warning(f"{exc}")
 
@@ -195,13 +201,22 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
     resume = reader.last_synced_op > 0
     if resume:
         logger.info("Resuming sync")
+        extra_kwargs = {}
+    else:
+        extra_kwargs = dict(
+            experiment_name=reader.experiment_name,
+            fork_run_id=reader.fork_run_id,
+            fork_step=reader.fork_step,
+            creation_time=reader.creation_time,
+        )
 
     state = SyncState(allow_non_increasing_step)
     run = Run(
         run_id=reader.run_id,
         project=reader.project,
         resume=resume,
-        on_warning_callback=_warning_callback,
+        **extra_kwargs,
+        on_warning_callback=functools.partial(_warning_callback, state),
         on_error_callback=functools.partial(_error_callback, state),
     )
     state.run = run
