@@ -1,4 +1,5 @@
 import functools
+import sys
 import time
 from dataclasses import (
     dataclass,
@@ -236,7 +237,7 @@ def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_incr
     neptune_dir = ctx.obj["neptune_dir"]
     if not is_neptune_dir(neptune_dir):
         logger.error(f"No Neptune data found at {neptune_dir}")
-        return
+        sys.exit(1)
 
     t0 = time.monotonic()
     if filename:
@@ -246,7 +247,7 @@ def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_incr
 
     if not files:
         logger.info("No data to sync")
-        return
+        sys.exit(1)
 
     logger.info("Starting `neptune sync`")
 
@@ -265,5 +266,6 @@ def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_incr
     duration = format_duration(int(time.monotonic() - t0))
     if error:
         logger.error(f"Sync finished in {duration} with errors")
+        sys.exit(-1)
     else:
         logger.info(f"Sync finished in {duration} successfully")

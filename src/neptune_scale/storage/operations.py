@@ -241,6 +241,7 @@ class LocalRun:
     project: str
     run_id: str
     operation_count: int
+    last_synced_operation: int
     path: Path
 
 
@@ -254,11 +255,13 @@ def list_runs(path: Path) -> Iterator[LocalRun]:
             # to open the DB in read-only mode.
             uri = f"file:{quote(str(filename))}?mode=ro"
             with sqlite3.connect(uri, uri=True) as db:
-                project, run_id = db.execute("SELECT project, run_id FROM meta").fetchone()
+                project, run_id, last_synced_op = db.execute(
+                    "SELECT project, run_id, last_synced_operation FROM meta"
+                ).fetchone()
                 if project is None or run_id is None:
                     raise ValueError(f"Invalid Neptune database at {filename}")
 
                 count = db.execute("SELECT count(*) FROM operations WHERE run_id = ?", (run_id,)).fetchone()[0]
-                yield LocalRun(project, run_id, count, filename)
+                yield LocalRun(project, run_id, count, last_synced_op, filename)
         except Exception as e:
             logger.warning(f"Skipping {filename}: {e}")
