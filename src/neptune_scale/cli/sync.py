@@ -22,6 +22,7 @@ import click
 from neptune_scale import Run
 from neptune_scale.cli.util import (
     format_duration,
+    format_local_run,
     is_neptune_dir,
 )
 from neptune_scale.exceptions import (
@@ -194,12 +195,15 @@ def _do_sync(reader: OperationReader, state: SyncState) -> None:
 
 
 def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
+    logger.info(f"Processing file {path}")
     reader = OperationReader(path)
+    local_run = reader.run
+
+    logger.info(format_local_run(local_run))
+
     if reader.pending_operations_count == 0:
         logger.info("No operations to sync")
         return
-
-    local_run = reader.run
 
     resume = local_run.last_synced_operation > 0
     if resume:
@@ -224,7 +228,7 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
     )
     state.run = run
 
-    updater = Thread(target=_db_updater_thread, args=(local_run.project, local_run.run_id, path, state))
+    updater = Thread(target=_db_updater_thread, args=(local_run.project, local_run.run_id, local_run.path, state))
     updater.start()
 
     try:
@@ -272,10 +276,10 @@ def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_incr
     error = False
 
     for path in files:
-        logger.info(f"Processing file {path}")
         try:
             sync_file(path, allow_non_increasing_step=allow_non_increasing_step)
             if not keep:
+                logger.info(f"Removing file {path}")
                 path.unlink()
         except Exception as e:
             logger.error(e)
