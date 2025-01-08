@@ -15,6 +15,7 @@ neptune-api = "^0.9.0"
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
 backoff = "^2.0.0"
+click = "^8.1.0"
 
 [tool.poetry]
 name = "neptune-scale"
@@ -51,6 +52,9 @@ keywords = [
 [tool.poetry.urls]
 "Tracker" = "https://github.com/neptune-ai/neptune-client-scale/issues"
 "Documentation" = "https://docs.neptune.ai/"
+
+[tool.poetry.scripts]
+neptune = "neptune_scale.cli.main:main"
 
 [tool.black]
 line-length = 120
