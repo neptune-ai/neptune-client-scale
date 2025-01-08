@@ -396,12 +396,14 @@ class Run(WithResources, AbstractContextManager):
             ```
         """
 
-        if not self._is_closing:
-            logger.info("Terminating Run.")
+        with self._lock:
+            if not self._is_closing:
+                logger.info("Terminating Run.")
 
-        if self._exit_func is not None:
-            atexit.unregister(self._exit_func)
-            self._exit_func = None
+            if self._exit_func is not None:
+                atexit.unregister(self._exit_func)
+                self._exit_func = None
+
         self._close(wait=False)
 
     def close(self) -> None:
