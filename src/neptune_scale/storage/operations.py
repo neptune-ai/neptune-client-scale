@@ -11,8 +11,12 @@ from typing import (
 )
 from urllib.parse import quote
 
+from neptune_scale.util import get_logger
+
 DATA_DIR = ".neptune"
 BATCH_SIZE = 10000
+
+logger = get_logger()
 
 
 class OperationWriter:
@@ -27,18 +31,6 @@ class OperationWriter:
         self._last_synced_op = 0
         self._resume = resume
 
-    def write(self, serialized_op: bytes) -> None:
-        """Store the given operation. It's assumed that `serialized_op` is a valid serialized RunOperation."""
-
-        assert self._db  # mypy
-        with self._lock, self._db:
-            self._db.execute(
-                """
-                INSERT INTO operations (run_id, operation)
-                VALUES (?, ?);""",
-                (self._run_id, serialized_op),
-            )
-
     def init_db(self) -> None:
         with self._lock:
             if self._resume and not os.path.isfile(self._db_path):
@@ -51,6 +43,18 @@ class OperationWriter:
                 self._last_synced_op = self._db.execute(
                     "SELECT last_synced_operation FROM meta WHERE run_id = ?", (self._run_id,)
                 ).fetchone()[0]
+
+    def write(self, serialized_op: bytes) -> None:
+        """Store the given operation. It's assumed that `serialized_op` is a valid serialized RunOperation."""
+
+        assert self._db  # mypy
+        with self._lock, self._db:
+            self._db.execute(
+                """
+                INSERT INTO operations (run_id, operation)
+                VALUES (?, ?);""",
+                (self._run_id, serialized_op),
+            )
 
     def mark_synced(self, sequence_id: int) -> None:
         """Mark an operation identified by the given `sequence_id` as synced with the Neptune backend."""
@@ -104,7 +108,7 @@ class OperationReader:
         ).fetchone()
 
         if self.project is None or self.run_id is None or self.last_synced_op is None:
-            raise ValueError("Invalid Neptune database file")
+            raise ValueError(f"Invalid Neptune database file at {db_path}")
 
         self.all_operations_count: int = self._db.execute(
             "SELECT count(*) from operations where run_id = ?", (self.run_id,)
@@ -230,3 +234,31 @@ def _data_dir(base_dir: Optional[str] = None) -> Path:
         base_dir = ""
 
     return Path(base_dir) / DATA_DIR
+
+
+@dataclass
+class LocalRun:
+    project: str
+    run_id: str
+    operation_count: int
+    path: Path
+
+
+def list_runs(path: Path) -> Iterator[LocalRun]:
+    if not path.is_dir():
+        raise ValueError(f"{path} is not a readable directory")
+
+    for filename in path.glob("*.db"):
+        try:
+            # Need to quote the filename, as we're passing it as URI. This is the only way
+            # to open the DB in read-only mode.
+            uri = f"file:{quote(str(filename))}?mode=ro"
+            with sqlite3.connect(uri, uri=True) as db:
+                project, run_id = db.execute("SELECT project, run_id FROM meta").fetchone()
+                if project is None or run_id is None:
+                    raise ValueError(f"Invalid Neptune database at {filename}")
+
+                count = db.execute("SELECT count(*) FROM operations WHERE run_id = ?", (run_id,)).fetchone()[0]
+                yield LocalRun(project, run_id, count, filename)
+        except Exception as e:
+            logger.warning(f"Skipping {filename}: {e}")

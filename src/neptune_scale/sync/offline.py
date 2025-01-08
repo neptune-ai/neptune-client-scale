@@ -1,5 +1,6 @@
 import queue
 
+from neptune_scale.exceptions import NeptuneScaleError
 from neptune_scale.storage.operations import (
     OperationWriter,
     database_path_for_run,
@@ -19,13 +20,18 @@ def init_offline_mode(project: str, run_id: str, resume: bool) -> None:
     """Called by the main process, Run.__init__()"""
 
     base_dir = envs.get_str(envs.BASE_STORAGE_DIR)
+    path = database_path_for_run(project, run_id, base_dir)
 
-    # TODO: support resume=True in Run.__init__()
-    # if not resume and (path := database_path_for_run(project, run_id, base_dir)).exists():
-    #    raise ValueError(f"Offline Run {run_id} already exists at {path}. Use `resume=True` to continue.")
-
-    if (path := database_path_for_run(project, run_id, base_dir)).exists():
-        raise ValueError(f"Data for offline Run `{run_id}` already exists at `{path}`")
+    if not resume:
+        if path.exists():
+            raise NeptuneScaleError(
+                reason=f"Offline Run `{run_id}` already exists at `{path}`. Use `resume=True` to continue."
+            )
+    else:
+        if not path.exists():
+            raise NeptuneScaleError(
+                reason=f"Unable to resume offline Run `{run_id}`: local data does not exist at `{path}`."
+            )
 
     init_write_storage(project, run_id, base_dir)
 
