@@ -656,6 +656,11 @@ class Run(WithResources, AbstractContextManager):
             verbose=verbose,
         )
 
+    @property
+    def _last_processed_operation_seq(self) -> int:
+        with self._lock:
+            return self._last_ack_seq.value
+
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
     current_time = time.time()

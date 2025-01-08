@@ -82,7 +82,7 @@ class AttributeStore:
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
-    ) -> None:
+    ) -> int:
         if timestamp is None:
             timestamp = datetime.now()
         elif isinstance(timestamp, float):
@@ -99,11 +99,14 @@ class AttributeStore:
             remove_tags=tags_remove,
         )
 
+        last_seq = -1
         for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
+            last_seq = self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
 
-    def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> None:
-        self._operations_queue.enqueue_raw(
+        return last_seq
+
+    def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> int:
+        return self._operations_queue.enqueue_raw(
             serialized_operation=serialized_op, size=len(serialized_op), batch_key=key, is_batchable=is_batchable
         )
 
