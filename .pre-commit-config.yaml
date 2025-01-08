@@ -18,12 +18,12 @@ repos:
       - id: black
         args: [ --config, pyproject.toml ]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.2
+    rev: v0.8.6
     hooks:
       - id: ruff
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v1.14.1
     hooks:
       - id: mypy
         args: [ --config-file, pyproject.toml ]
@@ -32,5 +32,6 @@ repos:
           - neptune-api==0.7.0b
           - more-itertools
           - backoff
+          - types-click
 default_language_version:
   python: python3
