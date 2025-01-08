@@ -12,6 +12,7 @@ from threading import (
     Thread,
 )
 from typing import (
+    Any,
     Optional,
     cast,
 )
@@ -198,30 +199,32 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
         logger.info("No operations to sync")
         return
 
-    resume = reader.last_synced_op > 0
+    local_run = reader.run
+
+    resume = local_run.last_synced_operation > 0
     if resume:
         logger.info("Resuming sync")
-        extra_kwargs = {}
+        extra_kwargs: dict[str, Any] = {}
     else:
         extra_kwargs = dict(
-            experiment_name=reader.experiment_name,
-            fork_run_id=reader.fork_run_id,
-            fork_step=reader.fork_step,
-            creation_time=reader.creation_time,
+            experiment_name=local_run.experiment_name,
+            fork_run_id=local_run.fork_run_id,
+            fork_step=local_run.fork_step,
+            creation_time=local_run.creation_time,
         )
 
     state = SyncState(allow_non_increasing_step)
     run = Run(
-        run_id=reader.run_id,
-        project=reader.project,
+        run_id=local_run.run_id,
+        project=local_run.project,
         resume=resume,
-        **extra_kwargs,
         on_warning_callback=functools.partial(_warning_callback, state),
         on_error_callback=functools.partial(_error_callback, state),
+        **extra_kwargs,
     )
     state.run = run
 
-    updater = Thread(target=_db_updater_thread, args=(reader.project, reader.run_id, path, state))
+    updater = Thread(target=_db_updater_thread, args=(local_run.project, local_run.run_id, path, state))
     updater.start()
 
     try:

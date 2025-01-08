@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import (
     Optional,
     Union,
-    cast,
 )
 from urllib.parse import quote
 
@@ -22,6 +21,58 @@ DATA_DIR = ".neptune"
 BATCH_SIZE = 10000
 
 logger = get_logger()
+
+
+@dataclass
+class LocalRun:
+    project: str
+    run_id: str
+    operation_count: int
+    creation_time: datetime
+    last_synced_operation: int
+    path: Path
+
+    experiment_name: Optional[str]
+    fork_run_id: Optional[str]
+    fork_step: Optional[Union[int, float]]
+
+    @classmethod
+    def from_db(cls, conn: sqlite3.Connection, path: Path) -> "LocalRun":
+        row = conn.execute(
+            """
+            SELECT
+                project, run_id, creation_time, last_synced_operation, experiment_name, fork_run_id, fork_step
+            FROM meta"""
+        ).fetchone()
+
+        project, run_id, creation_time, last_synced_op, experiment_name, fork_run_id, fork_step = row
+
+        # Basic sanity check
+        if project is None or run_id is None:
+            raise ValueError(f"Invalid Neptune database at {path}")
+
+        creation_time = datetime.fromtimestamp(creation_time, tz=timezone.utc)
+
+        count = conn.execute("SELECT count(*) FROM operations WHERE run_id = ?", (run_id,)).fetchone()[0]
+
+        return cls(
+            project,
+            run_id,
+            count,
+            creation_time,
+            last_synced_op,
+            path,
+            experiment_name,
+            fork_run_id,
+            fork_step,
+        )
+
+
+@dataclass
+class Operation:
+    run_id: str
+    seq: int
+    data: bytes
 
 
 class OperationWriter:
@@ -87,13 +138,6 @@ class OperationWriter:
                 self._db = None
 
 
-@dataclass
-class Operation:
-    run_id: str
-    seq: int
-    data: bytes
-
-
 class OperationReader:
     """
     This class is NOT thread-safe, however note that accessing a SQLite3 database from multiple threads is safe,
@@ -108,39 +152,15 @@ class OperationReader:
             raise FileNotFoundError(f"Database not found at {db_path}")
 
         self._db = sqlite3.connect(db_path, autocommit=False, check_same_thread=False)
-        row = self._db.execute(
-            """
-            SELECT
-                project, run_id, last_synced_operation, experiment_name, fork_run_id, fork_step, creation_time
-            FROM meta"""
-        ).fetchone()
-
-        (
-            self.project,
-            self.run_id,
-            self.last_synced_op,
-            self.experiment_name,
-            self.fork_run_id,
-            self.fork_step,
-            creation_time,
-        ) = row
-
-        self.creation_time = datetime.fromtimestamp(creation_time, tz=timezone.utc)
-
-        if self.project is None or self.run_id is None or self.last_synced_op is None:
-            raise ValueError(f"Invalid Neptune database file at {db_path}")
-
-        self.all_operations_count: int = self._db.execute(
-            "SELECT count(*) from operations where run_id = ?", (self.run_id,)
-        ).fetchone()[0]
+        self.run = LocalRun.from_db(self._db, Path(db_path))
 
     @property
     def pending_operations_count(self) -> int:
-        return self.all_operations_count - cast(int, self.last_synced_op)
+        return self.run.operation_count - self.run.last_synced_operation
 
     @property
     def completed_operations_count(self) -> int:
-        return cast(int, self.last_synced_op)
+        return self.run.last_synced_operation
 
     @property
     def all_operations(self) -> Iterator[Operation]:
@@ -148,7 +168,7 @@ class OperationReader:
 
     @property
     def pending_operations(self) -> Iterator[Operation]:
-        yield from self._operations(self.last_synced_op + 1)
+        yield from self._operations(self.run.last_synced_operation + 1)
 
     def _operations(self, start_seq: int) -> Iterator[Operation]:
         offset = 0
@@ -162,7 +182,7 @@ class OperationReader:
                     AND seq >= ?
                     ORDER BY seq ASC
                     LIMIT ? OFFSET ?""",
-                    (self.run_id, start_seq, BATCH_SIZE, offset),
+                    (self.run.run_id, start_seq, BATCH_SIZE, offset),
                 ).fetchall()
 
             for run_id, seq, op in batch:
@@ -295,15 +315,6 @@ def _data_dir(base_dir: Optional[str] = None) -> Path:
     return Path(base_dir) / DATA_DIR
 
 
-@dataclass
-class LocalRun:
-    project: str
-    run_id: str
-    operation_count: int
-    last_synced_operation: int
-    path: Path
-
-
 def list_runs(path: Path) -> Iterator[LocalRun]:
     if not path.is_dir():
         raise ValueError(f"{path} is not a readable directory")
@@ -314,13 +325,7 @@ def list_runs(path: Path) -> Iterator[LocalRun]:
             # to open the DB in read-only mode.
             uri = f"file:{quote(str(filename))}?mode=ro"
             with sqlite3.connect(uri, uri=True) as db:
-                project, run_id, last_synced_op = db.execute(
-                    "SELECT project, run_id, last_synced_operation FROM meta"
-                ).fetchone()
-                if project is None or run_id is None:
-                    raise ValueError(f"Invalid Neptune database at {filename}")
+                yield LocalRun.from_db(db, filename)
 
-                count = db.execute("SELECT count(*) FROM operations WHERE run_id = ?", (run_id,)).fetchone()[0]
-                yield LocalRun(project, run_id, count, last_synced_op, filename)
         except Exception as e:
             logger.warning(f"Skipping {filename}: {e}")
