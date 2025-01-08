@@ -3,7 +3,10 @@ from typing import Optional
 
 import click
 
-from neptune_scale.cli import sync
+from neptune_scale.cli import (
+    misc,
+    sync,
+)
 from neptune_scale.storage.operations import DATA_DIR
 
 
@@ -25,4 +28,4 @@ def main(ctx: click.Context, path: Optional[str]) -> None:
 
 
 main.add_command(sync.sync)
-# main.add_command(misc.status)
+main.add_command(misc.status)
