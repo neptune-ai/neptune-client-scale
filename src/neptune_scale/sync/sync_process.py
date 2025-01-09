@@ -55,6 +55,7 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneFloatValueNanInfUnsupported,
+    NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
