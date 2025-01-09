@@ -94,7 +94,7 @@ class OperationWriter:
 
             # We use `check_same_thread=False` because closing the DB could be called from different
             # threads. It's fine, as long as we do our own synchronization.
-            self._db = sqlite3.connect(self._db_path, autocommit=False, check_same_thread=False)
+            self._db = sqlite3.connect(self._db_path, check_same_thread=False)
             if self._resume:
                 self._last_synced_op = self._db.execute(
                     "SELECT last_synced_operation FROM meta WHERE run_id = ?", (self._run_id,)
@@ -151,7 +151,7 @@ class OperationReader:
         if not os.path.isfile(db_path):
             raise FileNotFoundError(f"Database not found at {db_path}")
 
-        self._db = sqlite3.connect(db_path, autocommit=False, check_same_thread=False)
+        self._db = sqlite3.connect(db_path, check_same_thread=False)
         self.run = LocalRun.from_db(self._db, Path(db_path))
 
     @property
