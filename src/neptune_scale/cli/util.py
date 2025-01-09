@@ -36,7 +36,11 @@ def format_duration(seconds: int) -> str:
 
 
 def format_local_run(run: LocalRun, verbose: bool = False) -> str:
-    pct = round(run.last_synced_operation / run.operation_count * 100, 2)
+    if run.operation_count:
+        pct = round(run.last_synced_operation / run.operation_count * 100, 2)
+    else:
+        pct = 100.0
+
     parts = [f"Run ID: {run.run_id}, {run.last_synced_operation}/{run.operation_count} ({pct}%) synced"]
 
     if run.experiment_name:
