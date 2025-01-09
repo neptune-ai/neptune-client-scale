@@ -192,7 +192,7 @@ def _do_sync(reader: OperationReader, state: SyncState) -> None:
         state.cond.notify_all()
 
 
-def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
+def sync_file(path: Path, api_token: Optional[str], allow_non_increasing_step: bool) -> None:
     logger.info(f"Processing file {path}")
     reader = OperationReader(path)
     local_run = reader.run
@@ -219,6 +219,7 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
     run = Run(
         run_id=local_run.run_id,
         project=local_run.project,
+        api_token=api_token,
         resume=resume,
         on_warning_callback=functools.partial(_warning_callback, state),
         on_error_callback=functools.partial(_error_callback, state),
@@ -249,6 +250,7 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
 @click.command()
 @click.argument("filename", required=False, type=click.Path(exists=True, dir_okay=False))
 @click.option("-k", "--keep", is_flag=True, help="Do not delete the local copy of the data after sync")
+@click.option("--api-token", type=str, help="Your Neptune API token")
 @click.option(
     "--allow-non-increasing-step",
     is_flag=True,
@@ -280,7 +282,7 @@ def sync(
 
     for path in files:
         try:
-            sync_file(path, allow_non_increasing_step=allow_non_increasing_step)
+            sync_file(path, api_token=api_token, allow_non_increasing_step=allow_non_increasing_step)
             if not keep:
                 logger.info(f"Removing file {path}")
                 path.unlink()
