@@ -36,6 +36,7 @@ __all__ = (
     "NeptuneAsyncLagThresholdExceeded",
     "NeptuneProjectNotProvided",
     "NeptuneApiTokenNotProvided",
+    "NeptuneTooManyRequestsResponseError",
 )
 
 from typing import Any
@@ -193,6 +194,15 @@ class NeptuneUnexpectedResponseError(NeptuneRetryableError):
     message = """
 {h1}
 NeptuneUnexpectedResponseError: The Neptune server returned an unexpected response.
+{end}
+This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
+"""
+
+
+class NeptuneTooManyRequestsResponseError(NeptuneRetryableError):
+    message = """
+{h1}
+NeptuneTooManyRequestsResponseError: The Neptune server reported receiving too many requests.
 {end}
 This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
 """

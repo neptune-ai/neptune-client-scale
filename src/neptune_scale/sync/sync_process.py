@@ -39,7 +39,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
-    NeptuneInternalServerError,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
@@ -55,15 +54,14 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
-    NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
-    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
     backend_factory,
     with_api_errors_handling,
 )
+from neptune_scale.net.util import raise_for_http_status
 from neptune_scale.storage.operations import OperationWriter
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
@@ -443,15 +441,9 @@ class SenderThread(Daemon, WithResources):
 
         response = self._backend.submit(operation=operation, family=self._family)
 
-        if response.status_code == 403:
-            raise NeptuneUnauthorizedError()
-
-        if response.status_code != 200:
-            logger.error("HTTP response error: %s", response.status_code)
-            if response.status_code // 100 == 5:
-                raise NeptuneInternalServerError()
-            else:
-                raise NeptuneUnexpectedResponseError()
+        status_code = response.status_code
+        if status_code != 200:
+            raise_for_http_status(status_code)
 
         return response.parsed
 
@@ -539,15 +531,10 @@ class StatusTrackingThread(Daemon, WithResources):
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
 
-        if response.status_code == 403:
-            raise NeptuneUnauthorizedError()
+        status_code = response.status_code
 
-        if response.status_code != 200:
-            logger.error("HTTP response error: %s", response.status_code)
-            if response.status_code // 100 == 5:
-                raise NeptuneInternalServerError()
-            else:
-                raise NeptuneUnexpectedResponseError()
+        if status_code != 200:
+            raise_for_http_status(status_code)
 
         return response.parsed
 
