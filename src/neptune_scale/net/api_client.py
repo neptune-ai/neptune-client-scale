@@ -75,8 +75,10 @@ from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneInvalidCredentialsError,
+    NeptuneScaleError,
     NeptuneUnableToAuthenticateError,
 )
+from neptune_scale.net.util import raise_for_http_status
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
 from neptune_scale.util.abstract import Resource
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
@@ -106,11 +108,22 @@ def get_config_and_token_urls(
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=REQUEST_TIMEOUT),
     ) as client:
-        config = get_client_config.sync(client=client)
-        if config is None or isinstance(config, Error):
-            raise RuntimeError(f"Failed to get client config: {config}")
-        response = client.get_httpx_client().get(config.security.open_id_discovery)
-        token_urls = TokenRefreshingURLs.from_dict(response.json())
+        response = get_client_config.sync_detailed(client=client)
+        if response.parsed is None:
+            raise NeptuneScaleError(message="Failed to initialize API client: invalid response from server")
+
+        if response.status_code != 200 or not isinstance(response.parsed, ClientConfig):
+            error = response.parsed if isinstance(response.parsed, Error) else None
+
+            if response.status_code == 400 and error and isinstance(error.message, str):
+                if "X-Neptune-Api-Token" in error.message:
+                    raise NeptuneInvalidCredentialsError()
+
+            raise_for_http_status(response.status_code)
+
+        config = cast(ClientConfig, response.parsed)
+        token_data = client.get_httpx_client().get(config.security.open_id_discovery)
+        token_urls = TokenRefreshingURLs.from_dict(token_data.json())
     return config, token_urls
 
 
@@ -144,7 +157,10 @@ class ApiClient(Resource, abc.ABC):
 
 class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
-        credentials = Credentials.from_api_key(api_key=api_token)
+        try:
+            credentials = Credentials.from_api_key(api_key=api_token)
+        except InvalidApiTokenException:
+            raise NeptuneInvalidCredentialsError()
 
         verify_ssl: bool = os.environ.get(ALLOW_SELF_SIGNED_CERTIFICATE, "False").lower() in ("false", "0")
 
