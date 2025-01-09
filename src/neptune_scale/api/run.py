@@ -22,6 +22,7 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
+import math
 import os
 import threading
 import time
@@ -580,11 +581,13 @@ class Run(WithResources, AbstractContextManager):
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
-        if timeout is None and verbose:
-            logger.warning("No timeout specified. Waiting indefinitely")
+        if timeout is None:
+            if verbose:
+                logger.warning("No timeout specified. Waiting indefinitely")
+            timeout = math.inf
 
-        begin_time = time.time()
-        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        begin_time = time.monotonic()
+        wait_time = min(sleep_time, timeout)
         last_print_timestamp: Optional[float] = None
 
         while True:
@@ -628,17 +631,18 @@ class Run(WithResources, AbstractContextManager):
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
-                else:
-                    # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
-                        break
+                # Reaching the last queued sequence ID means that all operations were submitted
+                elif value >= last_queued_sequence_id:
+                    if verbose:
+                        logger.info(f"All operations were {phrase}")
+                    break
+
+                if time.monotonic() - begin_time > timeout:
+                    break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
                 return
-
-        if verbose:
-            logger.info(f"All operations were {phrase}")
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
