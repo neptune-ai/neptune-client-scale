@@ -308,7 +308,16 @@ def _init_run(
                 fork_run_id, fork_step, last_synced_operation
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?);""",
-            ("1", project, run_id, creation_time or int(time.time()), experiment_name, fork_run_id, fork_step, 0),
+            (
+                "1",
+                project,
+                run_id,
+                creation_time.timestamp() if creation_time else int(time.time()),
+                experiment_name,
+                fork_run_id,
+                fork_step,
+                0,
+            ),
         )
 
 
