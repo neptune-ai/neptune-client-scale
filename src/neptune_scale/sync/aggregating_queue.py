@@ -8,7 +8,10 @@ from queue import (
     Queue,
 )
 from threading import RLock
-from typing import Optional
+from typing import (
+    Any,
+    Optional,
+)
 
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
@@ -71,7 +74,7 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.monotonic()
 
-        batch_operations: dict[Optional[float], RunOperation] = {}
+        batch_operations: dict[Any, RunOperation] = {}
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -157,7 +160,7 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: dict[Optional[float], RunOperation]) -> RunOperation:
+def create_run_batch(operations: dict[Any, RunOperation]) -> RunOperation:
     if len(operations) == 1:
         return next(iter(operations.values()))
 
