@@ -33,7 +33,6 @@ def test__simple():
         operation=operation.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
-        batch_key=None,
     )
 
     # and
@@ -61,7 +60,6 @@ def test__max_size_exceeded():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -69,7 +67,6 @@ def test__max_size_exceeded():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=None,
     )
 
     # and
@@ -109,7 +106,6 @@ def test__batch_size_limit():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -117,7 +113,6 @@ def test__batch_size_limit():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        batch_key=None,
     )
 
     # and
@@ -149,7 +144,6 @@ def test__batching():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -157,7 +151,6 @@ def test__batching():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        batch_key=None,
     )
 
     # and
@@ -180,7 +173,8 @@ def test__batching():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert all(k in batch.update.assign for k in ["aa0", "aa1", "bb0", "bb1"])
+    assert all(k in batch.update_batch.snapshots[0].assign for k in ["aa0", "aa1"])
+    assert all(k in batch.update_batch.snapshots[1].assign for k in ["bb0", "bb1"])
 
 
 @freeze_time("2024-09-01")
@@ -198,7 +192,6 @@ def test__queue_element_size_limit_with_different_steps():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        batch_key=(1.0, timestamp1),
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -206,7 +199,6 @@ def test__queue_element_size_limit_with_different_steps():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        batch_key=(2.0, timestamp2),
     )
 
     # and
@@ -238,7 +230,6 @@ def test__not_merge_two_run_creation():
         operation=operation1.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -246,7 +237,6 @@ def test__not_merge_two_run_creation():
         operation=operation2.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        batch_key=None,
     )
 
     # and
@@ -304,7 +294,6 @@ def test__not_merge_run_creation_with_metadata_update():
         operation=operation1.SerializeToString(),
         is_batchable=False,
         metadata_size=0,
-        batch_key=None,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -312,7 +301,6 @@ def test__not_merge_run_creation_with_metadata_update():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
-        batch_key=None,
     )
 
     # and
@@ -354,7 +342,7 @@ def test__not_merge_run_creation_with_metadata_update():
 
 
 @freeze_time("2024-09-01")
-def test__merge_same_key():
+def test__batch_same_key():
     # given
     update1 = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={f"aa{i}": Value(int64=(i * 97)) for i in range(2)})
     update2 = UpdateRunSnapshot(step=Step(whole=1, micro=0), assign={f"bb{i}": Value(int64=(i * 25)) for i in range(2)})
@@ -365,14 +353,12 @@ def test__merge_same_key():
 
     # and
     timestamp0 = time.process_time()
-    batch_key = (1.0, timestamp0)
     element1 = SingleOperation(
         sequence_id=1,
         timestamp=timestamp0,
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=update1.ByteSize(),
-        batch_key=batch_key,
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -380,7 +366,6 @@ def test__merge_same_key():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=update2.ByteSize(),
-        batch_key=batch_key,
     )
 
     # and
@@ -403,8 +388,10 @@ def test__merge_same_key():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update.step == Step(whole=1, micro=0)
-    assert all(k in batch.update.assign for k in ["aa0", "aa1", "bb0", "bb1"])
+    assert batch.update_batch.snapshots[0].step == Step(whole=1, micro=0)
+    assert batch.update_batch.snapshots[1].step == Step(whole=1, micro=0)
+    assert all(k in batch.update_batch.snapshots[0].assign for k in ["aa0", "aa1"])
+    assert all(k in batch.update_batch.snapshots[1].assign for k in ["bb0", "bb1"])
 
 
 @freeze_time("2024-09-01")
@@ -426,7 +413,6 @@ def test__batch_two_different_steps():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=(1.0, timestamp1),
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -434,7 +420,6 @@ def test__batch_two_different_steps():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=(2.0, timestamp2),
     )
 
     # and
@@ -478,7 +463,6 @@ def test__batch_step_with_none():
         operation=operation1.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=(1.0, timestamp1),
     )
     element2 = SingleOperation(
         sequence_id=2,
@@ -486,7 +470,6 @@ def test__batch_step_with_none():
         operation=operation2.SerializeToString(),
         is_batchable=True,
         metadata_size=0,
-        batch_key=None,
     )
 
     # and
@@ -509,11 +492,11 @@ def test__batch_step_with_none():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update2, update1]  # None is always first
+    assert batch.update_batch.snapshots == [update1, update2]
 
 
 @freeze_time("2024-09-01")
-def test__merge_two_steps_two_metrics():
+def test__batch_two_steps_two_metrics():
     # given
     timestamp0 = int(time.process_time())
     update1a = UpdateRunSnapshot(
@@ -551,7 +534,6 @@ def test__merge_two_steps_two_metrics():
             operation=operation.SerializeToString(),
             is_batchable=True,
             metadata_size=0,
-            batch_key=(step, timestamp0 + sequence_id),
         )
         for sequence_id, step, operation in [
             (1, 1.0, operations[0]),
@@ -579,27 +561,6 @@ def test__merge_two_steps_two_metrics():
     batch = RunOperation()
     batch.ParseFromString(result.operation)
 
-    update1 = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0),
-        timestamp=Timestamp(seconds=timestamp0 + 1, nanos=0),
-        assign={"aa": Value(int64=10)},
-    )
-    update2 = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0),
-        timestamp=Timestamp(seconds=timestamp0 + 3, nanos=0),
-        assign={"bb": Value(int64=100)},
-    )
-    update3 = UpdateRunSnapshot(
-        step=Step(whole=2, micro=0),
-        timestamp=Timestamp(seconds=timestamp0 + 2, nanos=0),
-        assign={"aa": Value(int64=20)},
-    )
-    update4 = UpdateRunSnapshot(
-        step=Step(whole=2, micro=0),
-        timestamp=Timestamp(seconds=timestamp0 + 4, nanos=0),
-        assign={"bb": Value(int64=200)},
-    )
-
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update1, update2, update3, update4]
+    assert batch.update_batch.snapshots == [update1a, update2a, update1b, update2b]

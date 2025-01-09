@@ -100,7 +100,7 @@ class AttributeStore:
         )
 
         for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=(step, timestamp.timestamp()))
+            self._operations_queue.enqueue(operation=operation, size=metadata_size)
 
 
 class Attribute:
