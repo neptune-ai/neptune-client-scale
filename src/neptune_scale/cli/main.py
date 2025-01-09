@@ -29,3 +29,6 @@ def main(ctx: click.Context, path: Optional[str]) -> None:
 
 main.add_command(sync.sync)
 main.add_command(misc.status)
+
+if __name__ == "__main__":
+    main()
