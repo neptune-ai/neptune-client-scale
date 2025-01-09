@@ -106,15 +106,13 @@ def _db_updater_thread(project: str, run_id: str, db_path: Path, state: SyncStat
 
             if db_seq != last_db_seq:
                 while state.run._last_processed_operation_seq < run_seq:
-                    # TODO: allow waiting up until a specifc run seq number, instead of waiting for all of them to be processed
-                    # or just fix how `timeout` argument works.
-                    state.run.wait_for_processing(timeout=1)
+                    # TODO: allow waiting up until a specific run seq number, instead of waiting for all of them to
+                    #  be processed or just fix how `timeout` argument works.
+                    state.run.wait_for_processing(timeout=1, verbose=False)
 
-                # TODO: this is a hack to work around a race condition, where errors being pulled from the error
-                # queue are reported after we've already marked the operations as synced. Without this, we would
-                # mark them as synced even if they failed to process. This is temporary and needs to be solved
-                # in a more reliable way.
-                time.sleep(0.1)
+                    with state.cond:
+                        if state.error:
+                            break
 
                 with state.cond:
                     if state.error:
@@ -185,7 +183,7 @@ def _do_sync(reader: OperationReader, state: SyncState) -> None:
                 state.db_seq, state.run_seq = op.seq, run_seq
                 state.cond.notify_all()
 
-            state.raise_if_error()
+        state.raise_if_error()
 
     # Signal the remaining batch of operations submitted
     with state.cond:
@@ -233,13 +231,16 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
 
     try:
         _do_sync(reader, state)
+    except Exception as e:
+        state.set_error(e)
     finally:
         updater.join()
 
-    run.close()
-
     if state.error:
+        run.terminate()
         raise state.error
+    else:
+        run.close()
 
     if state.ignored_steps:
         logger.info(f"Ignored {state.ignored_steps} non-increasing steps")
@@ -255,7 +256,9 @@ def sync_file(path: Path, allow_non_increasing_step: bool) -> None:
     "are stuck on a metric being sent multiple times. ",
 )
 @click.pass_context
-def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_increasing_step: bool) -> None:
+def sync(
+    ctx: click.Context, filename: Optional[str], api_token: Optional[str], keep: bool, allow_non_increasing_step: bool
+) -> None:
     neptune_dir = ctx.obj["neptune_dir"]
     if not is_neptune_dir(neptune_dir):
         logger.error(f"No Neptune data found at {neptune_dir}")
@@ -282,7 +285,7 @@ def sync(ctx: click.Context, filename: Optional[str], keep: bool, allow_non_incr
                 logger.info(f"Removing file {path}")
                 path.unlink()
         except Exception as e:
-            logger.error(e)
+            logger.error("An error occurred during `neptune sync`: %s", e)
             error = True
 
     duration = format_duration(int(time.monotonic() - t0))
