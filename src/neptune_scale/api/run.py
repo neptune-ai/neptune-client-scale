@@ -34,6 +34,7 @@ from neptune_scale.api.validation import (
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneProjectNotProvided,
+    NeptuneScaleError,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -191,6 +192,8 @@ class Run(WithResources, AbstractContextManager):
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
         # new data should be logged.
         self._is_closing = False
+        # This is used to signal that the close/termination operation is completed and block user code until it is so
+        self._close_completed = threading.Event()
 
         self._project: str = input_project
         self._run_id: str = run_id
@@ -273,7 +276,6 @@ class Run(WithResources, AbstractContextManager):
         with self._lock:
             if not self._is_closing:
                 logger.error("Child process closed unexpectedly. Terminating.")
-                self._is_closing = True
                 self.terminate()
 
     @property
@@ -293,12 +295,19 @@ class Run(WithResources, AbstractContextManager):
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
-            if self._is_closing:
-                return
-
+            was_closing = self._is_closing
             self._is_closing = True
 
-            logger.debug(f"Run is closing, wait={wait}")
+        if was_closing:
+            logger.debug("Waiting for run to be closed from a different thread")
+            # TODO: we should probably have a reasonable timeout here, same one as a default one in
+            #  wait_for_processing(). Or just accept indefinite wait here in both cases.
+            # if not self._close_completed.wait(timeout=...):
+            if not self._close_completed.wait():
+                raise NeptuneScaleError(reason="Run close operation timed out")
+            return
+
+        logger.debug(f"Run is closing, wait={wait}")
 
         if self._sync_process.is_alive():
             if wait:
@@ -319,6 +328,8 @@ class Run(WithResources, AbstractContextManager):
         # result in a "cannot join current thread" exception.
         if threading.current_thread() != self._errors_monitor:
             self._errors_monitor.join()
+
+        self._close_completed.set()
 
         super().close()
 
