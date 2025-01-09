@@ -42,7 +42,6 @@ def single_operation(update: UpdateRunSnapshot, sequence_id):
         operation=operation.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
-        batch_key=None,
     )
 
 

@@ -5,7 +5,6 @@ __all__ = ("OperationsQueue",)
 import math
 import os
 import queue
-from collections.abc import Hashable
 from multiprocessing import Queue
 from time import monotonic
 from typing import (
@@ -87,7 +86,7 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None, key: Hashable = None) -> None:
+    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None) -> None:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
@@ -104,7 +103,6 @@ class OperationsQueue(Resource):
                     operation=serialized_operation,
                     metadata_size=size,
                     is_batchable=is_metadata_update,
-                    batch_key=key,
                 )
 
                 # Optimistically put the item without blocking. If the queue is full, we will retry
