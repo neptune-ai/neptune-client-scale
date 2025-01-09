@@ -101,16 +101,25 @@ class OperationWriter:
                 ).fetchone()[0]
 
     def write(self, serialized_op: bytes) -> None:
-        """Store the given operation. It's assumed that `serialized_op` is a valid serialized RunOperation."""
+        """Store the given operation. It's assumed that `serialized_op` is a valid serialized RunOperation.
+
+        The operation is NOT committed to the database immediately, to allow for batching. Use `commit()` to
+        do this explicitly. Calling close() commits all pending operations as well.
+        """
 
         assert self._db  # mypy
-        with self._lock, self._db:
+        with self._lock:
             self._db.execute(
                 """
                 INSERT INTO operations (run_id, operation)
                 VALUES (?, ?);""",
                 (self._run_id, serialized_op),
             )
+
+    def commit(self) -> None:
+        assert self._db  # mypy
+        with self._lock:
+            self._db.commit()
 
     def mark_synced(self, sequence_id: int) -> None:
         """Mark an operation identified by the given `sequence_id` as synced with the Neptune backend."""
@@ -134,6 +143,7 @@ class OperationWriter:
     def close(self) -> None:
         with self._lock:
             if self._db:
+                self._db.commit()
                 self._db.close()
                 self._db = None
 

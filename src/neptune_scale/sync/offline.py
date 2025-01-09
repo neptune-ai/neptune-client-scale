@@ -1,4 +1,5 @@
 import queue
+import time
 from datetime import datetime
 from typing import (
     Optional,
@@ -19,6 +20,9 @@ from neptune_scale.util import (
     envs,
 )
 from neptune_scale.util.abstract import Resource
+
+# How often we commit the queued inserts to the database
+COMMIT_INTERVAL = 1.0
 
 
 def init_offline_mode(
@@ -88,20 +92,33 @@ class OfflineModeWriterThread(Daemon, Resource):
         super().run()
 
     def work(self) -> None:
+        wait_remaining = COMMIT_INTERVAL
+        last_seen_seq = -1
+        t0 = time.monotonic()
+
         while self.is_running():
             try:
-                msg = self._input_queue.get(block=False)
-                self._store.write(msg.operation)
+                t0 = time.monotonic()
+                msg = self._input_queue.get(block=False, timeout=wait_remaining)
 
-                with self._last_ack_seq:
-                    self._last_ack_seq.value = msg.sequence_id
-                    self._last_ack_seq.notify_all()
+                last_seen_seq = msg.sequence_id
+                self._store.write(msg.operation)
             except queue.Empty:
-                continue
+                pass
             except Exception as e:
                 self._errors_queue.put(e)
                 self.interrupt()
                 break
+
+            wait_remaining -= time.monotonic() - t0
+            if wait_remaining <= 0:
+                self._store.commit()
+                wait_remaining = COMMIT_INTERVAL
+
+                if last_seen_seq != -1:
+                    with self._last_ack_seq:
+                        self._last_ack_seq.value = last_seen_seq
+                        self._last_ack_seq.notify_all()
 
         self.close()
 
