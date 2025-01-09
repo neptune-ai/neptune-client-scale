@@ -109,7 +109,10 @@ class ErrorsMonitor(Daemon, Resource):
     def get_next(self) -> Optional[BaseException]:
         try:
             return self._errors_queue.get(block=False)
-        except queue.Empty:
+        except (queue.Empty, ValueError):
+            # Catch ValueError which is raised when reading from an already closed queue.
+            # This happens sometimes on abnormal termination, so silence the error message.
+            # TODO: we should synchronize here properly instead
             return None
 
     def work(self) -> None:
