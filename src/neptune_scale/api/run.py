@@ -61,6 +61,7 @@ from neptune_scale.net.serialization import (
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
+    default_error_callback,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.operations_queue import OperationsQueue
@@ -73,6 +74,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.types import RunCallback
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -212,6 +214,10 @@ class Run(WithResources, AbstractContextManager):
         self._is_closing = False
         # This is used to signal that the close/termination operation is completed and block user code until it is so
         self._close_completed = threading.Event()
+        # Thread that initially called _close()
+        self._closing_thread: Optional[threading.Thread] = None
+        # Mark that __init__() is finished, so that the error callback can act upon it (see _wrap_error_callback())
+        self._init_completed = False
 
         self._project: str = input_project
         self._run_id: str = run_id
@@ -225,11 +231,13 @@ class Run(WithResources, AbstractContextManager):
         self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
 
         self._errors_queue: ErrorsQueue = ErrorsQueue()
+        # Note that for the duration of __init__ we use a special error callback that
+        # is guaranteed to terminate the run in case of an error.
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
             on_queue_full_callback=on_queue_full_callback,
             on_network_error_callback=on_network_error_callback,
-            on_error_callback=on_error_callback,
+            on_error_callback=self._wrap_error_callback(on_error_callback),
             on_warning_callback=on_warning_callback,
         )
 
@@ -276,7 +284,28 @@ class Run(WithResources, AbstractContextManager):
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
-            self.wait_for_processing(verbose=False)
+
+            # Wait in short periods to return from __init__ if run creation fails
+            # and Run.terminate() is called in self._wrap_error_callback()
+            while not self._is_closing:
+                if self.wait_for_processing(verbose=False, timeout=1):
+                    break
+
+        with self._lock:
+            self._init_completed = True
+
+    def _wrap_error_callback(self, user_callback: Optional[RunCallback]) -> RunCallback:
+        """Wrapp the provided user error callback so that we can handle errors during __init__()"""
+        callback = user_callback or default_error_callback
+
+        def wrapped_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
+            with self._lock:
+                if not self._init_completed:
+                    self.terminate()
+
+            callback(error, last_seen_at)
+
+        return wrapped_callback
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
@@ -304,7 +333,9 @@ class Run(WithResources, AbstractContextManager):
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
             was_closing = self._is_closing
-            self._is_closing = True
+            if not self._is_closing:
+                self._is_closing = True
+                self._closing_thread = threading.current_thread()
 
         if was_closing:
             logger.debug("Waiting for run to be closed from a different thread")
@@ -580,7 +611,7 @@ class Run(WithResources, AbstractContextManager):
         wait_seq: SharedInt,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> None:
+    ) -> bool:
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
@@ -603,11 +634,12 @@ class Run(WithResources, AbstractContextManager):
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
                         break
 
-                if is_closing:
+                if is_closing and threading.current_thread() != self._closing_thread:
                     if verbose:
-                        logger.info("Waiting interrupted by Run being closed.")
-                    self._close_completed.wait(timeout)
-                    return
+                        logger.warning("Waiting interrupted by run termination")
+
+                    self._close_completed.wait(wait_time)
+                    return False
 
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
@@ -640,27 +672,32 @@ class Run(WithResources, AbstractContextManager):
                 elif value >= last_queued_sequence_id:
                     if verbose:
                         logger.info(f"All operations were {phrase}")
-                    break
+                    return True
 
                 if time.monotonic() - begin_time > timeout:
-                    break
+                    return False
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
-                return
+                return False
 
-    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+        return False
+
+    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
         Waits until all metadata is submitted to Neptune for processing.
 
         When submitted, the data is not yet saved in Neptune until fully processed.
         See wait_for_processing().
 
+        Returns True if all currently queued operations were submitted, False if timeout was reached
+        or Run is closing.
+
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        self._wait(
+        return self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
             wait_seq=self._last_queued_seq,
@@ -668,17 +705,20 @@ class Run(WithResources, AbstractContextManager):
             verbose=verbose,
         )
 
-    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
         Waits until all metadata is processed by Neptune.
 
         Once the call is complete, the data is saved in Neptune.
 
+        Returns True if all currently queued operations were processed, False if timeout was reached
+        or Run is closing.
+
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        self._wait(
+        return self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
             wait_seq=self._last_ack_seq,
