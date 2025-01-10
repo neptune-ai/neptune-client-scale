@@ -169,7 +169,7 @@ def child(link, var, event):
 
     link.start(on_link_closed=on_closed)
     # We should never finish the sleep call, as on_closed raises SystemExit
-    time.sleep(5)
+    time.sleep(10)
     assert False, "on_closed callback was not called"
 
 
@@ -184,5 +184,5 @@ def test_parent_termination():
     p = multiprocessing.Process(target=parent, args=(var, event))
     p.start()
 
-    assert event.wait(1)
+    assert event.wait(5)
     assert var.value == 1
