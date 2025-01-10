@@ -1,6 +1,8 @@
 from typing import (
+    Callable,
     Literal,
-    TypeAlias,
+    Optional,
 )
 
-RunMode: TypeAlias = Literal["async", "offline", "disabled"]
+RunMode = Literal["async", "offline", "disabled"]
+RunCallback = Callable[[BaseException, Optional[float]], None]
