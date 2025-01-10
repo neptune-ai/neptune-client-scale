@@ -293,7 +293,7 @@ class Run(WithResources, AbstractContextManager):
         self._errors_monitor.start()
         with self._lock:
             self._sync_process.start()
-            self._process_link.start(on_link_closed=self._on_child_link_closed)
+            self._process_link.start(on_link_closed=self._on_child_link_closed, timeout=30)
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
