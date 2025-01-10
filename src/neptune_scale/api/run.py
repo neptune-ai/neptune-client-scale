@@ -594,16 +594,18 @@ class Run(WithResources, AbstractContextManager):
         while True:
             try:
                 with self._lock:
-                    if not self._sync_process.is_alive():
-                        if verbose and not self._is_closing:
-                            # TODO: error out here?
-                            logger.warning("Sync process is not running")
-                        return  # No need to wait if the sync process is not running
+                    is_closing = self._is_closing
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
                         break
+
+                if is_closing:
+                    if verbose:
+                        logger.info("Waiting interrupted by Run being closed.")
+                    self._close_completed.wait(timeout)
+                    return
 
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
