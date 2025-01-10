@@ -36,6 +36,7 @@ from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneProjectNotProvided,
     NeptuneScaleError,
+    NeptuneSynchronizationStopped,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -277,7 +278,9 @@ class Run(WithResources, AbstractContextManager):
         with self._lock:
             if not self._is_closing:
                 logger.error("Child process closed unexpectedly. Terminating.")
-                self.terminate()
+
+        # Make sure all the error handling is done from a single thread - self._errors_monitor
+        self._errors_queue.put(NeptuneSynchronizationStopped())
 
     @property
     def resources(self) -> tuple[Resource, ...]:
