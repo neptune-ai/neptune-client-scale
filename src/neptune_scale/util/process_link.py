@@ -148,6 +148,9 @@ class ProcessLink:
         if not self._worker:
             raise RuntimeError("You must call start() before calling join()")
 
+        if threading.current_thread() == self._worker:
+            raise RuntimeError("Cannot join() from a callback")
+
         self._worker.join(timeout=timeout)
 
     def send(self, message: Any) -> None:
