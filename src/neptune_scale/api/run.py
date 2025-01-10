@@ -7,6 +7,8 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
+import functools
+import math
 import os
 import threading
 import time
@@ -35,6 +37,8 @@ from neptune_scale.api.validation import (
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneProjectNotProvided,
+    NeptuneScaleError,
+    NeptuneSynchronizationStopped,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -55,6 +59,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.types import RunCallback
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -192,6 +197,10 @@ class Run(WithResources, AbstractContextManager):
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
         # new data should be logged.
         self._is_closing = False
+        # This is used to signal that the close/termination operation is completed and block user code until it is so
+        self._close_completed = threading.Event()
+        # Thread that initially called _close()
+        self._closing_thread: Optional[threading.Thread] = None
 
         self._project: str = input_project
         self._run_id: str = run_id
@@ -205,12 +214,20 @@ class Run(WithResources, AbstractContextManager):
         self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
 
         self._errors_queue: ErrorsQueue = ErrorsQueue()
+        # Note that for the duration of __init__ we use a special error callback that
+        # is guaranteed to terminate the run in case of an error.
         self._errors_monitor = ErrorsMonitor(
             errors_queue=self._errors_queue,
             on_queue_full_callback=on_queue_full_callback,
             on_network_error_callback=on_network_error_callback,
             on_error_callback=on_error_callback,
             on_warning_callback=on_warning_callback,
+        )
+
+        # Grab it like that, in case on_error_callback is None -- we will get the default one then
+        orig_error_callback = self._errors_monitor.on_error_callback
+        self._errors_monitor.on_error_callback = functools.partial(
+            self._initialization_error_callback, orig_error_callback
         )
 
         self._last_queued_seq = SharedInt(-1)
@@ -256,14 +273,29 @@ class Run(WithResources, AbstractContextManager):
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
-            self.wait_for_processing(verbose=False)
+
+            # Wait in short periods to return from __init__ if run creation fails
+            # and Run.terminate() is called in self._initialization_error_callback
+            while not self._is_closing:
+                if self.wait_for_processing(verbose=False, timeout=1):
+                    break
+
+        # Bring back the originally requested error callback
+        self._errors_monitor.on_error_callback = orig_error_callback
+
+    def _initialization_error_callback(
+        self, user_callback: RunCallback, error: BaseException, last_seen_at: Optional[float]
+    ) -> None:
+        self.terminate()
+        user_callback(error, last_seen_at)
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
             if not self._is_closing:
                 logger.error("Child process closed unexpectedly. Terminating.")
-                self._is_closing = True
-                self.terminate()
+
+        # Make sure all the error handling is done from a single thread - self._errors_monitor
+        self._errors_queue.put(NeptuneSynchronizationStopped())
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -282,12 +314,21 @@ class Run(WithResources, AbstractContextManager):
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
-            if self._is_closing:
-                return
+            was_closing = self._is_closing
+            if not self._is_closing:
+                self._is_closing = True
+                self._closing_thread = threading.current_thread()
 
-            self._is_closing = True
+        if was_closing:
+            logger.debug("Waiting for run to be closed from a different thread")
+            # TODO: we should probably have a reasonable timeout here, same one as a default one in
+            #  wait_for_processing(). Or just accept indefinite wait here in both cases.
+            # if not self._close_completed.wait(timeout=...):
+            if not self._close_completed.wait():
+                raise NeptuneScaleError(reason="Run close operation timed out")
+            return
 
-            logger.debug(f"Run is closing, wait={wait}")
+        logger.debug(f"Run is closing, wait={wait}")
 
         if self._sync_process.is_alive():
             if wait:
@@ -308,6 +349,8 @@ class Run(WithResources, AbstractContextManager):
         # result in a "cannot join current thread" exception.
         if threading.current_thread() != self._errors_monitor:
             self._errors_monitor.join()
+
+        self._close_completed.set()
 
         super().close()
 
@@ -550,30 +593,35 @@ class Run(WithResources, AbstractContextManager):
         wait_seq: SharedInt,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> None:
+    ) -> bool:
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
-        if timeout is None and verbose:
-            logger.warning("No timeout specified. Waiting indefinitely")
+        if timeout is None:
+            if verbose:
+                logger.warning("No timeout specified. Waiting indefinitely")
+            timeout = math.inf
 
-        begin_time = time.time()
-        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        begin_time = time.monotonic()
+        wait_time = min(sleep_time, timeout)
         last_print_timestamp: Optional[float] = None
 
         while True:
             try:
                 with self._lock:
-                    if not self._sync_process.is_alive():
-                        if verbose and not self._is_closing:
-                            # TODO: error out here?
-                            logger.warning("Sync process is not running")
-                        return  # No need to wait if the sync process is not running
+                    is_closing = self._is_closing
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
                         break
+
+                if is_closing and threading.current_thread() != self._closing_thread:
+                    if verbose:
+                        logger.warning("Waiting interrupted by run termination")
+
+                    self._close_completed.wait(wait_time)
+                    return False
 
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
@@ -602,30 +650,36 @@ class Run(WithResources, AbstractContextManager):
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
-                else:
-                    # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
-                        break
+                # Reaching the last queued sequence ID means that all operations were submitted
+                elif value >= last_queued_sequence_id:
+                    if verbose:
+                        logger.info(f"All operations were {phrase}")
+                    return True
+
+                if time.monotonic() - begin_time > timeout:
+                    return False
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
-                return
+                return False
 
-        if verbose:
-            logger.info(f"All operations were {phrase}")
+        return False
 
-    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
         Waits until all metadata is submitted to Neptune for processing.
 
         When submitted, the data is not yet saved in Neptune until fully processed.
         See wait_for_processing().
 
+        Returns True if all currently queued operations were submitted, False if timeout was reached
+        or Run is closing.
+
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        self._wait(
+        return self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
             wait_seq=self._last_queued_seq,
@@ -633,17 +687,20 @@ class Run(WithResources, AbstractContextManager):
             verbose=verbose,
         )
 
-    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
         Waits until all metadata is processed by Neptune.
 
         Once the call is complete, the data is saved in Neptune.
 
+        Returns True if all currently queued operations were processed, False if timeout was reached
+        or Run is closing.
+
         Args:
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        self._wait(
+        return self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
             wait_seq=self._last_ack_seq,
