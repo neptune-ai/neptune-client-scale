@@ -632,13 +632,15 @@ class Run(WithResources, AbstractContextManager):
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
-                        break
+                        return True
 
-                if is_closing and threading.current_thread() != self._closing_thread:
-                    if verbose:
-                        logger.warning("Waiting interrupted by run termination")
+                if is_closing:
+                    if threading.current_thread() != self._closing_thread:
+                        if verbose:
+                            logger.warning("Waiting interrupted by run termination")
 
-                    self._close_completed.wait(wait_time)
+                        self._close_completed.wait(wait_time)
+
                     return False
 
                 with wait_seq:
