@@ -95,6 +95,8 @@ class AttributeStore:
         elif isinstance(timestamp, (float, int)):
             timestamp = datetime.fromtimestamp(timestamp)
 
+        # MetadataSplitter is an iterator, so gather everything into a list instead of iterating over
+        # it in the critical section, to avoid holding the lock for too long.
         # TODO: Move splitting into the worker process. Here we should just send messages as they are.
         chunks = list(
             MetadataSplitter(
