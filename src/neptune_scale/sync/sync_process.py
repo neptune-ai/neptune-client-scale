@@ -429,6 +429,8 @@ class SenderThread(Daemon, WithResources):
 
     def work(self) -> None:
         try:
+            # TODO: is there a point in serializing the data on AggregatingQueue? It does not move between processes,
+            #       so we could just pass around instances of RunOperation
             while (operation := self.get_next()) is not None:
                 sequence_id, timestamp, data = operation
 
