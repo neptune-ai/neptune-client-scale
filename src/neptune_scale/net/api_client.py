@@ -110,7 +110,10 @@ def get_config_and_token_urls(
     ) as client:
         response = get_client_config.sync_detailed(client=client)
         if response.parsed is None:
-            raise NeptuneScaleError(message="Failed to initialize API client: invalid response from server")
+            raise NeptuneScaleError(
+                message="Failed to initialize API client: invalid response from server. "
+                f"Status code={response.status_code}"
+            )
 
         if response.status_code != 200 or not isinstance(response.parsed, ClientConfig):
             error = response.parsed if isinstance(response.parsed, Error) else None
