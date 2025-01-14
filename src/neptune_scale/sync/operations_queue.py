@@ -78,7 +78,7 @@ class OperationsQueue(Resource):
             serialized_operation = operation.SerializeToString()
 
             return self.enqueue_raw(
-                serialized_operation=serialized_operation, size=size, batch_key=key, is_batchable=is_metadata_update
+                serialized_operation=serialized_operation, size=size, is_batchable=is_metadata_update
             )
         except Exception as e:
             logger.error("Failed to enqueue operation %s: %s", operation, e)
@@ -89,7 +89,6 @@ class OperationsQueue(Resource):
         *,
         serialized_operation: bytes,
         size: Optional[int] = None,
-        batch_key: Optional[float] = None,
         is_batchable: bool,
     ) -> int:
         """Enqueue a single serialized operation. Return the operation's sequence number."""

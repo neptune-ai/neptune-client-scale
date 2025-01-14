@@ -22,7 +22,6 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
-import functools
 import math
 import os
 import threading
@@ -252,12 +251,6 @@ class Run(WithResources, AbstractContextManager):
             on_network_error_callback=on_network_error_callback,
             on_error_callback=self._wrap_error_callback(on_error_callback),
             on_warning_callback=on_warning_callback,
-        )
-
-        # Grab it like that, in case on_error_callback is None -- we will get the default one then
-        orig_error_callback = self._errors_monitor.on_error_callback
-        self._errors_monitor.on_error_callback = functools.partial(
-            self._initialization_error_callback, orig_error_callback
         )
 
         self._last_queued_seq = SharedInt(-1)

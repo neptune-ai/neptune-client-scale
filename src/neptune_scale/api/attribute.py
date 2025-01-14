@@ -150,11 +150,9 @@ class AttributeStore:
 
             self._metric_state[metric] = (step, value)
 
-        return last_seq
-
     def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> int:
         return self._operations_queue.enqueue_raw(
-            serialized_operation=serialized_op, size=len(serialized_op), batch_key=key, is_batchable=is_batchable
+            serialized_operation=serialized_op, size=len(serialized_op), is_batchable=is_batchable
         )
 
 
