@@ -50,21 +50,27 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 
-def format_local_run(run: LocalRun, verbose: bool = False) -> str:
+def format_local_run(run: LocalRun, with_run_id: bool = True) -> str:
     if run.operation_count:
         pct = round(run.last_synced_operation / run.operation_count * 100, 2)
     else:
         pct = 100.0
 
-    parts = [f"Run ID: {run.run_id}, {run.last_synced_operation}/{run.operation_count} ({pct}%) synced"]
+    parts = [
+        f"Project: {run.project}",
+        f"Synced: {run.last_synced_operation}/{run.operation_count} ({pct}%)",
+        f"Created at: {run.creation_time}",
+    ]
+
+    if with_run_id:
+        parts.insert(0, f"Run ID: {run.run_id}")
 
     if run.experiment_name:
         parts.append(f"Experiment: {run.experiment_name}")
     if run.fork_run_id:
         parts.append(f"Forked from `{run.fork_run_id}` at step {run.fork_step}")
 
-    line = ", ".join(parts)
-    if verbose:
-        line = f"{run.path}: Project: {run.project}, Created At: {run.creation_time}, {line}"
+    parts.append(f"Path: {run.path}")
 
-    return line
+    text = "\n".join(f"  - {part}" for part in parts)
+    return text
