@@ -23,6 +23,7 @@ from neptune_scale.cli import (
     sync,
 )
 from neptune_scale.storage.operations import DATA_DIR
+from neptune_scale.util.styles import ensure_style_detected
 
 
 @click.group()
@@ -33,6 +34,8 @@ from neptune_scale.storage.operations import DATA_DIR
 )
 @click.pass_context
 def main(ctx: click.Context, path: Optional[str]) -> None:
+    ensure_style_detected()
+
     ctx.ensure_object(dict)
     if path is None:
         neptune_dir = Path(".") / DATA_DIR

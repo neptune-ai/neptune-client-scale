@@ -53,6 +53,7 @@ from neptune_scale.storage.operations import (
     list_runs,
 )
 from neptune_scale.util import get_logger
+from neptune_scale.util.styles import STYLES
 
 
 @dataclass
@@ -216,13 +217,23 @@ def _verify_fork_parent(local_run: LocalRun, parent_must_exist: bool) -> None:
             return
         time.sleep(2**i)
 
-    msg = f"Parent Run `{local_run.fork_run_id}` does not exist."
-
     if parent_must_exist:
-        logger.error(msg)
-        raise NeptuneRunForkParentNotFound()
+        msg = """
+{h1}
+Parent Run `{fork_run_id}` does not exist.
+{end}
+This can happen if the parent run was created in offline mode and is not yet
+synced to the Neptune backend.
 
-    msg += " Proceeding because --sync-no-parent was passed."
+Run {bash}neptune status -v{end} to list all local runs, and manually sync the parent
+run first using {bash}neptune sync <filename>{end}.
+
+Alternatively you can run {bash}neptune sync --sync-no-parent{end} to ignore this error,
+and proceed with syncing the without the parent run.
+        """
+        raise Exception(msg.format(fork_run_id=local_run.fork_run_id, **STYLES))
+
+    msg = f"Parent Run `{local_run.fork_run_id}` does not exist. Proceeding because --sync-no-parent was passed."
     logger.warning(msg)
 
 
