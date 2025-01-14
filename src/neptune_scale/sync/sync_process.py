@@ -531,7 +531,7 @@ class StatusTrackingThread(Daemon, WithResources):
         except queue.Empty:
             return None
 
-    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
+    @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
     @with_api_errors_handling
     def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
