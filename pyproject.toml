@@ -11,7 +11,7 @@ pattern = "default-unprefixed"
 [tool.poetry.dependencies]
 python = "^3.9"
 
-neptune-api = "^0.9.0"
+neptune-api = "^0.10.0"
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
 backoff = "^2.0.0"
@@ -19,7 +19,7 @@ backoff = "^2.0.0"
 [tool.poetry]
 name = "neptune-scale"
 version = "0.1.0"
-description = "A minimal client library"
+description = "Python logging API for Neptune Scale"
 authors = ["neptune.ai <contact@neptune.ai>"]
 repository = "https://github.com/neptune-ai/neptune-client-scale"
 readme = "README.md"

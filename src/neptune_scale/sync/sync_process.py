@@ -6,6 +6,7 @@ import multiprocessing
 import queue
 import signal
 import threading
+from collections.abc import Iterable
 from multiprocessing import (
     Process,
     Queue,
@@ -16,6 +17,7 @@ from typing import (
     Literal,
     NamedTuple,
     Optional,
+    Protocol,
     TypeVar,
 )
 
@@ -35,9 +37,9 @@ from neptune_scale.exceptions import (
     NeptuneAttributePathNonWritable,
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
+    NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
-    NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
@@ -53,6 +55,7 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
+    NeptuneTooManyRequestsResponseError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
@@ -177,7 +180,7 @@ class SyncProcess(Process):
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self._external_operations_queue: Queue[SingleOperation] = operations_queue
+        self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
@@ -211,7 +214,7 @@ class SyncProcess(Process):
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
-            external_operations_queue=self._external_operations_queue,
+            input_queue=self._input_operations_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             max_queue_size=self._max_queue_size,
@@ -233,6 +236,10 @@ class SyncProcess(Process):
         logger.info("Data synchronization finished")
 
 
+class SupportsPutNowait(Protocol):
+    def put_nowait(self, element: SingleOperation) -> None: ...
+
+
 class SyncProcessWorker(WithResources):
     def __init__(
         self,
@@ -242,7 +249,7 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
-        external_operations_queue: multiprocessing.Queue[SingleOperation],
+        input_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -261,11 +268,7 @@ class SyncProcessWorker(WithResources):
             last_queued_seq=last_queued_seq,
             mode=mode,
         )
-        self._external_to_internal_thread = InternalQueueFeederThread(
-            external=external_operations_queue,
-            internal=self._internal_operations_queue,
-            errors_queue=self._errors_queue,
-        )
+
         self._status_tracking_thread = StatusTrackingThread(
             api_token=api_token,
             mode=mode,
@@ -276,13 +279,19 @@ class SyncProcessWorker(WithResources):
             last_ack_timestamp=last_ack_timestamp,
         )
 
+        self._operation_dispatcher_thread = OperationDispatcherThread(
+            input_queue=input_queue,
+            consumers=[self._internal_operations_queue],
+            errors_queue=self._errors_queue,
+        )
+
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
 
     def interrupt(self) -> None:
         for thread in self.threads:
@@ -302,17 +311,23 @@ class SyncProcessWorker(WithResources):
             thread.join(timeout=timeout)
 
 
-class InternalQueueFeederThread(Daemon, Resource):
+class OperationDispatcherThread(Daemon, Resource):
+    """Reads incoming messages from a multiprocessing.Queue, and dispatches them to a list of consumers,
+    which can be of type `queue.Queue`, but also any other object that supports put_nowait() method.
+
+    If any of the consumers' put_nowait() raises queue.Full, the thread will stop processing further operations.
+    """
+
     def __init__(
         self,
-        external: multiprocessing.Queue[SingleOperation],
-        internal: AggregatingQueue,
+        input_queue: multiprocessing.Queue[SingleOperation],
+        consumers: Iterable[SupportsPutNowait],
         errors_queue: ErrorsQueue,
     ) -> None:
-        super().__init__(name="InternalQueueFeederThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+        super().__init__(name="OperationDispatcherThread", sleep_time=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
 
-        self._external: multiprocessing.Queue[SingleOperation] = external
-        self._internal: AggregatingQueue = internal
+        self._input_queue: multiprocessing.Queue[SingleOperation] = input_queue
+        self._consumers = tuple(consumers)
         self._errors_queue: ErrorsQueue = errors_queue
 
         self._latest_unprocessed: Optional[SingleOperation] = None
@@ -322,7 +337,7 @@ class InternalQueueFeederThread(Daemon, Resource):
             return self._latest_unprocessed
 
         try:
-            self._latest_unprocessed = self._external.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
+            self._latest_unprocessed = self._input_queue.get(timeout=INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME)
             return self._latest_unprocessed
         except queue.Empty:
             return None
@@ -333,18 +348,22 @@ class InternalQueueFeederThread(Daemon, Resource):
     def work(self) -> None:
         try:
             while not self._is_interrupted():
-                operation = self.get_next()
-                if operation is None:
+                if (operation := self.get_next()) is None:
                     continue
 
                 try:
-                    self._internal.put_nowait(operation)
+                    for consumer in self._consumers:
+                        consumer.put_nowait(operation)
                     self.commit()
-                except queue.Full:
-                    logger.debug("Internal queue is full (%d elements), waiting for free space", self._internal.maxsize)
-                    self._errors_queue.put(NeptuneOperationsQueueMaxSizeExceeded(max_size=self._internal.maxsize))
-                    # Sleep before retry
-                    break
+                except queue.Full as e:
+                    # We have two ways to deal with this situation:
+                    # 1. Consider this a fatal error, and stop processing further operations.
+                    # 2. Retry, assuming that any consumer that _did_ manage to receive the operation, is
+                    #    idempotent and can handle the same operation again.
+                    #
+                    # Currently, we choose 1.
+                    logger.error("Operation queue overflow. Neptune will not process further operations.")
+                    raise e
         except Exception as e:
             self._errors_queue.put(e)
             self.interrupt()
@@ -402,20 +421,16 @@ class SenderThread(Daemon, WithResources):
 
         response = self._backend.submit(operation=operation, family=self._family)
 
-        if response.status_code == 403:
-            raise NeptuneUnauthorizedError()
-
-        if response.status_code != 200:
-            logger.error("HTTP response error: %s", response.status_code)
-            if response.status_code // 100 == 5:
-                raise NeptuneInternalServerError()
-            else:
-                raise NeptuneUnexpectedResponseError()
+        status_code = response.status_code
+        if status_code != 200:
+            _raise_exception(status_code)
 
         return response.parsed
 
     def work(self) -> None:
         try:
+            # TODO: is there a point in serializing the data on AggregatingQueue? It does not move between processes,
+            #       so we could just pass around instances of RunOperation
             while (operation := self.get_next()) is not None:
                 sequence_id, timestamp, data = operation
 
@@ -450,6 +465,20 @@ class SenderThread(Daemon, WithResources):
                 self._last_queued_seq.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
+
+
+def _raise_exception(status_code: int) -> None:
+    logger.error("HTTP response error: %s", status_code)
+    if status_code == 403:
+        raise NeptuneUnauthorizedError()
+    elif status_code == 408:
+        raise NeptuneConnectionLostError()
+    elif status_code == 429:
+        raise NeptuneTooManyRequestsResponseError()
+    elif status_code // 100 == 5:
+        raise NeptuneInternalServerError()
+    else:
+        raise NeptuneUnexpectedResponseError()
 
 
 class StatusTrackingThread(Daemon, WithResources):
@@ -495,15 +524,10 @@ class StatusTrackingThread(Daemon, WithResources):
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
 
-        if response.status_code == 403:
-            raise NeptuneUnauthorizedError()
+        status_code = response.status_code
 
-        if response.status_code != 200:
-            logger.error("HTTP response error: %s", response.status_code)
-            if response.status_code // 100 == 5:
-                raise NeptuneInternalServerError()
-            else:
-                raise NeptuneUnexpectedResponseError()
+        if status_code != 200:
+            _raise_exception(status_code)
 
         return response.parsed
 
