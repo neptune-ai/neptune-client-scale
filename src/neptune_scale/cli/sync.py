@@ -50,7 +50,6 @@ from neptune_scale.storage.operations import (
     LocalRun,
     OperationReader,
     OperationWriter,
-    list_runs,
 )
 from neptune_scale.util import get_logger
 from neptune_scale.util.styles import STYLES
@@ -244,7 +243,7 @@ def sync_file(
     reader = OperationReader(path)
     local_run = reader.run
 
-    logger.info(format_local_run(local_run))
+    logger.info("Run information:\n" + format_local_run(local_run))
 
     if reader.pending_operations_count == 0:
         logger.info("No operations to sync")
@@ -297,8 +296,8 @@ def sync_file(
 
 
 @click.command()
-@click.argument("filename", required=False, type=click.Path(exists=True, dir_okay=False))
-@click.option("-k", "--keep", is_flag=True, help="Do not delete the local copy of the data after sync")
+@click.argument("filename", type=click.Path(exists=True, dir_okay=False), metavar="<filename>")
+@click.option("-k", "--keep", is_flag=True, help="Do not delete the local copy of the data after sync completes")
 @click.option("--api-token", type=str, help="Your Neptune API token")
 @click.option(
     "--allow-non-increasing-step",
@@ -316,6 +315,13 @@ def sync(
     allow_non_increasing_step: bool,
     sync_no_parent: bool,
 ) -> None:
+    """Synchronize local data with the Neptune backend.
+
+    This command will send the local data stored in <filename> to the Neptune backend.
+    During the synchronization process, progress is recorded in the local database, which
+    means that the process can be interrupted and resumed later.
+    """
+
     neptune_dir = ctx.obj["neptune_dir"]
     if not is_neptune_dir(neptune_dir):
         logger.error(f"No Neptune data found at {neptune_dir}")
@@ -324,8 +330,10 @@ def sync(
     t0 = time.monotonic()
     if filename:
         files = [Path(filename)]
-    else:
-        files = [run.path for run in list_runs(ctx.obj["neptune_dir"])]
+    # For the time being we're not allowing to sync the entire directory, because of the potential for
+    # users to make mistakes in terms of forked runs and missing parents.
+    # else:
+    #     files = [run.path for run in list_runs(ctx.obj["neptune_dir"])]
 
     if not files:
         logger.info("No data to sync")
