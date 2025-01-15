@@ -337,8 +337,9 @@ def _init_run(
 
 
 def _safe_filename(project: str, run_id: str) -> str:
-    # URLEncode the project name and run ID to avoid issues with special characters
-    filename = quote(f"{project}-{run_id}.db", safe="")
+    # 1. replace '/' with '__' in project name
+    # 2. URLEncode the project name and run ID to avoid issues with special characters
+    filename = quote(f"{project.replace('/', '_')}_{run_id}.db", safe="")
     return filename
 
 
