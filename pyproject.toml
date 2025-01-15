@@ -54,7 +54,7 @@ keywords = [
 "Documentation" = "https://docs.neptune.ai/"
 
 [tool.poetry.scripts]
-neptune = "neptune_scale.cli.main:main"
+neptune-scale = "neptune_scale.cli.main:main"
 
 [tool.black]
 line-length = 120

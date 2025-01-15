@@ -223,9 +223,9 @@ Parent Run `{fork_run_id}` does not exist.
 This can happen if the parent run was created in offline mode and is not yet
 synced to the Neptune backend.
 
-Before syncing this run, you need manually sync the parent run first using {bash}neptune sync <filename>{end}.
+Before syncing this run, you need manually sync the parent run first using {bash}neptune-scale sync <filename>{end}.
 
-Alternatively you can run {bash}neptune sync --sync-no-parent{end} to ignore this error,
+Alternatively you can run {bash}neptune-scale sync --sync-no-parent{end} to ignore this error,
 and proceed with syncing without the parent run.
         """
         raise Exception(msg.format(fork_run_id=local_run.fork_run_id, **STYLES))
