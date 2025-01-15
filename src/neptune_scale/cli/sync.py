@@ -163,7 +163,7 @@ def _error_callback(state: SyncState, exc: BaseException, ts: Optional[float]) -
 
 def _warning_callback(state: SyncState, exc: BaseException, ts: Optional[float]) -> None:
     if isinstance(exc, (NeptuneRunDuplicate, NeptuneRunForkParentNotFound)):
-        # Silence the warning
+        # Silence these warnings. Note that we detect parent run existence before we sync, in _verify_fork_parent()
         return
 
     logger.warning(f"{exc}")

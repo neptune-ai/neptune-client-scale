@@ -151,6 +151,9 @@ class AttributeStore:
             self._metric_state[metric] = (step, value)
 
     def log_raw(self, serialized_op: bytes, key: int, is_batchable: bool = True) -> int:
+        """Used by `neptune sync` to log operations that are already serialized. This assumes that
+        the binary representation of RunOperation (`serialized_op` parameter) is correct."""
+
         return self._operations_queue.enqueue_raw(
             serialized_operation=serialized_op, size=len(serialized_op), is_batchable=is_batchable
         )
