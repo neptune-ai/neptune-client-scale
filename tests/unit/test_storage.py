@@ -77,19 +77,22 @@ def _verify_local_run(
     run_id,
     pending_operations_count,
     completed_operations_count,
-    creation_time,
-    experiment_name,
-    fork_run_id,
-    fork_step,
+    total_operation_count,
+    creation_time=None,
+    experiment_name=None,
+    fork_run_id=None,
+    fork_step=None,
+    last_synced_operation=0,
 ):
     run = reader.run
     assert reader.pending_operations_count == pending_operations_count
     assert reader.completed_operations_count == completed_operations_count
     assert run.project == project
     assert run.run_id == run_id
-    assert run.operation_count == 0
-    assert run.creation_time == creation_time
-    assert run.last_synced_operation == 0
+    assert run.operation_count == total_operation_count
+    if creation_time is not None:
+        assert run.creation_time == creation_time
+    assert run.last_synced_operation == last_synced_operation
     assert run.experiment_name == experiment_name
     assert run.fork_run_id == fork_run_id
     assert run.fork_step == fork_step
@@ -120,6 +123,7 @@ def test_init_write_storage(project, run_id, temp_db_dir):
         run_id=run_id,
         pending_operations_count=0,
         completed_operations_count=0,
+        total_operation_count=0,
         creation_time=now,
         experiment_name=experiment_name,
         fork_run_id=fork_run_id,
@@ -160,6 +164,7 @@ def test_write_and_read_consistency(project, run_id, temp_db_dir):
         run_id=run_id,
         pending_operations_count=len(ops),
         completed_operations_count=0,
+        total_operation_count=len(ops),
         creation_time=now,
         experiment_name=experiment_name,
         fork_run_id=fork_run_id,
@@ -181,7 +186,20 @@ def test_reader_file_does_not_exist(temp_db_dir):
 
 
 def test_mark_as_synced(project, run_id, db_path, writer):
-    ops = _make_operations(project, run_id)
+    synced_seq = 2
+    ops = _make_operations(project, run_id, nsteps=5)
     for op in ops:
         writer.write(op.SerializeToString())
-    writer.commit()
+    writer.mark_synced(synced_seq)
+    writer.close()
+
+    reader = OperationReader(db_path)
+    _verify_local_run(
+        reader,
+        project=project,
+        run_id=run_id,
+        pending_operations_count=len(ops) - synced_seq,
+        completed_operations_count=synced_seq,
+        total_operation_count=len(ops),
+        last_synced_operation=synced_seq,
+    )
