@@ -30,7 +30,11 @@ from typing import (
 )
 from urllib.parse import quote
 
-from neptune_scale.util import get_logger
+from neptune_scale.util import (
+    envs,
+    get_logger,
+)
+from neptune_scale.util.envs import LOG_DIR
 
 DATA_DIR = ".neptune"
 BATCH_SIZE = 10000
@@ -95,7 +99,7 @@ class OperationWriter:
         self._project = project
         self._run_id = run_id
         if db_path is None:
-            db_path = database_path_for_run(project, run_id)
+            db_path = database_path_for_run(project, run_id, envs.get_str(LOG_DIR))
         self._db_path = db_path
         self._db: Optional[sqlite3.Connection] = None
         self._lock = threading.RLock()

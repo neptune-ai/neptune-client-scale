@@ -52,7 +52,7 @@ def init_offline_mode(
 ) -> None:
     """Called by the main process, Run.__init__()"""
 
-    base_dir = envs.get_str(envs.BASE_STORAGE_DIR)
+    base_dir = envs.get_str(envs.LOG_DIR)
     path = database_path_for_run(project, run_id, base_dir)
 
     if not resume:
