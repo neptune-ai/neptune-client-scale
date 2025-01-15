@@ -642,12 +642,11 @@ class Run(WithResources, AbstractContextManager):
                     if not self._close_completed.is_set() and wait_seq.value >= self._operations_queue.last_sequence_id:
                         return True
 
-                if is_closing:
-                    if threading.current_thread() != self._closing_thread:
-                        if verbose:
-                            logger.warning("Waiting interrupted by run termination")
+                if is_closing and threading.current_thread() != self._closing_thread:
+                    if verbose:
+                        logger.warning("Waiting interrupted by run termination")
 
-                        self._close_completed.wait(wait_time)
+                    self._close_completed.wait(wait_time)
 
                     return False
 
