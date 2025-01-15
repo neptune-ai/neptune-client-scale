@@ -38,7 +38,6 @@ from neptune_scale import Run
 from neptune_scale.cli.util import (
     format_duration,
     format_local_run,
-    is_neptune_dir,
 )
 from neptune_scale.exceptions import (
     NeptuneRunDuplicate,
@@ -224,11 +223,10 @@ Parent Run `{fork_run_id}` does not exist.
 This can happen if the parent run was created in offline mode and is not yet
 synced to the Neptune backend.
 
-Run {bash}neptune status -v{end} to list all local runs, and manually sync the parent
-run first using {bash}neptune sync <filename>{end}.
+Before syncing this run, you need manually sync the parent run first using {bash}neptune sync <filename>{end}.
 
 Alternatively you can run {bash}neptune sync --sync-no-parent{end} to ignore this error,
-and proceed with syncing the without the parent run.
+and proceed with syncing without the parent run.
         """
         raise Exception(msg.format(fork_run_id=local_run.fork_run_id, **STYLES))
 
@@ -297,7 +295,6 @@ def sync_file(
 
 @click.command()
 @click.argument("filename", type=click.Path(exists=True, dir_okay=False), metavar="<filename>")
-@click.option("-k", "--keep", is_flag=True, help="Do not delete the local copy of the data after sync completes")
 @click.option("--api-token", type=str, help="Your Neptune API token")
 @click.option(
     "--allow-non-increasing-step",
@@ -306,12 +303,9 @@ def sync_file(
     "are stuck on a metric being sent multiple times. ",
 )
 @click.option("--sync-no-parent", is_flag=True, help="Do not require the parent run to exist when syncing forked runs")
-@click.pass_context
 def sync(
-    ctx: click.Context,
-    filename: Optional[str],
+    filename: str,
     api_token: Optional[str],
-    keep: bool,
     allow_non_increasing_step: bool,
     sync_no_parent: bool,
 ) -> None:
@@ -322,41 +316,25 @@ def sync(
     means that the process can be interrupted and resumed later.
     """
 
-    neptune_dir = ctx.obj["neptune_dir"]
-    if not is_neptune_dir(neptune_dir):
-        logger.error(f"No Neptune data found at {neptune_dir}")
-        sys.exit(1)
-
     t0 = time.monotonic()
-    if filename:
-        files = [Path(filename)]
-    # For the time being we're not allowing to sync the entire directory, because of the potential for
-    # users to make mistakes in terms of forked runs and missing parents.
-    # else:
-    #     files = [run.path for run in list_runs(ctx.obj["neptune_dir"])]
-
-    if not files:
-        logger.info("No data to sync")
-        sys.exit(1)
-
     logger.info("Starting `neptune sync`")
+    path = Path(filename)
 
     error = False
 
-    for path in files:
-        try:
-            sync_file(
-                path,
-                api_token=api_token,
-                allow_non_increasing_step=allow_non_increasing_step,
-                parent_must_exist=not sync_no_parent,
-            )
-            if not keep:
-                logger.info(f"Removing file {path}")
-                path.unlink()
-        except Exception as e:
-            logger.error("An error occurred during `neptune sync`: %s", e)
-            error = True
+    try:
+        sync_file(
+            path,
+            api_token=api_token,
+            allow_non_increasing_step=allow_non_increasing_step,
+            parent_must_exist=not sync_no_parent,
+        )
+
+        logger.info(f"Removing file {path}")
+        path.unlink()
+    except Exception as e:
+        logger.error("An error occurred during `neptune sync`: %s", e)
+        error = True
 
     duration = format_duration(int(time.monotonic() - t0))
     if error:

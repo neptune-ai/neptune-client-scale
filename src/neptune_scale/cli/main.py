@@ -13,40 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pathlib import Path
-from typing import Optional
-
 import click
 
-from neptune_scale.cli import (
-    misc,
-    sync,
-)
-from neptune_scale.storage.operations import DATA_DIR
+from neptune_scale.cli import sync
 from neptune_scale.util.styles import ensure_style_detected
 
 
 @click.group()
-@click.option(
-    "--path",
-    type=click.Path(exists=True, file_okay=False),
-    help="Path containing Neptune data. Defaults to $CWD/.neptune",
-)
-@click.pass_context
-def main(ctx: click.Context, path: Optional[str]) -> None:
+def main() -> None:
     ensure_style_detected()
-
-    ctx.ensure_object(dict)
-    if path is None:
-        neptune_dir = Path(".") / DATA_DIR
-    else:
-        neptune_dir = Path(path)
-
-    ctx.obj["neptune_dir"] = neptune_dir
 
 
 main.add_command(sync.sync)
-main.add_command(misc.status)
 
 if __name__ == "__main__":
     main()
