@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import (
     Any,
-    Literal,
     cast,
 )
 
@@ -80,6 +79,7 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.net.util import raise_for_http_status
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
+from neptune_scale.types import RunMode
 from neptune_scale.util.abstract import Resource
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.util.logger import get_logger
@@ -230,7 +230,7 @@ class MockedApiClient(ApiClient):
         return ProtoLeaderboardEntriesSearchResultDTO()
 
 
-def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
+def backend_factory(api_token: str, mode: RunMode) -> ApiClient:
     if mode == "disabled":
         return MockedApiClient()
     return HostedApiClient(api_token=api_token)

@@ -29,11 +29,11 @@ from multiprocessing import (
 from types import FrameType
 from typing import (
     Generic,
-    Literal,
     NamedTuple,
     Optional,
     Protocol,
     TypeVar,
+    cast,
 )
 
 import backoff
@@ -52,7 +52,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributePathNonWritable,
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
-    NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -77,8 +76,10 @@ from neptune_scale.net.api_client import (
     with_api_errors_handling,
 )
 from neptune_scale.net.util import raise_for_http_status
+from neptune_scale.storage.operations import OperationWriter
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.offline import OfflineModeWriterThread
 from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
@@ -94,6 +95,7 @@ from neptune_scale.sync.queue_element import (
     SingleOperation,
 )
 from neptune_scale.sync.util import safe_signal_name
+from neptune_scale.types import RunMode
 from neptune_scale.util import (
     Daemon,
     ProcessLink,
@@ -181,10 +183,11 @@ class SyncProcess(Process):
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
         process_link: ProcessLink,
-        api_token: str,
+        api_token: Optional[str],
         project: str,
+        run_id: str,
         family: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -195,14 +198,15 @@ class SyncProcess(Process):
         self._input_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
-        self._api_token: str = api_token
+        self._api_token: Optional[str] = api_token
         self._project: str = project
+        self._run_id: str = run_id
         self._family: str = family
         self._last_queued_seq: SharedInt = last_queued_seq
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
         self._max_queue_size: int = max_queue_size
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
 
         # This flag is set when a termination signal is caught
         self._stop_event = multiprocessing.Event()
@@ -223,6 +227,7 @@ class SyncProcess(Process):
 
         worker = SyncProcessWorker(
             project=self._project,
+            run_id=self._run_id,
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
@@ -256,10 +261,11 @@ class SyncProcessWorker(WithResources):
     def __init__(
         self,
         *,
-        api_token: str,
+        api_token: Optional[str],
         project: str,
+        run_id: str,
         family: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         errors_queue: ErrorsQueue,
         input_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
@@ -271,55 +277,71 @@ class SyncProcessWorker(WithResources):
 
         self._internal_operations_queue: AggregatingQueue = AggregatingQueue(max_queue_size=max_queue_size)
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
-        self._sync_thread = SenderThread(
-            api_token=api_token,
-            operations_queue=self._internal_operations_queue,
-            status_tracking_queue=self._status_tracking_queue,
-            errors_queue=self._errors_queue,
-            family=family,
-            last_queued_seq=last_queued_seq,
-            mode=mode,
+
+        workers: list[Daemon] = []
+        consumers: list[SupportsPutNowait] = [self._internal_operations_queue]
+
+        if mode != "offline":
+            assert api_token is not None
+
+            workers.append(
+                SenderThread(
+                    api_token=api_token,
+                    operations_queue=self._internal_operations_queue,
+                    status_tracking_queue=self._status_tracking_queue,
+                    errors_queue=self._errors_queue,
+                    family=family,
+                    last_queued_seq=last_queued_seq,
+                    mode=mode,
+                )
+            )
+
+            workers.append(
+                StatusTrackingThread(
+                    api_token=api_token,
+                    mode=mode,
+                    project=project,
+                    errors_queue=self._errors_queue,
+                    status_tracking_queue=self._status_tracking_queue,
+                    last_ack_seq=last_ack_seq,
+                    last_ack_timestamp=last_ack_timestamp,
+                )
+            )
+        else:
+            store = OperationWriter(project, run_id)
+            q: queue.Queue[SingleOperation] = queue.Queue()
+            consumers.append(q)
+            workers.append(
+                OfflineModeWriterThread(
+                    store=store, input_queue=q, last_ack_seq=last_ack_seq, errors_queue=self._errors_queue
+                )
+            )
+
+        workers.append(
+            OperationDispatcherThread(input_queue=input_queue, consumers=consumers, errors_queue=self._errors_queue)
         )
 
-        self._status_tracking_thread = StatusTrackingThread(
-            api_token=api_token,
-            mode=mode,
-            project=project,
-            errors_queue=self._errors_queue,
-            status_tracking_queue=self._status_tracking_queue,
-            last_ack_seq=last_ack_seq,
-            last_ack_timestamp=last_ack_timestamp,
-        )
-
-        self._operation_dispatcher_thread = OperationDispatcherThread(
-            input_queue=input_queue,
-            consumers=[self._internal_operations_queue],
-            errors_queue=self._errors_queue,
-        )
-
-    @property
-    def threads(self) -> tuple[Daemon, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+        self._workers = tuple(workers)
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._operation_dispatcher_thread, self._sync_thread, self._status_tracking_thread
+        return cast(tuple[Resource, ...], self._workers)
 
     def interrupt(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.interrupt()
 
     def wake_up(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.wake_up()
 
     def start(self) -> None:
-        for thread in self.threads:
+        for thread in self._workers:
             thread.start()
 
     def join(self, timeout: Optional[int] = None) -> None:
         # The same timeout will be applied to each thread separately
-        for thread in self.threads:
+        for thread in self._workers:
             thread.join(timeout=timeout)
 
 
@@ -391,7 +413,7 @@ class SenderThread(Daemon, WithResources):
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         last_queued_seq: SharedInt,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
@@ -401,7 +423,7 @@ class SenderThread(Daemon, WithResources):
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._last_queued_seq: SharedInt = last_queued_seq
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
 
         self._backend: Optional[ApiClient] = None
         self._latest_unprocessed: Optional[BatchedOperations] = None
@@ -483,7 +505,7 @@ class StatusTrackingThread(Daemon, WithResources):
     def __init__(
         self,
         api_token: str,
-        mode: Literal["async", "disabled"],
+        mode: RunMode,
         project: str,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
@@ -492,8 +514,11 @@ class StatusTrackingThread(Daemon, WithResources):
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
+        if mode == "offline":
+            raise ValueError("Status tracking should not be used in offline mode. This is a bug in Neptune.")
+
         self._api_token: str = api_token
-        self._mode: Literal["async", "disabled"] = mode
+        self._mode: RunMode = mode
         self._project: str = project
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue

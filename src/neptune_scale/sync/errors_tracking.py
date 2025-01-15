@@ -78,6 +78,8 @@ def default_warning_callback(error: BaseException, last_seen_at: Optional[float]
 
 
 class ErrorsMonitor(Daemon, Resource):
+    """A thread that consumes messages from the provided queue, and calls user callbacks based on the error type."""
+
     def __init__(
         self,
         errors_queue: ErrorsQueue,
@@ -115,6 +117,15 @@ class ErrorsMonitor(Daemon, Resource):
             # TODO: we should synchronize here properly instead
             return None
 
+    @property
+    def on_error_callback(self) -> Callable[[BaseException, Optional[float]], None]:
+        return self._on_error_callback
+
+    @on_error_callback.setter
+    def on_error_callback(self, callback: Optional[Callable[[BaseException, Optional[float]], None]]) -> None:
+        with self._wait_condition:
+            self._on_error_callback = callback or default_error_callback
+
     def work(self) -> None:
         while (error := self.get_next()) is not None:
             last_raised_at = self._last_raised_timestamps.get(type(error), None)
@@ -134,7 +145,12 @@ class ErrorsMonitor(Daemon, Resource):
                 elif isinstance(error, NeptuneRetryableError):
                     self._on_warning_callback(error, last_raised_at)
                 elif isinstance(error, NeptuneScaleError):
-                    self._on_error_callback(error, last_raised_at)
+                    # Allow swapping the error callback while we're working, but don't hold
+                    # the lock during callback execution
+                    with self._wait_condition:
+                        error_callback = self._on_error_callback
+
+                    error_callback(error, last_raised_at)
                 else:
                     self._on_error_callback(NeptuneUnexpectedError(reason=str(error)), last_raised_at)
             except Exception as e:

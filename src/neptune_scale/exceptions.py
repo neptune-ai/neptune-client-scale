@@ -63,12 +63,18 @@ from neptune_scale.util.styles import (
 
 
 class NeptuneScaleError(Exception):
-    message = "An error occurred in the Neptune Scale client."
+    message = """
+{h1}
+NeptuneScaleError: An error occurred in the Neptune Scale client.
+{end}
+{reason}
+"""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
         message = kwargs.pop("message", self.message)
-        super().__init__(message.format(*args, **STYLES, **kwargs))
+        reason = kwargs.pop("reason", "")
+        super().__init__(message.format(*args, reason=reason, **STYLES, **kwargs))
 
 
 class NeptuneScaleWarning(Warning):
@@ -95,6 +101,7 @@ class NeptuneBadRequestError(NeptuneScaleError):
     message = """
 {h1}
 NeptuneBadRequestError({status_code}): {reason}
+{end}
 """
 
 

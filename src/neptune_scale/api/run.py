@@ -31,7 +31,6 @@ from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import (
     Any,
-    Literal,
     Optional,
     Union,
 )
@@ -58,6 +57,7 @@ from neptune_scale.net.serialization import (
     datetime_to_proto,
     make_step,
 )
+from neptune_scale.sync import offline
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
@@ -74,7 +74,10 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
-from neptune_scale.types import RunCallback
+from neptune_scale.types import (
+    RunCallback,
+    RunMode,
+)
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -105,7 +108,7 @@ class Run(WithResources, AbstractContextManager):
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
-        mode: Literal["async", "disabled"] = "async",
+        mode: RunMode = "async",
         experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
         fork_run_id: Optional[str] = None,
@@ -192,10 +195,8 @@ class Run(WithResources, AbstractContextManager):
         input_project: str = project
 
         api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        if api_token is None:
+        if api_token is None and mode != "offline":
             raise NeptuneApiTokenNotProvided()
-        assert api_token is not None  # mypy
-        input_api_token: str = api_token
 
         verify_non_empty("run_id", run_id)
         if experiment_name is not None:
@@ -221,6 +222,17 @@ class Run(WithResources, AbstractContextManager):
 
         self._project: str = input_project
         self._run_id: str = run_id
+
+        if mode == "offline":
+            offline.init_offline_mode(
+                project=self._project,
+                run_id=self._run_id,
+                resume=resume,
+                creation_time=creation_time,
+                experiment_name=experiment_name,
+                fork_run_id=fork_run_id,
+                fork_step=fork_step,
+            )
 
         self._lock = threading.RLock()
         self._operations_queue: OperationsQueue = OperationsQueue(
@@ -248,11 +260,12 @@ class Run(WithResources, AbstractContextManager):
         self._process_link = ProcessLink()
         self._sync_process = SyncProcess(
             project=self._project,
+            run_id=self._run_id,
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             process_link=self._process_link,
-            api_token=input_api_token,
+            api_token=api_token,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
@@ -273,11 +286,11 @@ class Run(WithResources, AbstractContextManager):
         self._errors_monitor.start()
         with self._lock:
             self._sync_process.start()
-            self._process_link.start(on_link_closed=self._on_child_link_closed)
+            self._process_link.start(on_link_closed=self._on_child_link_closed, timeout=30)
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        if not resume:
+        if not resume and mode != "offline":
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
                 experiment_name=experiment_name,
@@ -393,12 +406,14 @@ class Run(WithResources, AbstractContextManager):
             ```
         """
 
-        if not self._is_closing:
-            logger.info("Terminating Run.")
+        with self._lock:
+            if not self._is_closing:
+                logger.info("Terminating Run.")
 
-        if self._exit_func is not None:
-            atexit.unregister(self._exit_func)
-            self._exit_func = None
+            if self._exit_func is not None:
+                atexit.unregister(self._exit_func)
+                self._exit_func = None
+
         self._close(wait=False)
 
     def close(self) -> None:
@@ -634,12 +649,11 @@ class Run(WithResources, AbstractContextManager):
                     if wait_seq.value >= self._operations_queue.last_sequence_id:
                         return True
 
-                if is_closing:
-                    if threading.current_thread() != self._closing_thread:
-                        if verbose:
-                            logger.warning("Waiting interrupted by run termination")
+                if is_closing and threading.current_thread() != self._closing_thread:
+                    if verbose:
+                        logger.warning("Waiting interrupted by run termination")
 
-                        self._close_completed.wait(wait_time)
+                    self._close_completed.wait(wait_time)
 
                     return False
 
@@ -727,6 +741,11 @@ class Run(WithResources, AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+
+    @property
+    def _last_processed_operation_seq(self) -> int:
+        with self._lock:
+            return self._last_ack_seq.value
 
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
