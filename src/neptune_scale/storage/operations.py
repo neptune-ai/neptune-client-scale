@@ -61,7 +61,7 @@ class LocalRun:
             """
             SELECT
                 project, run_id, creation_time, last_synced_operation, experiment_name, fork_run_id, fork_step
-            FROM meta"""
+            FROM run_info"""
         ).fetchone()
 
         project, run_id, creation_time, last_synced_op, experiment_name, fork_run_id, fork_step = row
@@ -116,7 +116,7 @@ class OperationWriter:
             self._db = sqlite3.connect(self._db_path, check_same_thread=False)
             if self._resume:
                 self._last_synced_op = self._db.execute(
-                    "SELECT last_synced_operation FROM meta WHERE run_id = ?", (self._run_id,)
+                    "SELECT last_synced_operation FROM run_info WHERE run_id = ?", (self._run_id,)
                 ).fetchone()[0]
 
     def write(self, serialized_op: bytes) -> None:
@@ -151,7 +151,7 @@ class OperationWriter:
         with self._lock, self._db:
             self._db.execute(
                 """
-                UPDATE meta
+                UPDATE run_info
                 SET last_synced_operation = ?
                 WHERE run_id = ?""",
                 (sequence_id, self._run_id),
@@ -173,7 +173,7 @@ class OperationReader:
     as long as we use separate connection objects for each thread.
 
     Thus, it's fine if we have an OperationWriter instance in a different thread, updating the
-    `meta` table will work as expected.
+    `run_info` table will work as expected.
     """
 
     def __init__(self, db_path: Union[str, Path]) -> None:
@@ -282,7 +282,7 @@ def _init_db_schema(db: sqlite3.Connection) -> None:
 
         db.execute(
             """
-            CREATE TABLE IF NOT EXISTS meta (
+            CREATE TABLE IF NOT EXISTS run_info (
                 version TEXT NOT NULL,
                 project TEXT NOT NULL,
                 run_id TEXT NOT NULL,
@@ -309,7 +309,7 @@ def _init_run(
     fork_step: Optional[Union[int, float]] = None,
 ) -> None:
     with db:
-        row = db.execute("SELECT 1 FROM meta WHERE run_id = ?;", (run_id,)).fetchone()
+        row = db.execute("SELECT 1 FROM run_info WHERE run_id = ?;", (run_id,)).fetchone()
         if row is None:
             if resume:
                 raise ValueError(f"Run {run_id} does not exist in local storage")
@@ -322,7 +322,7 @@ def _init_run(
         # do anything like converting to TEXT back and forth.
         db.execute(
             """
-            INSERT INTO meta (
+            INSERT INTO run_info (
                 version, project, run_id, creation_time, experiment_name,
                 fork_run_id, fork_step, last_synced_operation
             )
