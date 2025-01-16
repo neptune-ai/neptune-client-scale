@@ -52,7 +52,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributePathNonWritable,
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
-    NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -245,6 +244,8 @@ class SyncProcess(Process):
             worker.wake_up()
             worker.join(timeout=SHUTDOWN_TIMEOUT)
             worker.close()
+            self._process_link.stop()
+
         logger.info("Data synchronization finished")
 
 
