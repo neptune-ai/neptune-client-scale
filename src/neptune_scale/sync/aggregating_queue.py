@@ -22,7 +22,6 @@ from queue import (
     Empty,
     Queue,
 )
-from threading import RLock
 from typing import Optional
 
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
@@ -56,7 +55,6 @@ class AggregatingQueue(Resource):
         self._wait_time = wait_time
 
         self._queue: Queue[SingleOperation] = Queue(maxsize=max_queue_size)
-        self._lock: RLock = RLock()
         self._latest_unprocessed: Optional[SingleOperation] = None
 
     @property
@@ -64,21 +62,19 @@ class AggregatingQueue(Resource):
         return self._max_queue_size
 
     def put_nowait(self, element: SingleOperation) -> None:
-        with self._lock:
-            self._queue.put_nowait(element)
+        self._queue.put_nowait(element)
 
     def _get_next(self, timeout: float) -> Optional[SingleOperation]:
         # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE because of MetadataSplitter.
         # We can assume that every queue element has the same project, run id and family
-        with self._lock:
-            if self._latest_unprocessed is not None:
-                return self._latest_unprocessed
+        if self._latest_unprocessed is not None:
+            return self._latest_unprocessed
 
-            try:
-                self._latest_unprocessed = self._queue.get(timeout=timeout)
-                return self._latest_unprocessed
-            except Empty:
-                return None
+        try:
+            self._latest_unprocessed = self._queue.get(timeout=timeout)
+            return self._latest_unprocessed
+        except Empty:
+            return None
 
     def commit(self) -> None:
         self._latest_unprocessed = None
