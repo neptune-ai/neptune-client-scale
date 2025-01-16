@@ -312,8 +312,8 @@ class Run(WithResources, AbstractContextManager):
             if not self._is_closing:
                 logger.error("Child process closed unexpectedly. Terminating.")
 
-        # Make sure all the error handling is done from a single thread - self._errors_monitor
-        self._errors_queue.put(NeptuneSynchronizationStopped())
+                # Make sure all the error handling is done from a single thread - self._errors_monitor
+                self._errors_queue.put(NeptuneSynchronizationStopped())
 
     @property
     def resources(self) -> tuple[Resource, ...]:
@@ -371,6 +371,13 @@ class Run(WithResources, AbstractContextManager):
         self._close_completed.set()
 
         super().close()
+
+        # Release IPC-related resources as soon as we don't need them -- don't wait
+        # for the GC to do that, as we can hit OS limits.
+        self._sync_process = None  # type: ignore
+        self._operations_queue = None  # type: ignore
+        self._errors_queue = None  # type: ignore
+        self._last_queued_seq = self._last_ack_seq = self._last_ack_timestamp = None  # type: ignore
 
     def terminate(self) -> None:
         """
