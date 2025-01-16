@@ -225,6 +225,7 @@ class ProcessLinkWorker(Daemon):
         except Exception as e:
             logger.error(f"{self}: unexpected error while sending data: {e}")
             with self._lock:
+                self._conn.close()
                 self._closed = True
             self.interrupt()
 
@@ -265,8 +266,8 @@ class ProcessLinkWorker(Daemon):
 
             if not self._stop_event.is_set():
                 self._safe_callback(self._on_link_closed)
-                self._conn.close()
 
+            self._conn.close()
             self.interrupt()
 
     def stop_link(self) -> None:
