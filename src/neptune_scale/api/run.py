@@ -373,11 +373,11 @@ class Run(WithResources, AbstractContextManager):
         super().close()
 
         # Release IPC-related resources as soon as we don't need them -- don't wait
-        # for the GC to do that, as we can hit OS limits.
-        self._sync_process = None  # type: ignore
-        self._operations_queue = None  # type: ignore
-        self._errors_queue = None  # type: ignore
-        self._last_queued_seq = self._last_ack_seq = self._last_ack_timestamp = None  # type: ignore
+        # for the GC to do that, as we can hit OS limits when creating many runs in a
+        # single OS process.
+        with self._lock:
+            self._sync_process = self._operations_queue = self._errors_queue = None  # type: ignore
+            self._last_queued_seq = self._last_ack_seq = self._last_ack_timestamp = None  # type: ignore
 
     def terminate(self) -> None:
         """
@@ -638,7 +638,8 @@ class Run(WithResources, AbstractContextManager):
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
-                    if wait_seq.value >= self._operations_queue.last_sequence_id:
+                    # Don't do that check if we're already closed, as the values are None at this point
+                    if not self._close_completed.is_set() and wait_seq.value >= self._operations_queue.last_sequence_id:
                         return True
 
                 if is_closing:
