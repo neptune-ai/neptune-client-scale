@@ -52,7 +52,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributePathNonWritable,
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
-    NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
