@@ -118,4 +118,5 @@ def test_run_creation_during_initialization_error(api_token):
         )
 
     assert callback_finished.wait(timeout=10)
-    assert run.wait_for_processing(timeout=1)
+    # The run should be terminated, so wait_for_processing should return False
+    assert not run.wait_for_processing(timeout=1)
