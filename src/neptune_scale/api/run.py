@@ -117,6 +117,7 @@ class Run(WithResources, AbstractContextManager):
         on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -220,6 +221,7 @@ class Run(WithResources, AbstractContextManager):
         self._init_completed = False
 
         self._project: str = input_project
+        self._family: str = kwargs.get("family", run_id)
         self._run_id: str = run_id
 
         self._lock = threading.RLock()
@@ -248,7 +250,7 @@ class Run(WithResources, AbstractContextManager):
         self._process_link = ProcessLink()
         self._sync_process = SyncProcess(
             project=self._project,
-            family=self._run_id,
+            family=self._family,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
             process_link=self._process_link,
@@ -440,7 +442,7 @@ class Run(WithResources, AbstractContextManager):
             project=self._project,
             run_id=self._run_id,
             create=CreateRun(
-                family=self._run_id,
+                family=self._family,
                 fork_point=fork_point,
                 experiment_id=experiment_name,
                 creation_time=None if creation_time is None else datetime_to_proto(creation_time),
