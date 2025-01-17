@@ -312,8 +312,8 @@ class Run(WithResources, AbstractContextManager):
             if not self._is_closing:
                 logger.error("Child process closed unexpectedly. Terminating.")
 
-        # Make sure all the error handling is done from a single thread - self._errors_monitor
-        self._errors_queue.put(NeptuneSynchronizationStopped())
+                # Make sure all the error handling is done from a single thread - self._errors_monitor
+                self._errors_queue.put(NeptuneSynchronizationStopped())
 
     @property
     def resources(self) -> tuple[Resource, ...]:
