@@ -223,7 +223,7 @@ class ProcessLinkWorker(Daemon):
                 raise RuntimeError(f"Invalid challenge response: {msg}")
             success = True
         except Exception as e:
-            logger.error(f"{self}: unexpected error while sending data: {e}")
+            logger.error(f"{self}: unexpected error while sending data: {e!r}")
             with self._lock:
                 self._closed = True
             self.interrupt()
