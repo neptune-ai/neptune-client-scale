@@ -42,7 +42,7 @@ from neptune_scale.cli.util import (
 from neptune_scale.exceptions import (
     NeptuneRunDuplicate,
     NeptuneRunForkParentNotFound,
-    NeptuneSeriesStepNonIncreasing,
+    NeptuneValidationError,
 )
 from neptune_scale.net.runs import run_exists
 from neptune_scale.storage.operations import (
@@ -56,8 +56,8 @@ from neptune_scale.util.styles import STYLES
 
 @dataclass
 class SyncState:
-    allow_non_increasing_step: bool
-    ignored_steps: int = 0
+    allow_data_validation_errors: bool
+    data_validation_errors: int = 0
 
     run: Optional[Run] = None
 
@@ -153,9 +153,9 @@ def _db_updater_thread(project: str, run_id: str, db_path: Path, state: SyncStat
 
 
 def _error_callback(state: SyncState, exc: BaseException, ts: Optional[float]) -> None:
-    if state.allow_non_increasing_step and isinstance(exc, NeptuneSeriesStepNonIncreasing):
+    if isinstance(exc, NeptuneValidationError) and state.allow_data_validation_errors:
         with state.cond:
-            state.ignored_steps += 1
+            state.data_validation_errors += 1
         return
 
     state.set_error(exc)
@@ -235,7 +235,11 @@ and proceed with syncing without the parent run.
 
 
 def sync_file(
-    path: Path, api_token: Optional[str], *, allow_non_increasing_step: bool, parent_must_exist: bool
+    path: Path,
+    api_token: Optional[str],
+    *,
+    parent_must_exist: bool,
+    allow_data_validation_errors: bool,
 ) -> None:
     logger.info(f"Processing file {path}")
     reader = OperationReader(path)
@@ -261,7 +265,7 @@ def sync_file(
 
         _verify_fork_parent(local_run, parent_must_exist)
 
-    state = SyncState(allow_non_increasing_step)
+    state = SyncState(allow_data_validation_errors)
     run = Run(
         run_id=local_run.run_id,
         project=local_run.project,
@@ -289,25 +293,25 @@ def sync_file(
     else:
         run.close()
 
-    if state.ignored_steps:
-        logger.info(f"Ignored {state.ignored_steps} non-increasing steps")
+    if state.data_validation_errors:
+        logger.warning(f"Ignored {state.data_validation_errors} data validation errors")
 
 
 @click.command()
 @click.argument("filename", type=click.Path(exists=True, dir_okay=False), metavar="<filename>")
 @click.option("--api-token", type=str, help="Your Neptune API token")
-@click.option(
-    "--allow-non-increasing-step",
-    is_flag=True,
-    help="Do not abort on non-increasing metric steps being sent. This is useful for resuming interrupted syncs that "
-    "are stuck on a metric being sent multiple times. ",
-)
 @click.option("--sync-no-parent", is_flag=True, help="Do not require the parent run to exist when syncing forked runs")
+@click.option(
+    "--allow-data-validation-errors",
+    is_flag=True,
+    help="Continue on data validation errors non-increasing step or timestamp, too large string data etc. "
+    "This can be useful for resuming runs that aborted during sync",
+)
 def sync(
     filename: str,
     api_token: Optional[str],
-    allow_non_increasing_step: bool,
     sync_no_parent: bool,
+    allow_data_validation_errors: bool,
 ) -> None:
     """Synchronize local data with the Neptune backend.
 
@@ -326,8 +330,8 @@ def sync(
         sync_file(
             path,
             api_token=api_token,
-            allow_non_increasing_step=allow_non_increasing_step,
             parent_must_exist=not sync_no_parent,
+            allow_data_validation_errors=allow_data_validation_errors,
         )
 
         logger.info(f"Removing file {path}")

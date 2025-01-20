@@ -37,12 +37,12 @@ def run(project_name, run_id):
     return Run(project=project_name, run_id=run_id, mode="offline")
 
 
-def neptune_sync(project_name, run_id, temporary_log_dir):
+def neptune_sync(project_name, run_id, temporary_log_dir, allow_data_validation_errors=False):
     path = database_path_for_run(project_name, run_id, temporary_log_dir)
     sync_file(
         path,
         api_token=None,
-        allow_non_increasing_step=False,
+        allow_data_validation_errors=allow_data_validation_errors,
         parent_must_exist=True,
     )
 
