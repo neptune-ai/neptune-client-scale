@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = (
     "NeptuneScaleError",
+    "NeptuneValidationError",
     "NeptuneScaleWarning",
     "NeptuneOperationsQueueMaxSizeExceeded",
     "NeptuneUnauthorizedError",
@@ -75,6 +76,15 @@ NeptuneScaleError: An error occurred in the Neptune Scale client.
         message = kwargs.pop("message", self.message)
         reason = kwargs.pop("reason", "")
         super().__init__(message.format(*args, reason=reason, **STYLES, **kwargs))
+
+
+class NeptuneValidationError(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneValidationError: Invalid data was sent to Neptune.
+{end}
+{reason}
+"""
 
 
 class NeptuneScaleWarning(Warning):
@@ -275,21 +285,21 @@ This may happen if you try to resume a run (for example, by custom ID) that is n
 """
 
 
-class NeptuneRunDuplicate(NeptuneScaleWarning):
-    message = """
-{h1}
-----NeptuneRunDuplicate: A run with the provided ID already exists.
-{end}
-If you wanted to resume an existing run, include the argument `resume=True`.
-"""
-
-
 class NeptuneRunConflicting(NeptuneScaleError):
     message = """
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
 {end}
 For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
+"""
+
+
+class NeptuneRunDuplicate(NeptuneScaleWarning):
+    message = """
+{h1}
+----NeptuneRunDuplicate: A run with the provided ID already exists.
+{end}
+If you wanted to resume an existing run, include the argument `resume=True`.
 """
 
 
@@ -302,38 +312,21 @@ For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
+class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
+    message = """
+{h1}
+NeptuneSeriesPointDuplicate: The exact same data point (value + step pair) was already logged for this series.
+{end}
+For help, see https://docs-beta.neptune.ai/log_metrics
+"""
+
+
 class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
     message = """
 {h1}
 NeptuneRunInvalidCreationParameters: Run creation parameters rejected by the server.
 {end}
 For example, the experiment name is too large.
-"""
-
-
-class NeptuneAttributePathExceedsSizeLimit(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneAttributePathExceedsSizeLimit: Attribute name is too long.
-{end}
-The maximum length is 1024 bytes (not characters) in UTF-8 encoding.
-"""
-
-
-class NeptuneAttributePathEmpty(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneAttributePathEmpty: Attribute path is empty.
-{end}
-"""
-
-
-class NeptuneAttributePathInvalid(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneAttributePathInvalid: Attribute path is invalid.
-{end}
-To troubleshoot the problem, ensure that the provided path correctly encodes to UTF-8.
 """
 
 
@@ -348,16 +341,7 @@ For details, see https://docs-beta.neptune.ai/sys
 """
 
 
-class NeptuneAttributeTypeUnsupported(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneAttributeTypeUnsupported: the provided attribute type is not supported by Neptune.
-{end}
-For supported types, see https://docs-beta.neptune.ai/attribute_types
-"""
-
-
-class NeptuneAttributeTypeMismatch(NeptuneScaleError):
+class NeptuneAttributeTypeMismatch(NeptuneValidationError):
     message = """
 {h1}
 NeptuneAttributeTypeMismatch: the attribute type is different from the one that was previously logged for this series.
@@ -366,16 +350,42 @@ Once an attribute type is set, it cannot be changed. Example: you can't log stri
 """
 
 
-class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
+class NeptuneAttributeTypeUnsupported(NeptuneValidationError):
     message = """
 {h1}
-NeptuneSeriesPointDuplicate: The exact same data point (value + step pair) was already logged for this series.
+NeptuneAttributeTypeUnsupported: the provided attribute type is not supported by Neptune.
 {end}
-For help, see https://docs-beta.neptune.ai/log_metrics
+For supported types, see https://docs-beta.neptune.ai/attribute_types
 """
 
 
-class NeptuneSeriesStepNonIncreasing(NeptuneScaleError):
+class NeptuneAttributePathExceedsSizeLimit(NeptuneValidationError):
+    message = """
+{h1}
+NeptuneAttributePathExceedsSizeLimit: Attribute name is too long.
+{end}
+The maximum length is 1024 bytes (not characters) in UTF-8 encoding.
+"""
+
+
+class NeptuneAttributePathEmpty(NeptuneValidationError):
+    message = """
+{h1}
+NeptuneAttributePathEmpty: Attribute path is empty.
+{end}
+"""
+
+
+class NeptuneAttributePathInvalid(NeptuneValidationError):
+    message = """
+{h1}
+NeptuneAttributePathInvalid: Attribute path is invalid.
+{end}
+To troubleshoot the problem, ensure that the provided path correctly encodes to UTF-8.
+"""
+
+
+class NeptuneSeriesStepNonIncreasing(NeptuneValidationError):
     message = """
 {h1}
 NeptuneSeriesStepNonIncreasing: Subsequent steps of a series must be increasing.
@@ -388,7 +398,7 @@ For help, see https://docs-beta.neptune.ai/log_metrics
 """
 
 
-class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
+class NeptuneSeriesStepNotAfterForkPoint(NeptuneValidationError):
     message = """
 {h1}
 NeptuneSeriesStepNotAfterForkPoint: The series value must be greater than the step specified by the `fork_step` argument.
@@ -397,7 +407,7 @@ For help, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
-class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
+class NeptuneSeriesTimestampDecreasing(NeptuneValidationError):
     message = """
 {h1}
 NeptuneSeriesTimestampDecreasing: The timestamp of a series value is less than the most recently logged value.
@@ -406,7 +416,7 @@ Existing timestamps are allowed. For help, see https://docs-beta.neptune.ai/log_
 """
 
 
-class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
+class NeptuneFloatValueNanInfUnsupported(NeptuneValidationError):
     message = """
 {h1}
 NeptuneFloatValueNanInfUnsupported: metric `{metric}` at step `{step}` has non-finite value of `{value}`.
@@ -420,7 +430,7 @@ For details, see https://docs-beta.neptune.ai/log_configs
 """
 
 
-class NeptuneStringValueExceedsSizeLimit(NeptuneScaleError):
+class NeptuneStringValueExceedsSizeLimit(NeptuneValidationError):
     message = """
 {h1}
 NeptuneStringValueExceedsSizeLimit: String value is too long. Maximum length is 64KB.
@@ -428,7 +438,7 @@ NeptuneStringValueExceedsSizeLimit: String value is too long. Maximum length is 
 """
 
 
-class NeptuneStringSetExceedsSizeLimit(NeptuneScaleError):
+class NeptuneStringSetExceedsSizeLimit(NeptuneValidationError):
     message = """
 {h1}
 NeptuneStringSetExceedsSizeLimit: String Set value is too long. Maximum length is 64KB.
