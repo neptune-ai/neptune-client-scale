@@ -1,6 +1,5 @@
 import math
 import os
-import random
 import time
 import uuid
 from datetime import (
@@ -11,6 +10,7 @@ from datetime import (
 import numpy as np
 from neptune_fetcher import ReadOnlyRun
 from pytest import mark
+from util import random_series
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 
@@ -23,19 +23,6 @@ def refresh(ro_run: ReadOnlyRun):
     """Create a new ReadOnlyRun instance with the same project and custom_id,
     which is basically a "refresh" operation"""
     return ReadOnlyRun(read_only_project=ro_run.project, custom_id=ro_run["sys/custom_run_id"].fetch())
-
-
-def random_series(length=10, start_step=0):
-    """Return a 2-tuple of step and value lists, both of length `length`"""
-    assert length > 0
-    assert start_step >= 0
-
-    j = random.random()
-    # Round to 0 to avoid floating point errors
-    steps = [round((j + x) ** 2.0, 0) for x in range(start_step, length)]
-    values = [round((j + x) ** 3.0, 0) for x in range(len(steps))]
-
-    return steps, values
 
 
 def test_atoms(sync_run, ro_run):

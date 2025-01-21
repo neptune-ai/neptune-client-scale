@@ -13,11 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import (
-    Callable,
-    Literal,
-    Optional,
-)
+import click
 
-RunCallback = Callable[[BaseException, Optional[float]], None]
-RunMode = Literal["async", "offline", "disabled"]
+from neptune_scale.cli import sync
+from neptune_scale.util.styles import ensure_style_detected
+
+
+@click.group()
+def main() -> None:
+    ensure_style_detected()
+
+
+main.add_command(sync.sync)
+
+if __name__ == "__main__":
+    main()

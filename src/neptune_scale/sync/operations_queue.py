@@ -72,11 +72,27 @@ class OperationsQueue(Resource):
         with self._lock:
             return self._last_timestamp
 
-    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None) -> None:
+    def enqueue(self, *, operation: RunOperation, size: Optional[int] = None) -> int:
         try:
             is_metadata_update = operation.HasField("update")
             serialized_operation = operation.SerializeToString()
 
+            return self.enqueue_raw(
+                serialized_operation=serialized_operation, size=size, is_batchable=is_metadata_update
+            )
+        except Exception as e:
+            logger.error("Failed to enqueue operation %s: %s", operation, e)
+            raise e
+
+    def enqueue_raw(
+        self,
+        *,
+        serialized_operation: bytes,
+        size: Optional[int] = None,
+        is_batchable: bool,
+    ) -> int:
+        """Enqueue a single serialized operation. Return the operation's sequence number."""
+        try:
             if len(serialized_operation) > MAX_QUEUE_ELEMENT_SIZE:
                 raise ValueError(f"Operation size exceeds the maximum allowed size ({MAX_QUEUE_ELEMENT_SIZE})")
 
@@ -89,14 +105,16 @@ class OperationsQueue(Resource):
                         timestamp=self._last_timestamp,
                         operation=serialized_operation,
                         metadata_size=size,
-                        is_batchable=is_metadata_update,
+                        is_batchable=is_batchable,
                     ),
                     block=True,
                     timeout=None,
                 )
                 self._sequence_id += 1
+
+                return self._sequence_id - 1
         except Exception as e:
-            logger.error("Failed to enqueue operation: %s %s", e, operation)
+            logger.error("Failed to enqueue operation: %s", e)
             raise e
 
     def close(self) -> None:
