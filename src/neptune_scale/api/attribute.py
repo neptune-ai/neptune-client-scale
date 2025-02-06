@@ -11,9 +11,9 @@ from typing import (
     Callable,
     Optional,
     Union,
-    cast,
 )
 
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 
@@ -30,7 +30,8 @@ def warn_unsupported_params(fn: Callable) -> Callable:
         if kwargs.get("wait") is not None:
             warn("The `wait` parameter is not yet implemented and will be ignored.")
 
-        extra_kwargs = set(kwargs.keys()) - {"wait", "step", "timestamp", "steps", "timestamps"}
+        expected = {"wait", "step", "timestamp", "steps", "timestamps", "preview", "previews", "preview_completion", "preview_completions"}
+        extra_kwargs = set(kwargs.keys()) - expected
         if extra_kwargs:
             warn(
                 f"`{fn.__name__}()` was called with additional keyword argument(s): `{', '.join(extra_kwargs)}`. "
@@ -76,10 +77,9 @@ class AttributeStore:
 
     def log(
         self,
-        step: Optional[Union[float, int]] = None,
         timestamp: Optional[Union[datetime, float]] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[dict[str, Union[float, int]]] = None,
+        metrics: Optional[Metrics] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -91,7 +91,6 @@ class AttributeStore:
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
-            step=step,
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
@@ -100,8 +99,8 @@ class AttributeStore:
         )
 
         for operation, metadata_size in splitter:
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
-
+            key = metrics.step if metrics is not None else None
+            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=key)
 
 class Attribute:
     """Objects of this class are returned on dict-like access to Run. Attributes have a path and
@@ -129,12 +128,16 @@ class Attribute:
         value: Union[dict[str, Any], float],
         *,
         step: Union[float, int],
+        preview: Optional[bool] = False,
+        preview_completion: Optional[float] = 0.0,
         timestamp: Optional[Union[float, datetime]] = None,
         wait: bool = False,
         **kwargs: Any,
     ) -> None:
         data = accumulate_dict_values(value, self._path)
-        self._store.log(metrics=data, step=step, timestamp=timestamp)
+        self._store.log(
+                metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
+                timestamp=timestamp)
 
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
@@ -159,19 +162,24 @@ class Attribute:
         *,
         steps: Collection[Union[float, int]],
         timestamps: Optional[Collection[Union[float, datetime]]] = None,
+        previews: Optional[Collection[bool]] = None,
+        preview_completions: Optional[Collection[float]] = None,
         wait: bool = False,
         **kwargs: Any,
     ) -> None:
         # TODO: make this compatible with the old client
-        assert len(values) == len(steps)
+        in_args = {"step": steps, "timestamp": timestamps, "preview": previews, "preview_completion": preview_completions}
+        out_args = {}
+        for k, v in in_args.items():
+            if v is not None:
+                if len(v) != len(values):
+                    raise ValueError(f"All lists provided to extend must have the same length; len(value) != len({k})")
+                out_args[k] = v
+        if "timestamp" not in out_args:
+            out_args["timestamp"] = (datetime.now(),) * len(values)
 
-        if timestamps is not None:
-            assert len(timestamps) == len(values)
-        else:
-            timestamps = cast(tuple, itertools.repeat(datetime.now()))
-
-        for value, step, timestamp in zip(values, steps, timestamps):
-            self.append(value, step=step, timestamp=timestamp, wait=wait)
+        for i, v in enumerate(values):
+            self.append(v, **{k: v[i] for k, v in out_args.items()})
 
     # TODO: add value type validation to all the methods
     # TODO: change Run API to typehint timestamp as Union[datetime, float]
