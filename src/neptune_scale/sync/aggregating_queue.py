@@ -1,18 +1,3 @@
-#
-# Copyright (c) 2025, Neptune Labs Sp. z o.o.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 from __future__ import annotations
 
 __all__ = ("AggregatingQueue",)
@@ -22,6 +7,7 @@ from queue import (
     Empty,
     Queue,
 )
+from threading import RLock
 from typing import Optional
 
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
@@ -55,6 +41,7 @@ class AggregatingQueue(Resource):
         self._wait_time = wait_time
 
         self._queue: Queue[SingleOperation] = Queue(maxsize=max_queue_size)
+        self._lock: RLock = RLock()
         self._latest_unprocessed: Optional[SingleOperation] = None
 
     @property
@@ -62,19 +49,21 @@ class AggregatingQueue(Resource):
         return self._max_queue_size
 
     def put_nowait(self, element: SingleOperation) -> None:
-        self._queue.put_nowait(element)
+        with self._lock:
+            self._queue.put_nowait(element)
 
     def _get_next(self, timeout: float) -> Optional[SingleOperation]:
         # We can assume that each of queue elements are less than MAX_QUEUE_ELEMENT_SIZE because of MetadataSplitter.
         # We can assume that every queue element has the same project, run id and family
-        if self._latest_unprocessed is not None:
-            return self._latest_unprocessed
+        with self._lock:
+            if self._latest_unprocessed is not None:
+                return self._latest_unprocessed
 
-        try:
-            self._latest_unprocessed = self._queue.get(timeout=timeout)
-            return self._latest_unprocessed
-        except Empty:
-            return None
+            try:
+                self._latest_unprocessed = self._queue.get(timeout=timeout)
+                return self._latest_unprocessed
+            except Empty:
+                return None
 
     def commit(self) -> None:
         self._latest_unprocessed = None
@@ -82,7 +71,7 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.monotonic()
 
-        batch_operations: list[RunOperation] = []
+        batch_operations: dict[Optional[float], RunOperation] = {}
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -106,7 +95,7 @@ class AggregatingQueue(Resource):
             if not batch_operations:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                batch_operations.append(new_operation)
+                batch_operations[element.batch_key] = new_operation
                 batch_bytes += len(element.operation)
             else:
                 if not element.is_batchable:
@@ -121,7 +110,10 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                batch_operations.append(new_operation)
+                if element.batch_key not in batch_operations:
+                    batch_operations[element.batch_key] = new_operation
+                else:
+                    merge_run_operation(batch_operations[element.batch_key], new_operation)
                 batch_bytes += element.metadata_size
 
             batch_sequence_id = element.sequence_id
@@ -165,25 +157,54 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: list[RunOperation]) -> RunOperation:
-    if not operations:
-        raise Empty
-
+def create_run_batch(operations: dict[Optional[float], RunOperation]) -> RunOperation:
     if len(operations) == 1:
-        return operations[0]
+        return next(iter(operations.values()))
 
-    head = operations[0]
-    batch = RunOperation()
-    batch.project = head.project
-    batch.run_id = head.run_id
-    batch.create_missing_project = head.create_missing_project
-    batch.api_key = head.api_key
+    batch = None
+    for _, operation in sorted(operations.items(), key=lambda x: (x[0] is not None, x[0])):
+        if batch is None:
+            batch = RunOperation()
+            batch.project = operation.project
+            batch.run_id = operation.run_id
+            batch.create_missing_project = operation.create_missing_project
+            batch.api_key = operation.api_key
 
-    for operation in operations:
         operation_type = operation.WhichOneof("operation")
         if operation_type == "update":
             batch.update_batch.snapshots.append(operation.update)
         else:
             raise ValueError("Cannot batch operation of type %s", operation_type)
 
+    if batch is None:
+        raise Empty
     return batch
+
+
+def merge_run_operation(batch: RunOperation, operation: RunOperation) -> None:
+    """
+    Merge the `operation` into `batch`, taking into account the special case of `modify_sets`.
+
+    Protobuf merges existing map keys by simply overwriting values, instead of calling
+    `MergeFrom` on the existing value, eg: A['foo'] = B['foo'].
+
+    We want this instead:
+
+        batch = {'sys/tags': 'string': { 'values': {'foo': ADD}}}
+        operation = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
+        result = {'sys/tags': 'string': { 'values': {'foo': ADD, 'bar': ADD}}}
+
+    If we called `batch.MergeFrom(operation)` we would get an overwritten value:
+        result = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
+
+    This function ensures that the `modify_sets` are merged correctly, leaving the default
+    behaviour for all other fields.
+    """
+
+    modify_sets = operation.update.modify_sets
+    operation.update.ClearField("modify_sets")
+
+    batch.MergeFrom(operation)
+
+    for k, v in modify_sets.items():
+        batch.update.modify_sets[k].MergeFrom(v)

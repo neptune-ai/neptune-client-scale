@@ -1,52 +1,25 @@
 import queue
 import time
-from dataclasses import dataclass
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
-    BulkRequestStatus,
-    SubmitResponse,
-)
+from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import SubmitResponse
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
-from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
 
 from neptune_scale.exceptions import NeptuneSynchronizationStopped
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.sync.sync_process import (
-    SenderThread,
-    StatusTrackingElement,
-    StatusTrackingThread,
-)
-from neptune_scale.util.shared_var import (
-    SharedFloat,
-    SharedInt,
-)
+from neptune_scale.sync.sync_process import SenderThread
+from neptune_scale.util.shared_var import SharedInt
 
 
-def status_response(code_count_batch: list[dict[Code.ValueType, int]], status_code: int = 200):
-    body = BulkRequestStatus(
-        statuses=[
-            RequestStatus(
-                code_by_count=[RequestStatus.CodeByCount(code=code, count=count) for code, count in code_counts.items()]
-            )
-            for code_counts in code_count_batch
-        ]
-    )
-    content = body.SerializeToString()
-    return Mock(status_code=status_code, content=content, parsed=body)
-
-
-def submit_response(request_ids: list[str], status_code: int = 200):
+def response(request_ids: list[str], status_code: int = 200):
     body = SubmitResponse(request_ids=request_ids, request_id=request_ids[-1] if request_ids else None)
     content = body.SerializeToString()
     return Mock(status_code=status_code, content=content, parsed=body)
@@ -60,21 +33,12 @@ def single_operation(update: UpdateRunSnapshot, sequence_id):
         operation=operation.SerializeToString(),
         is_batchable=True,
         metadata_size=update.ByteSize(),
+        batch_key=None,
     )
 
 
-@dataclass
-class MockedSender:
-    operations_queue: Any
-    status_tracking_queue: Any
-    errors_queue: Any
-    last_queue_seq: Any
-    backend: Any
-    sender_thread: Any
-
-
-@pytest.fixture
-def sender() -> MockedSender:
+def test_sender_thread_work_finishes_when_queue_empty():
+    # given
     operations_queue = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
@@ -91,210 +55,165 @@ def sender() -> MockedSender:
     )
     sender_thread._backend = backend
 
-    return MockedSender(operations_queue, status_tracking_queue, errors_queue, last_queue_seq, backend, sender_thread)
-
-
-def test_sender_thread_work_finishes_when_queue_empty(sender):
-    # given
-    sender.operations_queue.get.side_effect = queue.Empty
+    # and
+    operations_queue.get.side_effect = queue.Empty
 
     # when
-    sender.sender_thread.work()
+    sender_thread.work()
 
     # then
     assert True
 
 
-def test_sender_thread_processes_single_element(sender):
+def test_sender_thread_processes_single_element():
     # given
+    operations_queue = Mock()
+    status_tracking_queue = Mock()
+    errors_queue = Mock()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="",
+        family="",
+        operations_queue=operations_queue,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+        mode="disabled",
+    )
+    sender_thread._backend = backend
+
+    # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    sender.operations_queue.get.side_effect = [
+    operations_queue.get.side_effect = [
         BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
         queue.Empty,
     ]
 
     # and
-    sender.backend.submit.side_effect = [submit_response(["1"])]
+    backend.submit.side_effect = [response(["1"])]
 
     # when
-    sender.sender_thread.work()
+    sender_thread.work()
 
     # then
-    assert sender.backend.submit.call_count == 1
+    assert backend.submit.call_count == 1
 
 
-def test_sender_thread_processes_element_on_single_retryable_error(sender):
+def test_sender_thread_processes_element_on_single_retryable_error():
     # given
+    operations_queue = Mock()
+    status_tracking_queue = Mock()
+    errors_queue = Mock()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="",
+        family="",
+        operations_queue=operations_queue,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+        mode="disabled",
+    )
+    sender_thread._backend = backend
+
+    # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    sender.operations_queue.get.side_effect = [
+    operations_queue.get.side_effect = [
         BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
         queue.Empty,
     ]
 
     # and
-    sender.backend.submit.side_effect = [
-        submit_response([], status_code=503),
-        submit_response(["a"], status_code=200),
+    backend.submit.side_effect = [
+        response([], status_code=503),
+        response(["a"], status_code=200),
     ]
 
     # when
-    sender.sender_thread.work()
+    sender_thread.work()
 
     # then
-    assert sender.backend.submit.call_count == 2
+    assert backend.submit.call_count == 2
 
 
-def test_sender_thread_fails_on_regular_error(sender):
+def test_sender_thread_fails_on_regular_error():
     # given
+    operations_queue = Mock()
+    status_tracking_queue = Mock()
+    errors_queue = Mock()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="",
+        family="",
+        operations_queue=operations_queue,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+        mode="disabled",
+    )
+    sender_thread._backend = backend
+
+    # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    sender.operations_queue.get.side_effect = [
+    operations_queue.get.side_effect = [
         BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
         queue.Empty,
     ]
 
     # and
-    sender.backend.submit.side_effect = [
-        submit_response([], status_code=200),
+    backend.submit.side_effect = [
+        response([], status_code=200),
     ]
 
     # when
     with pytest.raises(NeptuneSynchronizationStopped):
-        sender.sender_thread.work()
+        sender_thread.work()
 
     # then should throw NeptuneInternalServerError
-    sender.errors_queue.put.assert_called_once()
+    errors_queue.put.assert_called_once()
 
 
-def test_sender_thread_processes_element_on_429_and_408_http_statuses(sender):
+def test_sender_thread_processes_element_on_429_and_408_http_statuses():
     # given
+    operations_queue = Mock()
+    status_tracking_queue = Mock()
+    errors_queue = Mock()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="",
+        family="",
+        operations_queue=operations_queue,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+        mode="disabled",
+    )
+    sender_thread._backend = backend
+
+    # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    sender.operations_queue.get.side_effect = [
+    operations_queue.get.side_effect = [
         BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
         queue.Empty,
     ]
 
     # and
-    sender.backend.submit.side_effect = [
-        submit_response([], status_code=408),
-        submit_response([], status_code=429),
-        submit_response(["a"], status_code=200),
+    backend.submit.side_effect = [
+        response([], status_code=408),
+        response([], status_code=429),
+        response(["a"], status_code=200),
     ]
 
     # when
-    sender.sender_thread.work()
+    sender_thread.work()
 
     # then
-    assert sender.backend.submit.call_count == 3
-
-
-def test_status_tracking_thread_processes_single_element():
-    # given
-    status_tracking_queue = Mock()
-    errors_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=0)
-    last_ack_timestamp = SharedFloat(initial_value=0)
-    backend = Mock()
-    status_tracking_thread = StatusTrackingThread(
-        api_token="",
-        mode="disabled",
-        project="",
-        errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
-    )
-    status_tracking_thread._backend = backend
-
-    # and
-    element = StatusTrackingElement(sequence_id=1, timestamp=time.process_time(), request_id="a")
-    status_tracking_queue.peek.side_effect = [[element], queue.Empty]
-
-    # and
-    backend.check_batch.side_effect = [status_response(code_count_batch=[{"OK": 1}])]
-
-    # when
-    status_tracking_thread.work()
-
-    # then
-    assert backend.check_batch.call_count == 1
-    assert last_ack_seq.value == 1
-    assert last_ack_timestamp.value == element.timestamp
-
-
-def test_status_tracking_thread_processes_element_on_single_retryable_error():
-    # given
-    status_tracking_queue = Mock()
-    errors_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=0)
-    last_ack_timestamp = SharedFloat(initial_value=0)
-    backend = Mock()
-    status_tracking_thread = StatusTrackingThread(
-        api_token="",
-        mode="disabled",
-        project="",
-        errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
-    )
-    status_tracking_thread._backend = backend
-
-    # and
-    element = StatusTrackingElement(sequence_id=1, timestamp=time.process_time(), request_id="a")
-    status_tracking_queue.peek.side_effect = [[element], queue.Empty]
-
-    # and
-    backend.check_batch.side_effect = [
-        status_response(code_count_batch=[], status_code=408),
-        status_response(code_count_batch=[{"OK": 1}]),
-    ]
-
-    # when
-    status_tracking_thread.work()
-
-    # then
-    assert backend.check_batch.call_count == 2
-    assert last_ack_seq.value == 1
-    assert last_ack_timestamp.value == element.timestamp
-
-
-def test_status_tracking_thread_fails_on_regular_error():
-    # given
-    status_tracking_queue = Mock()
-    errors_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=0)
-    last_ack_timestamp = SharedFloat(initial_value=0)
-    backend = Mock()
-    status_tracking_thread = StatusTrackingThread(
-        api_token="",
-        mode="disabled",
-        project="",
-        errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
-    )
-    status_tracking_thread._backend = backend
-
-    # and
-    element = StatusTrackingElement(sequence_id=1, timestamp=time.process_time(), request_id="a")
-    status_tracking_queue.peek.side_effect = [[element], queue.Empty]
-
-    # and
-    backend.check_batch.side_effect = [
-        status_response(code_count_batch=[], status_code=403),
-    ]
-
-    # when
-    with pytest.raises(NeptuneSynchronizationStopped):
-        status_tracking_thread.work()
-
-    # then
-    errors_queue.put.assert_called_once()
-    assert backend.check_batch.call_count == 1
-    assert last_ack_seq.value == 0
-    assert last_ack_timestamp.value == 0
+    assert backend.submit.call_count == 3

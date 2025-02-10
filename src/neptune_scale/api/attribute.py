@@ -1,21 +1,5 @@
-#
-# Copyright (c) 2025, Neptune Labs Sp. z o.o.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import functools
 import itertools
-import threading
 import warnings
 from collections.abc import (
     Collection,
@@ -30,7 +14,6 @@ from typing import (
     cast,
 )
 
-from neptune_scale.exceptions import NeptuneSeriesStepNonIncreasing
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 
@@ -76,11 +59,6 @@ class AttributeStore:
         self._run_id = run_id
         self._operations_queue = operations_queue
         self._attributes: dict[str, Attribute] = {}
-        # Keep a list of path -> (last step, last value) mappings to detect non-increasing steps
-        # at call site. The backend will detect this error as well, but it's more convenient for the user
-        # to get the error as soon as possible.
-        self._metric_state: dict[str, tuple[float, float]] = {}
-        self._lock = threading.RLock()
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -107,45 +85,22 @@ class AttributeStore:
     ) -> None:
         if timestamp is None:
             timestamp = datetime.now()
-        elif isinstance(timestamp, (float, int)):
+        elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
-        # MetadataSplitter is an iterator, so gather everything into a list instead of iterating over
-        # it in the critical section, to avoid holding the lock for too long.
-        # TODO: Move splitting into the worker process. Here we should just send messages as they are.
-        chunks = list(
-            MetadataSplitter(
-                project=self._project,
-                run_id=self._run_id,
-                step=step,
-                timestamp=timestamp,
-                configs=configs,
-                metrics=metrics,
-                add_tags=tags_add,
-                remove_tags=tags_remove,
-            )
+        splitter: MetadataSplitter = MetadataSplitter(
+            project=self._project,
+            run_id=self._run_id,
+            step=step,
+            timestamp=timestamp,
+            configs=configs,
+            metrics=metrics,
+            add_tags=tags_add,
+            remove_tags=tags_remove,
         )
 
-        with self._lock:
-            self._verify_and_update_metrics_state(step, metrics)
-
-            for operation, metadata_size in chunks:
-                self._operations_queue.enqueue(operation=operation, size=metadata_size)
-
-    def _verify_and_update_metrics_state(self, step: Optional[float], metrics: Optional[dict[str, float]]) -> None:
-        """Check if step in provided metrics is increasing, raise `NeptuneSeriesStepNonIncreasing` if not."""
-
-        if step is None or metrics is None:
-            return
-
-        for metric, value in metrics.items():
-            if (state := self._metric_state.get(metric)) is not None:
-                last_step, last_value = state
-                # Repeating a step is fine as long as the value does not change
-                if step < last_step or (step == last_step and value != last_value):
-                    raise NeptuneSeriesStepNonIncreasing()
-
-            self._metric_state[metric] = (step, value)
+        for operation, metadata_size in splitter:
+            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=step)
 
 
 class Attribute:
