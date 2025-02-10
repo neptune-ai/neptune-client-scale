@@ -19,7 +19,7 @@ backoff = "^2.0.0"
 [tool.poetry]
 name = "neptune-scale"
 version = "0.1.0"
-description = "Python logging API for Neptune Scale"
+description = "A minimal client library"
 authors = ["neptune.ai <contact@neptune.ai>"]
 repository = "https://github.com/neptune-ai/neptune-client-scale"
 readme = "README.md"
