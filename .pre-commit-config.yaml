@@ -26,11 +26,9 @@ repos:
     rev: v1.13.0
     hooks:
       - id: mypy
+        entry: python -m mypy
+        language: system
         args: [ --config-file, pyproject.toml ]
         pass_filenames: false
-        additional_dependencies:
-          - neptune-api==0.7.0b
-          - more-itertools
-          - backoff
 default_language_version:
   python: python3
