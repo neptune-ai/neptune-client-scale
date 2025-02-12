@@ -37,7 +37,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
     NeptuneFloatValueNanInfUnsupported,
-    NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -54,14 +53,12 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
-    NeptuneTooManyRequestsResponseError,
-    NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
-    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
     backend_factory,
+    raise_for_http_status,
     with_api_errors_handling,
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
@@ -428,7 +425,7 @@ class SenderThread(Daemon, WithResources):
 
         status_code = response.status_code
         if status_code != 200:
-            _raise_exception(status_code)
+            raise_for_http_status(status_code)
 
         return response.parsed
 
@@ -468,20 +465,6 @@ class SenderThread(Daemon, WithResources):
                 self._last_queued_seq.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
-
-
-def _raise_exception(status_code: int) -> None:
-    logger.error("HTTP response error: %s", status_code)
-    if status_code == 403:
-        raise NeptuneUnauthorizedError()
-    elif status_code == 408:
-        raise NeptuneConnectionLostError()
-    elif status_code == 429:
-        raise NeptuneTooManyRequestsResponseError()
-    elif status_code // 100 == 5:
-        raise NeptuneInternalServerError()
-    else:
-        raise NeptuneUnexpectedResponseError()
 
 
 class StatusTrackingThread(Daemon, WithResources):
@@ -530,7 +513,7 @@ class StatusTrackingThread(Daemon, WithResources):
         status_code = response.status_code
 
         if status_code != 200:
-            _raise_exception(status_code)
+            raise_for_http_status(status_code)
 
         return response.parsed
 
