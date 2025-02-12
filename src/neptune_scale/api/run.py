@@ -20,8 +20,7 @@ from typing import (
     Union,
 )
 
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint, Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
@@ -55,6 +54,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.types import File
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -62,6 +62,10 @@ from neptune_scale.util.abstract import (
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
     PROJECT_ENV_NAME,
+)
+from neptune_scale.util.files import (
+    FileInfo,
+    verify_file_readable,
 )
 from neptune_scale.util.logger import get_logger
 from neptune_scale.util.process_link import ProcessLink
@@ -502,6 +506,20 @@ class Run(WithResources, AbstractContextManager):
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_remove={name: tags})
+
+    def log_files(self, files: dict[str, Union[str, File]]) -> None:
+        file_infos = {}
+        for attribute_path, file in files.items():
+            verify_type(f"files['{attribute_path}']", file, (str, File))
+
+            if isinstance(file, str):
+                file = File(file)
+            if isinstance(file.source, str):
+                verify_file_readable(file.source)
+
+            file_infos[attribute_path] = FileInfo.from_user_file(file, self._run_id, attribute_path)
+
+        self._attr_store.log(files=file_infos)
 
     def log(
         self,
