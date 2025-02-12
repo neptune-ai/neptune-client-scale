@@ -15,7 +15,14 @@
 #
 from __future__ import annotations
 
-__all__ = ("HostedApiClient", "MockedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
+__all__ = (
+    "ApiClient",
+    "HostedApiClient",
+    "MockedApiClient",
+    "backend_factory",
+    "raise_for_http_status",
+    "with_api_errors_handling",
+)
 
 import abc
 import functools
@@ -67,8 +74,12 @@ from neptune_api.types import Response
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
+    NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
+    NeptuneTooManyRequestsResponseError,
     NeptuneUnableToAuthenticateError,
+    NeptuneUnauthorizedError,
+    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
 from neptune_scale.util.abstract import Resource
@@ -203,3 +214,19 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             raise e
 
     return wrapper
+
+
+def raise_for_http_status(status_code: int) -> None:
+    """Raise a Neptune exception given a common HTTP response status code"""
+
+    logger.error("HTTP response error: %s", status_code)
+    if status_code == 403:
+        raise NeptuneUnauthorizedError()
+    elif status_code == 408:
+        raise NeptuneConnectionLostError()
+    elif status_code == 429:
+        raise NeptuneTooManyRequestsResponseError()
+    elif status_code // 100 == 5:
+        raise NeptuneInternalServerError()
+    else:
+        raise NeptuneUnexpectedResponseError()
