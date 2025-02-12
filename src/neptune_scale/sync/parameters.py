@@ -31,3 +31,9 @@ LAG_TRACKER_TIMEOUT = 1
 
 # Status tracking
 MAX_REQUESTS_STATUS_BATCH_SIZE = 1000
+
+# Files
+
+# Maximum size of file data provided via a buffer (as opposed to a file on a filesystem).
+# We enforce the limit to avoid pushing large chunks of memory between processes.
+MAX_FILE_UPLOAD_BUFFER_SIZE = 128 * 1024**2  # 128MB
