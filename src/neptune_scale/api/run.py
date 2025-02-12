@@ -44,10 +44,15 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+from neptune_scale.sync.files.queue import (
+    FileUploadJob,
+    FileUploadQueue,
+)
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
+    MAX_FILE_UPLOAD_BUFFER_SIZE,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -55,6 +60,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.types import File
 from neptune_scale.util.abstract import (
     Resource,
     WithResources,
@@ -62,6 +68,11 @@ from neptune_scale.util.abstract import (
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
     PROJECT_ENV_NAME,
+)
+from neptune_scale.util.files import (
+    FileInfo,
+    source_size,
+    verify_file_readable,
 )
 from neptune_scale.util.logger import get_logger
 from neptune_scale.util.process_link import ProcessLink
@@ -218,11 +229,13 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp = SharedFloat(-1)
 
         self._process_link = ProcessLink()
+        self._file_upload_queue = FileUploadQueue()
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
+            file_upload_queue=self._file_upload_queue,
             process_link=self._process_link,
             api_token=input_api_token,
             last_queued_seq=self._last_queued_seq,
@@ -502,6 +515,34 @@ class Run(WithResources, AbstractContextManager):
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self.log(tags_remove={name: tags})
+
+    def log_files(self, files: dict[str, Union[str, File]]) -> None:
+        file_infos = {}
+        upload_jobs = []
+
+        for attribute_path, file in files.items():
+            verify_type(f"files['{attribute_path}']", file, (str, File))
+
+            if isinstance(file, str):
+                file = File(file)
+
+            if isinstance(file.source, str):
+                verify_file_readable(file.source)
+            else:
+                buffer_size = source_size(file.source)
+                if buffer_size > MAX_FILE_UPLOAD_BUFFER_SIZE:
+                    raise ValueError(
+                        f"files['{attribute_path}'] source must be smaller than"
+                        f" {MAX_FILE_UPLOAD_BUFFER_SIZE / 1024**2:.1f} MB"
+                    )
+
+            file_info = FileInfo.from_user_file(file, self._run_id, attribute_path)
+
+            file_infos[attribute_path] = file_info
+            upload_jobs.append(FileUploadJob.from_user_file(file, file_info))
+
+        self._attr_store.log(files=file_infos)
+        self._file_upload_queue.submit(upload_jobs)
 
     def log(
         self,

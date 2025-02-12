@@ -63,10 +63,18 @@ from neptune_scale.net.api_client import (
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
-from neptune_scale.sync.parameters import (INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME, MAX_QUEUE_SIZE,
-                                           MAX_REQUESTS_STATUS_BATCH_SIZE, MAX_REQUEST_RETRY_SECONDS, SHUTDOWN_TIMEOUT,
-                                           STATUS_TRACKING_THREAD_SLEEP_TIME, SYNC_PROCESS_SLEEP_TIME,
-                                           SYNC_THREAD_SLEEP_TIME)
+from neptune_scale.sync.files.queue import FileUploadQueue
+from neptune_scale.sync.files.worker import FileUploadWorkerThread
+from neptune_scale.sync.parameters import (
+    INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
+    MAX_QUEUE_SIZE,
+    MAX_REQUEST_RETRY_SECONDS,
+    MAX_REQUESTS_STATUS_BATCH_SIZE,
+    SHUTDOWN_TIMEOUT,
+    STATUS_TRACKING_THREAD_SLEEP_TIME,
+    SYNC_PROCESS_SLEEP_TIME,
+    SYNC_THREAD_SLEEP_TIME,
+)
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
@@ -158,6 +166,7 @@ class SyncProcess(Process):
         self,
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
+        file_upload_queue: FileUploadQueue,
         process_link: ProcessLink,
         api_token: str,
         project: str,
@@ -172,6 +181,7 @@ class SyncProcess(Process):
 
         self._external_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
+        self._file_upload_queue: FileUploadQueue = file_upload_queue
         self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
         self._project: str = project
@@ -204,6 +214,7 @@ class SyncProcess(Process):
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
+            file_upload_queue=self._file_upload_queue,
             external_operations_queue=self._external_operations_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
@@ -235,6 +246,7 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
+        file_upload_queue: FileUploadQueue,
         external_operations_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
@@ -268,14 +280,30 @@ class SyncProcessWorker(WithResources):
             last_ack_seq=last_ack_seq,
             last_ack_timestamp=last_ack_timestamp,
         )
+        self._file_upload_thread = FileUploadWorkerThread(
+            project=project,
+            neptune_api_token=api_token,
+            input_queue=file_upload_queue,
+            errors_queue=errors_queue,
+        )
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._external_to_internal_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._external_to_internal_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     def interrupt(self) -> None:
         for thread in self.threads:
