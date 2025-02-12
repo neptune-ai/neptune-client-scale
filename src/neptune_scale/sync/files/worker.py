@@ -1,22 +1,31 @@
-import io
-import mimetypes
-import time
-import uuid
+import typing
+from collections.abc import Iterable
 from concurrent import futures
-from pathlib import Path
 from queue import Empty
 from typing import (
-    BinaryIO,
     Callable,
     Optional,
-    Tuple,
 )
 
+import backoff
+import httpx
+
+from neptune_scale.exceptions import (
+    NeptuneRetryableError,
+    NeptuneUnexpectedError,
+)
+from neptune_scale.net.api_client import (
+    ApiClient,
+    backend_factory,
+    raise_for_http_status,
+    with_api_errors_handling,
+)
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.files.queue import (
+    FileUploadJob,
     FileUploadQueue,
-    UploadMessage,
 )
+from neptune_scale.sync.parameters import MAX_REQUEST_RETRY_SECONDS
 from neptune_scale.util import (
     Daemon,
     get_logger,
@@ -35,18 +44,15 @@ class FileUploadWorkerThread(Daemon, Resource):
         self,
         *,
         project: str,
-        run_id: str,
-        api_token: str,
-        family: str,
+        neptune_api_token: str,
         input_queue: FileUploadQueue,
         errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(sleep_time=0.5, name="FileUploader")
 
         self._project = project
-        self._run_id = run_id
-        self._api_token = api_token
-        self._family = family
+        self._neptune_api_token = neptune_api_token
+        self._client: Optional[ApiClient] = None
         self._input_queue = input_queue
         self._errors_queue = errors_queue
         self._executor = futures.ThreadPoolExecutor()
@@ -59,53 +65,30 @@ class FileUploadWorkerThread(Daemon, Resource):
                 return
 
             try:
-                future = self._executor.submit(
-                    self._do_upload, msg.attribute_path, msg.local_path, msg.data, msg.target_path, msg.target_basename
-                )
-                future.add_done_callback(self._make_done_callback(msg))
+                if not self._client:
+                    self._client = backend_factory(self._neptune_api_token, mode="async")
+
+                paths = [request.info.path for request in msg.requests]
+                storage_urls = fetch_file_storage_urls(self._client, self._project, paths)
             except Exception as e:
-                logger.error(f"Failed to submit file upload task for `{msg.attribute_path}`: {e}")
-                self._input_queue.decrement_active()
+                logger.error(f"Failed to retrieve storage information for upload of {len(msg.requests)} files: {e}")
+                self._input_queue.decrement_active(len(msg.requests))
                 self._errors_queue.put(e)
+                continue
+
+            for request in msg.requests:
+                try:
+                    future = self._executor.submit(_do_upload, request, storage_urls[request.info.path])
+                    future.add_done_callback(self._make_done_callback(request))
+                except Exception as e:
+                    logger.error(f"Failed to submit file upload task for `{request.info.path}`: {e}")
+                    self._input_queue.decrement_active()
+                    self._errors_queue.put(e)
 
     def close(self) -> None:
         self._executor.shutdown()
 
-    def _do_upload(
-        self,
-        attribute_path: str,
-        local_path: Optional[Path],
-        data: Optional[bytes],
-        target_path: Optional[str],
-        target_basename: Optional[str],
-    ) -> None:
-        path, mime_type = determine_path_and_mime_type(
-            self._run_id, attribute_path, local_path, target_path, target_basename
-        )
-
-        try:
-            url = self._request_upload_url(attribute_path, path)
-            src = local_path.open("rb") if local_path else io.BytesIO(data)  # type: ignore
-            with src:
-                upload_file(src, url, mime_type)
-            self._finalize_upload(path)
-        except Exception as e:
-            self._finalize_upload(path, e)
-            raise e
-
-    def _request_upload_url(self, attribute_path: str, file_path: str) -> str:
-        assert self._api_token
-        # TODO: Make this retryable
-        return ".".join(["http://localhost:8012/", attribute_path, file_path])
-
-    def _finalize_upload(self, attribute_path: str, error: Optional[Exception] = None) -> None:
-        """Notify the backend that the upload process is complete successfully or with an error."""
-        # TODO: hit the backend, needs to be retryable
-        print(f"finalizing file {attribute_path}")
-        time.sleep(1)
-        print(f"finalized file {attribute_path}")
-
-    def _make_done_callback(self, message: UploadMessage) -> Callable[[futures.Future], None]:
+    def _make_done_callback(self, request: FileUploadJob) -> Callable[[futures.Future], None]:
         """Returns a callback function suitable for use with Future.add_done_callback(). Decreases the active upload
         count and propagates any exception to the errors queue.
         """
@@ -116,49 +99,35 @@ class FileUploadWorkerThread(Daemon, Resource):
             try:
                 future.result()
             except Exception as e:
-                logger.error(f"Failed to upload file as `{message.attribute_path}`: {e}")
+                logger.error(f"Failed to upload file as `{request.info.path}`: {e}")
                 self._errors_queue.put(e)
 
         return _on_task_completed
 
 
-def determine_path_and_mime_type(
-    run_id: str,
-    attribute_path: str,
-    local_path: Optional[Path],
-    target_path: Optional[str],
-    target_basename: Optional[str],
-) -> Tuple[str, str]:
-    mime_type = guess_mime_type(attribute_path, local_path)
+@backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
+@with_api_errors_handling
+def fetch_file_storage_urls(client: ApiClient, project: str, paths: Iterable[str]) -> dict[str, str]:
+    response = client.fetch_file_storage_urls(paths=paths, project=project, mode="write")
+    status_code = response.status_code
+    if status_code != 200:
+        raise_for_http_status(status_code)
 
-    # Target path always takes precedence as-is
-    if target_path:
-        return target_path, mime_type
+    if response.parsed is None:
+        raise NeptuneUnexpectedError("Server response is empty")
 
-    if local_path:
-        local_basename = local_path.name
+    return {file.path: file.url for file in response.parsed.files}
+
+
+def _do_upload(request: FileUploadJob, storage_url: str) -> None:
+    # TODO: replace with Azure SDK
+    def upload_to_storage(data: typing.BinaryIO) -> None:
+        response = httpx.put(storage_url, content=data, headers={"x-ms-blob-type": "BlockBlob"}, verify=False)
+        response.raise_for_status()
+
+    if request.local_path:
+        with open(request.local_path, "rb") as f:
+            upload_to_storage(f)
     else:
-        local_basename = f"{uuid.uuid4()}{mimetypes.guess_extension(mime_type)}"
-
-    if target_basename:
-        parts: tuple[str, ...] = (run_id, attribute_path, target_basename)
-    else:
-        parts = (run_id, attribute_path, str(uuid.uuid4()), local_basename)
-
-    return "/".join(parts), mime_type
-
-
-def upload_file(source: BinaryIO, url: str, mime_type: str) -> None:
-    # TODO: do the actual work :)
-    assert source and url and mime_type
-    pass
-
-
-def guess_mime_type(attribute_path: str, local_path: Optional[Path]) -> str:
-    if local_path:
-        mime_type, _ = mimetypes.guess_type(local_path or attribute_path)
-        if mime_type is not None:
-            return mime_type
-
-    mime_type, _ = mimetypes.guess_type(attribute_path)
-    return mime_type or "application/octet-stream"
+        assert request.data_buffer is not None  # mypy
+        upload_to_storage(request.data_buffer)

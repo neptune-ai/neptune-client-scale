@@ -34,5 +34,6 @@ MAX_REQUESTS_STATUS_BATCH_SIZE = 1000
 
 # Files
 
-# Maximum size of file data provided via a buffer (as opposed to a file on a filesystem)
-MAX_FILE_UPLOAD_BUFFER_SIZE = 10 * 1024**2  # 10MB
+# Maximum size of file data provided via a buffer (as opposed to a file on a filesystem).
+# This needs to have reasonable limits to prevent memory exhaustion.
+MAX_FILE_UPLOAD_BUFFER_SIZE = 128 * 1024**2  # 128MB

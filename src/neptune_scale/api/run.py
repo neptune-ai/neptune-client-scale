@@ -45,13 +45,14 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.files.queue import (
+    FileUploadJob,
     FileUploadQueue,
-    FileUploadRequest,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
+    MAX_FILE_UPLOAD_BUFFER_SIZE,
     MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -70,6 +71,7 @@ from neptune_scale.util.envs import (
 )
 from neptune_scale.util.files import (
     FileInfo,
+    source_size,
     verify_file_readable,
 )
 from neptune_scale.util.logger import get_logger
@@ -516,21 +518,31 @@ class Run(WithResources, AbstractContextManager):
 
     def log_files(self, files: dict[str, Union[str, File]]) -> None:
         file_infos = {}
-        upload_requests = []
+        upload_jobs = []
+
         for attribute_path, file in files.items():
             verify_type(f"files['{attribute_path}']", file, (str, File))
 
             if isinstance(file, str):
                 file = File(file)
+
             if isinstance(file.source, str):
                 verify_file_readable(file.source)
+            else:
+                buffer_size = source_size(file.source)
+                if buffer_size > MAX_FILE_UPLOAD_BUFFER_SIZE:
+                    raise ValueError(
+                        f"files['{attribute_path}'] source must be smaller than"
+                        f" {MAX_FILE_UPLOAD_BUFFER_SIZE /  1024**2:.1f} MB"
+                    )
 
             file_info = FileInfo.from_user_file(file, self._run_id, attribute_path)
+
             file_infos[attribute_path] = file_info
-            upload_requests.append(FileUploadRequest.from_user_file(attribute_path, file, file_info))
+            upload_jobs.append(FileUploadJob.from_user_file(attribute_path, file, file_info))
 
         self._attr_store.log(files=file_infos)
-        self._file_upload_queue.submit(upload_requests)
+        self._file_upload_queue.submit(upload_jobs)
 
     def log(
         self,

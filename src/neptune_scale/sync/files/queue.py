@@ -11,14 +11,14 @@ from neptune_scale.util.files import FileInfo
 
 
 @dataclass(frozen=True)
-class FileUploadRequest:
+class FileUploadJob:
     # attribute_path: str
     info: FileInfo
     local_path: Optional[Path]
     data_buffer: Optional[io.BytesIO]
 
     @classmethod
-    def from_user_file(cls, attribute_path: str, file: File, info: FileInfo) -> "FileUploadRequest":
+    def from_user_file(cls, attribute_path: str, file: File, info: FileInfo) -> "FileUploadJob":
         if isinstance(file.source, str):
             local_path, data_buffer = Path(file.source), None
         else:
@@ -34,7 +34,7 @@ class FileUploadRequest:
 
 @dataclass(frozen=True)
 class UploadMessage:
-    files: list[FileUploadRequest]
+    requests: list[FileUploadJob]
 
 
 class FileUploadQueue(Resource):
@@ -58,7 +58,7 @@ class FileUploadQueue(Resource):
     # Main process API
     def submit(
         self,
-        files: list[FileUploadRequest],
+        files: list[FileUploadJob],
     ) -> None:
         with self._active_uploads:
             self._queue.put(UploadMessage(files))
@@ -78,10 +78,12 @@ class FileUploadQueue(Resource):
 
     # Worker process API
     def decrement_active(self, num: int = 1) -> None:
+        """Signal that `num` uploads have been completed."""
+
         assert num > 0
         with self._active_uploads:
+            assert num <= self._active_uploads.value
             self._active_uploads.value -= num
-            assert self._active_uploads.value >= 0
             self._active_uploads.notify_all()
 
     def get(self, timeout: float) -> UploadMessage:
