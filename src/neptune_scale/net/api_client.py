@@ -28,7 +28,10 @@ import abc
 import functools
 import os
 import uuid
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import (
@@ -71,6 +74,14 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
 from neptune_api.types import Response
+from neptune_storage_api.api.storagebridge import signed_url
+from neptune_storage_api.models import (
+    CreateSignedUrlsRequest,
+    CreateSignedUrlsResponse,
+    FileToSign,
+    Permission,
+    SignedFile,
+)
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -140,6 +151,14 @@ class ApiClient(Resource, abc.ABC):
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
 
+    @abc.abstractmethod
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]: ...
+
 
 class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
@@ -162,6 +181,23 @@ class HostedApiClient(ApiClient):
             client=self.backend,
             project_identifier=project,
             body=RequestIdList(ids=[RequestId(value=request_id) for request_id in request_ids]),
+        )
+
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]:
+        permission = Permission(mode)
+        # We ignore the type here, because even though the `signed_url` method is defined in `neptune_storage_api`,
+        # it's fine to pass it a client from `neptune_api` as they are basically the same. The alternative would be
+        # to create a separate client instance for each module from the `neptune-api` package, which is suboptimal.
+        return signed_url.sync_detailed(
+            client=self.backend,  # type: ignore
+            body=CreateSignedUrlsRequest(
+                files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],
+            ),
         )
 
     def close(self) -> None:
@@ -189,6 +225,19 @@ class MockedApiClient(ApiClient):
                     request_ids,
                 )
             )
+        )
+        return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
+
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]:
+        response_body = CreateSignedUrlsResponse(
+            files=[
+                SignedFile(path=path, project_identifier=project, url=f"http://localhost:9090/{path}") for path in paths
+            ]
         )
         return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
 
