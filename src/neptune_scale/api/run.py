@@ -20,7 +20,8 @@ from typing import (
     Union,
 )
 
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint, Run as CreateRun
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
@@ -42,6 +43,10 @@ from neptune_scale.net.serialization import (
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
+)
+from neptune_scale.sync.files.queue import (
+    FileUploadQueue,
+    FileUploadRequest,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.operations_queue import OperationsQueue
@@ -222,11 +227,13 @@ class Run(WithResources, AbstractContextManager):
         self._last_ack_timestamp = SharedFloat(-1)
 
         self._process_link = ProcessLink()
+        self._file_upload_queue = FileUploadQueue()
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._run_id,
             operations_queue=self._operations_queue.queue,
             errors_queue=self._errors_queue,
+            file_upload_queue=self._file_upload_queue,
             process_link=self._process_link,
             api_token=input_api_token,
             last_queued_seq=self._last_queued_seq,
@@ -509,6 +516,7 @@ class Run(WithResources, AbstractContextManager):
 
     def log_files(self, files: dict[str, Union[str, File]]) -> None:
         file_infos = {}
+        upload_requests = []
         for attribute_path, file in files.items():
             verify_type(f"files['{attribute_path}']", file, (str, File))
 
@@ -517,9 +525,12 @@ class Run(WithResources, AbstractContextManager):
             if isinstance(file.source, str):
                 verify_file_readable(file.source)
 
-            file_infos[attribute_path] = FileInfo.from_user_file(file, self._run_id, attribute_path)
+            file_info = FileInfo.from_user_file(file, self._run_id, attribute_path)
+            file_infos[attribute_path] = file_info
+            upload_requests.append(FileUploadRequest.from_user_file(attribute_path, file, file_info))
 
         self._attr_store.log(files=file_infos)
+        self._file_upload_queue.submit(upload_requests)
 
     def log(
         self,

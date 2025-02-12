@@ -1,20 +1,40 @@
+import io
 import multiprocessing
-import pathlib
-from typing import (
-    NamedTuple,
-    Optional,
-)
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
+from neptune_scale.types import File
 from neptune_scale.util import SharedInt
 from neptune_scale.util.abstract import Resource
+from neptune_scale.util.files import FileInfo
 
 
-class UploadMessage(NamedTuple):
-    attribute_path: str
-    local_path: Optional[pathlib.Path]
-    data: Optional[bytes]
-    target_path: Optional[str]
-    target_basename: Optional[str]
+@dataclass(frozen=True)
+class FileUploadRequest:
+    # attribute_path: str
+    info: FileInfo
+    local_path: Optional[Path]
+    data_buffer: Optional[io.BytesIO]
+
+    @classmethod
+    def from_user_file(cls, attribute_path: str, file: File, info: FileInfo) -> "FileUploadRequest":
+        if isinstance(file.source, str):
+            local_path, data_buffer = Path(file.source), None
+        else:
+            local_path, data_buffer = None, file.source
+
+        return cls(
+            # attribute_path=attribute_path,
+            info=info,
+            local_path=local_path,
+            data_buffer=data_buffer,
+        )
+
+
+@dataclass(frozen=True)
+class UploadMessage:
+    files: list[FileUploadRequest]
 
 
 class FileUploadQueue(Resource):
@@ -25,8 +45,8 @@ class FileUploadQueue(Resource):
     for all uploads to complete by calling the `wait_for_completion` method.
     """
 
-    def __init__(self) -> None:
-        self._queue: multiprocessing.Queue[UploadMessage] = multiprocessing.Queue(maxsize=4096)
+    def __init__(self, max_size: int = 4096) -> None:
+        self._queue: multiprocessing.Queue[UploadMessage] = multiprocessing.Queue(maxsize=max_size)
         self._active_uploads = SharedInt(0)
 
     @property
@@ -38,22 +58,17 @@ class FileUploadQueue(Resource):
     # Main process API
     def submit(
         self,
-        *,
-        attribute_path: str,
-        local_path: Optional[pathlib.Path],
-        data: Optional[bytes],
-        target_path: Optional[str],
-        target_basename: Optional[str],
+        files: list[FileUploadRequest],
     ) -> None:
-        assert data is not None or local_path
         with self._active_uploads:
-            self._active_uploads.value += 1
-            self._queue.put(UploadMessage(attribute_path, local_path, data, target_path, target_basename))
+            self._queue.put(UploadMessage(files))
+            self._active_uploads.value += len(files)
 
     def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
         """Blocks until all uploads are completed or the timeout is reached.
         Returns True if all uploads completed, False if the timeout was reached.
         """
+
         with self._active_uploads:
             return self._active_uploads.wait_for(lambda: self._active_uploads.value == 0, timeout=timeout)
 
@@ -62,9 +77,10 @@ class FileUploadQueue(Resource):
         self._queue.cancel_join_thread()
 
     # Worker process API
-    def decrement_active(self) -> None:
+    def decrement_active(self, num: int = 1) -> None:
+        assert num > 0
         with self._active_uploads:
-            self._active_uploads.value -= 1
+            self._active_uploads.value -= num
             assert self._active_uploads.value >= 0
             self._active_uploads.notify_all()
 
