@@ -19,6 +19,8 @@ from neptune_scale.sync.operations_queue import OperationsQueue
 
 __all__ = ("Attribute", "AttributeStore")
 
+from neptune_scale.util.files import FileInfo
+
 
 def warn_unsupported_params(fn: Callable) -> Callable:
     # Perform some simple heuristics to detect if a method is called with parameters
@@ -52,6 +54,8 @@ class AttributeStore:
     Responsible for managing local attribute store, and pushing log() operations
     to the provided OperationsQueue -- assuming that there is something on the other
     end consuming the queue (which would be SyncProcess).
+
+    NOT responsible for input validation -- we assume the Run class provides validated input.
     """
 
     def __init__(self, project: str, run_id: str, operations_queue: OperationsQueue) -> None:
@@ -82,6 +86,7 @@ class AttributeStore:
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
+        files: Optional[dict[str, FileInfo]] = None,
     ) -> None:
         if timestamp is None:
             timestamp = datetime.now()
@@ -97,6 +102,7 @@ class AttributeStore:
             metrics=metrics,
             add_tags=tags_add,
             remove_tags=tags_remove,
+            files=files,
         )
 
         for operation, metadata_size in splitter:

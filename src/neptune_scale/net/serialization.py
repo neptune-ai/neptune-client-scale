@@ -12,10 +12,13 @@ from typing import Union
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+    FileRef,
     Step,
     StringSet,
     Value,
 )
+
+from neptune_scale.util.files import FileInfo
 
 
 def make_value(value: Union[Value, float, str, int, bool, datetime, list[str], set[str]]) -> Value:
@@ -33,6 +36,8 @@ def make_value(value: Union[Value, float, str, int, bool, datetime, list[str], s
         return Value(timestamp=datetime_to_proto(value))
     elif isinstance(value, (list, set, tuple)):
         return Value(string_set=StringSet(values=value))
+    elif isinstance(value, FileInfo):
+        return Value(file_ref=FileRef(path=value.path, size_bytes=value.size_bytes, mime_type=value.mime_type))
     else:
         raise ValueError(f"Unsupported value type: {type(value)}")
 

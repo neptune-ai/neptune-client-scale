@@ -38,6 +38,7 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
+from neptune_scale.util.files import FileInfo
 
 logger = get_logger()
 
@@ -56,6 +57,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         metrics: Optional[dict[str, float]],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
+        files: Optional[dict[str, FileInfo]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
         self._step = None if step is None else make_step(number=step)
@@ -66,6 +68,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         self._metrics = peekable(self._skip_non_finite(step, metrics)) if metrics else None
         self._add_tags = peekable(add_tags.items()) if add_tags else None
         self._remove_tags = peekable(remove_tags.items()) if remove_tags else None
+        self._files = peekable(files.items()) if files else None
 
         self._max_update_bytes_size = (
             max_message_bytes_size
@@ -113,6 +116,11 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             update=update,
             assets=self._remove_tags,
             operation=SET_OPERATION.REMOVE,
+            size=size,
+        )
+        size = self.populate(
+            assets=self._files,
+            update_producer=lambda key, value: update.assign[key].MergeFrom(value),
             size=size,
         )
 

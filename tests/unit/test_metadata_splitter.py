@@ -35,6 +35,7 @@ def test_empty():
         metrics={},
         add_tags={},
         remove_tags={},
+        files={},
     )
 
     # when
@@ -69,6 +70,7 @@ def test_configs():
         metrics={},
         add_tags={},
         remove_tags={},
+        files={},
     )
 
     # when
@@ -108,6 +110,7 @@ def test_metrics():
         },
         add_tags={},
         remove_tags={},
+        files={},
     )
 
     # when
@@ -146,6 +149,7 @@ def test_tags():
             "some/group_tags": {"tag0", "tag1"},
             "some/other_tags": {"tag2", "tag3"},
         },
+        files={},
     )
 
     # when
@@ -197,6 +201,7 @@ def test_splitting():
         metrics=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
+        files={},
         max_message_bytes_size=max_size,
     )
 
@@ -243,6 +248,7 @@ def test_split_large_tags():
         metrics=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
+        files={},
         max_message_bytes_size=max_size,
     )
 
@@ -287,6 +293,7 @@ def test_raise_on_non_finite_float_metrics(value):
         metrics={"bad-metric": value},
         add_tags={},
         remove_tags={},
+        files={},
         max_message_bytes_size=1024,
     )
 
@@ -310,6 +317,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
             metrics={"bad-metric": value},
             add_tags={},
             remove_tags={},
+            files={},
             max_message_bytes_size=1024,
         )
 
