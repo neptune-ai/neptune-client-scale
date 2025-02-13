@@ -14,7 +14,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_scale import NeptuneScaleWarning
 from neptune_scale.exceptions import (
     NeptuneScaleError,
-    NeptuneSynchronizationStopped, NeptuneUnexpectedError,
+    NeptuneSynchronizationStopped,
+    NeptuneUnexpectedError,
 )
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
