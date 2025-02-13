@@ -36,7 +36,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
-    NeptuneFloatValueNanInfUnsupported,
     NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
@@ -57,7 +56,7 @@ from neptune_scale.exceptions import (
     NeptuneTooManyRequestsResponseError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
-    NeptuneUnexpectedResponseError,
+    NeptuneUnexpectedResponseError, GenericFloatValueNanInfUnsupported,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
@@ -98,7 +97,6 @@ T = TypeVar("T")
 logger = get_logger()
 
 CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
-    IngestCode.OK: None,
     IngestCode.PROJECT_NOT_FOUND: NeptuneProjectNotFound,
     IngestCode.PROJECT_INVALID_NAME: NeptuneProjectInvalidName,
     IngestCode.RUN_NOT_FOUND: NeptuneRunNotFound,
@@ -116,7 +114,7 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.SERIES_STEP_NON_INCREASING: NeptuneSeriesStepNonIncreasing,
     IngestCode.SERIES_STEP_NOT_AFTER_FORK_POINT: NeptuneSeriesStepNotAfterForkPoint,
     IngestCode.SERIES_TIMESTAMP_DECREASING: NeptuneSeriesTimestampDecreasing,
-    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: NeptuneFloatValueNanInfUnsupported,
+    IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: GenericFloatValueNanInfUnsupported,
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
 }
@@ -128,10 +126,11 @@ class StatusTrackingElement(NamedTuple):
     request_id: str
 
 
-def code_to_exception(code: IngestCode.ValueType) -> Optional[type[Exception]]:
+def code_to_exception(code: IngestCode.ValueType) -> Exception:
     if code in CODE_TO_ERROR:
-        return CODE_TO_ERROR[code]
-    return NeptuneUnexpectedError
+        error = CODE_TO_ERROR[code]
+        return error()  # type: ignore
+    return NeptuneUnexpectedError(reason=f"Unexpected ingestion error code: {code}")
 
 
 class PeekableQueue(Generic[T]):
@@ -536,8 +535,9 @@ class StatusTrackingThread(Daemon, WithResources):
                         break
 
                     for code_status in request_status.code_by_count:
-                        if code_status.code != Code.OK and (error := code_to_exception(code_status.detail)) is not None:
-                            self._errors_queue.put(error())
+                        if code_status.code != Code.OK:
+                            error = code_to_exception(code_status.detail)
+                            self._errors_queue.put(error)
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
