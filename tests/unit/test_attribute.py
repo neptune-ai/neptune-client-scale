@@ -72,8 +72,8 @@ def test_tags(run, store):
 
 
 def test_append(run, store):
-    run["sys/series"].append(1, step=1, timestamp=10)
-    store.log.assert_called_with(metrics=Metrics(data={"sys/series": 1}, step=1), timestamp=10)
+    run["sys/series"].append(3, step=1, timestamp=10)
+    store.log.assert_called_with(metrics=Metrics(data={"sys/series": 3}, step=1), timestamp=10)
 
     run["sys/series"].append({"foo": 1, "bar": 2}, step=2)
     store.log.assert_called_with(metrics=Metrics(data={"sys/series/foo": 1, "sys/series/bar": 2}, step=2), timestamp=None)
@@ -89,22 +89,22 @@ def test_extend(run, store):
     now = datetime.now()
     before = now - timedelta(seconds=1)
 
-    run["my/series"].extend([1,2], steps=[1,2], timestamps=[before, now])
+    run["my/series"].extend([7,38], steps=[1,2], timestamps=[before, now])
     store.log.assert_has_calls([
-            call(metrics=Metrics(data={"my/series": 1}, step=1), timestamp=before),
-            call(metrics=Metrics(data={"my/series": 2}, step=2), timestamp=now)])
+            call(metrics=Metrics(data={"my/series": 7}, step=1), timestamp=before),
+            call(metrics=Metrics(data={"my/series": 38}, step=2), timestamp=now)])
 
     # timestamp defaulting
-    run["my/series"].extend([3,4], steps=[3,4])
+    run["my/series"].extend([7,38], steps=[3,4])
     store.log.assert_has_calls([
-            call(metrics=Metrics(data={"my/series": 3}, step=3), timestamp=now),
-            call(metrics=Metrics(data={"my/series": 4}, step=4), timestamp=now)])
+            call(metrics=Metrics(data={"my/series": 7}, step=3), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 38}, step=4), timestamp=now)])
 
     # previews
-    run["my/series"].extend([5,6], steps=[5,6], previews=[False, True], preview_completions=[0.0, 0.5], timestamps=[now,now])
+    run["my/series"].extend([7,38], steps=[5,6], previews=[False, True], preview_completions=[0.0, 0.5], timestamps=[now,now])
     store.log.assert_has_calls([
-            call(metrics=Metrics(data={"my/series": 5}, step=5), timestamp=now),
-            call(metrics=Metrics(data={"my/series": 6}, step=6, preview=True, preview_completion=0.5), timestamp=now)])
+            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=0.0), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now)])
 
     # different length of inputs
     with pytest.raises(ValueError):

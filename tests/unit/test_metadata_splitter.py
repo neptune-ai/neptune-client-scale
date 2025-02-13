@@ -94,7 +94,7 @@ def test_configs():
 
 @freeze_time("2024-07-30 12:12:12.000022")
 @pytest.mark.parametrize(
-    "preview,preview_completion,expected_proto",
+    "preview,preview_completion,expected_preview_proto",
     [
         pytest.param(
             False, None, None, id="no preview",
@@ -110,7 +110,7 @@ def test_configs():
         ),
     ],
 )
-def test_metrics(preview, preview_completion, expected_proto):
+def test_metrics(preview, preview_completion, expected_preview_proto):
     # given
     metrics = Metrics(
         step=1,
@@ -143,7 +143,7 @@ def test_metrics(preview, preview_completion, expected_proto):
     expected_update = UpdateRunSnapshot(
         step=Step(whole=1, micro=0),
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
-        preview=expected_proto,
+        preview=expected_preview_proto,
         append={
             "some/metric": Value(float64=3.14),
         },

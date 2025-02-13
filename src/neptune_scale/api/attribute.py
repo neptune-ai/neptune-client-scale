@@ -99,8 +99,9 @@ class AttributeStore:
         )
 
         for operation, metadata_size in splitter:
-            key = metrics.step if metrics is not None else None
+            key = metrics.batch_key() if metrics is not None else None
             self._operations_queue.enqueue(operation=operation, size=metadata_size, key=key)
+
 
 class Attribute:
     """Objects of this class are returned on dict-like access to Run. Attributes have a path and
@@ -128,8 +129,8 @@ class Attribute:
         value: Union[dict[str, Any], float],
         *,
         step: Union[float, int],
-        preview: Optional[bool] = False,
-        preview_completion: Optional[float] = 0.0,
+        preview: bool = False,
+        preview_completion: Optional[float] = None,
         timestamp: Optional[Union[float, datetime]] = None,
         wait: bool = False,
         **kwargs: Any,

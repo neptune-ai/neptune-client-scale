@@ -394,8 +394,8 @@ class Run(WithResources, AbstractContextManager):
         step: Union[float, int],
         *,
         timestamp: Optional[datetime] = None,
-        preview: Optional[bool] = False,
-        preview_completion: Optional[float] = 0.0,
+        preview: bool = False,
+        preview_completion: Optional[float] = None,
     ) -> None:
         """
         Logs the specified metrics to a Neptune run.
@@ -413,14 +413,14 @@ class Run(WithResources, AbstractContextManager):
             data: Dictionary of metrics to log.
                 Each metric value is associated with a step.
                 To log multiple metrics at once, pass multiple key-value pairs.
-            step: Index of the log entry. Must be increasing.
+            step: Index of the log entry. Must be increasing unless preview is set to True.
                 Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
             timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
                 and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
             preview (optional): If set marks the logged metrics as preview values. Preview values may later be overwritten
                 by another preview or by a non-preview value. Writing another preview for the same step overrides the previous
                 value, even if preview_completion is lower than previous. Previews may no longer be logged after a non-preview
-                value is logged for a given metric for a given step.
+                value is logged for a given metric with greator or equal step.
             preview_completion (optional): A value between 0 and 1 that marks the level of completion of the calculation
                 that produced the preview value (higher values mean calculation closer to being complete). Ignored if preview
                 is set to False.
