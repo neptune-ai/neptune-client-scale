@@ -7,6 +7,7 @@ from __future__ import annotations
 __all__ = ["Run"]
 
 import atexit
+import math
 import os
 import threading
 import time
@@ -676,7 +677,7 @@ class Run(WithResources, AbstractContextManager):
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
-        Waits until all metadata is processed by Neptune.
+        Waits until all metadata is processed by Neptune, and in-flight file uploads are completed.
 
         Once the call is complete, the data is saved in Neptune.
 
@@ -684,6 +685,9 @@ class Run(WithResources, AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+
+        t0 = time.monotonic()
+        time_remaining = timeout if timeout is not None else math.inf
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -691,6 +695,31 @@ class Run(WithResources, AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+
+        time_remaining -= time.monotonic() - t0
+        self._wait_for_file_uploads(timeout=time_remaining, verbose=verbose)
+
+    def _wait_for_file_uploads(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+        """
+        Wait at most `timeout` seconds for in-flight file uploads to complete.
+        """
+
+        if self._file_upload_queue.active_uploads == 0:
+            return
+
+        time_remaining = timeout if timeout is not None else math.inf
+        while time_remaining > 0:
+            t0 = time.monotonic()
+            # Report progress every 10 seconds
+            wait_time = min(time_remaining, 10)
+
+            if verbose:
+                logger.info(f"Waiting for {self._file_upload_queue.active_uploads} remaining file uploads to complete")
+
+            if self._file_upload_queue.wait_for_completion(timeout=wait_time):
+                return
+
+            time_remaining -= time.monotonic() - t0
 
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
