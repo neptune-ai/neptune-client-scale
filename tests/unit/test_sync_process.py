@@ -2,6 +2,7 @@ import queue
 import time
 from unittest.mock import Mock
 
+import neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 as ingest_pb2
 import pytest
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
@@ -10,12 +11,20 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import SubmitResponse
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.exceptions import NeptuneSynchronizationStopped
+from neptune_scale import NeptuneScaleWarning
+from neptune_scale.exceptions import (
+    NeptuneScaleError,
+    NeptuneSynchronizationStopped,
+    NeptuneUnexpectedError,
+)
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
     SingleOperation,
 )
-from neptune_scale.sync.sync_process import SenderThread
+from neptune_scale.sync.sync_process import (
+    SenderThread,
+    code_to_exception,
+)
 from neptune_scale.util.shared_var import SharedInt
 
 
@@ -217,3 +226,20 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses():
 
     # then
     assert backend.submit.call_count == 3
+
+
+@pytest.mark.parametrize(
+    "code",
+    ingest_pb2.IngestCode.DESCRIPTOR.values_by_number.keys(),
+    ids=ingest_pb2.IngestCode.DESCRIPTOR.values_by_name.keys(),
+)
+def test_code_to_exception(code):
+    exception = code_to_exception(code)
+    assert isinstance(exception, NeptuneScaleError) or isinstance(exception, NeptuneScaleWarning)
+
+
+def test_unknown_code_to_exception():
+    code = 100_000 - 1
+    exception = code_to_exception(code)
+    assert isinstance(exception, NeptuneUnexpectedError)
+    assert f"Unexpected ingestion error code: {code}" in str(exception)
