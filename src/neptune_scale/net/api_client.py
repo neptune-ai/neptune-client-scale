@@ -197,7 +197,7 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             raise NeptuneInvalidCredentialsError()
         except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus):
             raise NeptuneUnableToAuthenticateError()
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError):
+        except (httpx.NetworkError, httpx.TimeoutException, httpx.RemoteProtocolError):
             raise NeptuneConnectionLostError()
         except Exception as e:
             raise e
