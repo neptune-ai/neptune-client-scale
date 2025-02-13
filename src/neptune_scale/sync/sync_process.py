@@ -29,6 +29,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
+    GenericFloatValueNanInfUnsupported,
     NeptuneAttributePathEmpty,
     NeptuneAttributePathExceedsSizeLimit,
     NeptuneAttributePathInvalid,
@@ -56,7 +57,7 @@ from neptune_scale.exceptions import (
     NeptuneTooManyRequestsResponseError,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
-    NeptuneUnexpectedResponseError, GenericFloatValueNanInfUnsupported,
+    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
