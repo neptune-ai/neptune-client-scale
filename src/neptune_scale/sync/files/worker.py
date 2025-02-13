@@ -8,7 +8,7 @@ from typing import (
 )
 
 import backoff
-import httpx
+from azure.storage.blob import BlobClient
 
 from neptune_scale.exceptions import (
     NeptuneRetryableError,
@@ -126,10 +126,20 @@ def fetch_file_storage_urls(client: ApiClient, project: str, paths: Iterable[str
 
 
 def _do_upload(job: FileUploadJob, storage_url: str) -> None:
-    # TODO: replace with Azure SDK
     def upload_to_storage(data: typing.BinaryIO) -> None:
-        response = httpx.put(storage_url, content=data, headers={"x-ms-blob-type": "BlockBlob"}, verify=False)
-        response.raise_for_status()
+        # We will make 5 retries over around 6 minutes total, with 5 sec wait after the first failure
+        client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, max_attempts=5)
+
+        # Note that max_concurrency and chunking will only apply if the file is larger than 64MB (Azure default).
+        # Otherwise, it will be uploaded in a single request, single thread. The default value of
+        # max_concurrency is 16, we set it lower.
+        client.upload_blob(
+            data,
+            content_type=job.info.mime_type,
+            overwrite=True,
+            max_concurrency=8,
+            length=job.info.size_bytes,
+        )
 
     if job.local_path:
         with open(job.local_path, "rb") as f:
