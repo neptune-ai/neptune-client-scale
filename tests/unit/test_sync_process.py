@@ -14,7 +14,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_scale import NeptuneScaleWarning
 from neptune_scale.exceptions import (
     NeptuneScaleError,
-    NeptuneSynchronizationStopped,
+    NeptuneSynchronizationStopped, NeptuneUnexpectedError,
 )
 from neptune_scale.sync.queue_element import (
     BatchedOperations,
@@ -235,3 +235,10 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses():
 def test_code_to_exception(code):
     exception = code_to_exception(code)
     assert isinstance(exception, NeptuneScaleError) or isinstance(exception, NeptuneScaleWarning)
+
+
+def test_unknown_code_to_exception():
+    code = 100_000 - 1
+    exception = code_to_exception(code)
+    assert isinstance(exception, NeptuneUnexpectedError)
+    assert f"Unexpected ingestion error code: {code}" in str(exception)
