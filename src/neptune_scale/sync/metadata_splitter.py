@@ -36,6 +36,7 @@ from neptune_scale.net.serialization import (
     make_value,
     pb_key_size,
 )
+from neptune_scale.sync.parameters import MAX_PROTOBUF_PAYLOAD_SIZE
 from neptune_scale.util import (
     envs,
     get_logger,
@@ -57,7 +58,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         metrics: Optional[Metrics],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
-        max_message_bytes_size: int = 1024 * 1024,
+        max_message_bytes_size: int = MAX_PROTOBUF_PAYLOAD_SIZE,
     ):
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
         self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
