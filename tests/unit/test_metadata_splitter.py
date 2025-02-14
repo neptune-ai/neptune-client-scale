@@ -321,3 +321,98 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
         assert "Skipping a non-finite value" in caplog.text
         assert "bad-metric" in caplog.text
+
+
+@mark.parametrize(
+    "name, value",
+    (
+        ("a" * 128, 1),
+        ("aaaa", "a" * 120),
+        ("a" * 50, "b" * 50),
+    ),
+)
+def test_raise_on_too_large_single_config_value(name, value):
+    """Test the condition where a single protobuf value is impossible to fit into the requested max message size"""
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=10,
+        timestamp=datetime.now(),
+        configs={name: value},
+        metrics={},
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=128,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        list(splitter)
+
+    exc.match("Value size exceeds the maximum")
+
+
+@mark.parametrize(
+    "name, value",
+    (
+        ("a" * 100, ["one"]),
+        ("sys/tags", ["a" * 100]),
+        ("sys/tags", ["a" * 35, "b" * 30, "c" * 100]),
+    ),
+)
+def test_raise_on_too_large_single_tag(name, value):
+    """Test the condition where a single protobuf value is impossible to fit into the requested max message size"""
+    # Add tags
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=10,
+        timestamp=datetime.now(),
+        configs={},
+        metrics={},
+        add_tags={name: value},
+        remove_tags={},
+        max_message_bytes_size=128,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        list(splitter)
+
+    exc.match("Value size exceeds the maximum")
+
+    # Remove tags
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=10,
+        timestamp=datetime.now(),
+        configs={},
+        metrics={},
+        add_tags={},
+        remove_tags={name: value},
+        max_message_bytes_size=128,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        list(splitter)
+
+    exc.match("Value size exceeds the maximum")
+
+
+def test_raise_on_too_large_metric_name():
+    """Test the condition where a single protobuf value is impossible to fit into the requested max message size"""
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        step=10,
+        timestamp=datetime.now(),
+        configs={},
+        metrics={"a" * 100: 1},
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=128,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        list(splitter)
+
+    exc.match("Value size exceeds the maximum")

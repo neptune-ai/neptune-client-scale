@@ -76,6 +76,8 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             ).ByteSize()
         )
 
+        assert self._max_update_bytes_size > 0
+
         self._has_returned = False
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
@@ -138,7 +140,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
                 break
 
             proto_value = make_value(value)
-            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
+            new_size = size + self._check_value_size(pb_key_size(key) + proto_value.ByteSize() + 6)
 
             if new_size > self._max_update_bytes_size:
                 break
@@ -164,9 +166,10 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
                 values = peekable(values)
 
             is_full = False
-            new_size = size + pb_key_size(key) + 6
+            new_size = size + self._check_value_size(pb_key_size(key) + 6)
             for value in values:
-                tag_size = pb_key_size(value) + 6
+                # No single tag value can exceed the maximum update size
+                tag_size = self._check_value_size(pb_key_size(value) + 6)
                 if new_size + tag_size > self._max_update_bytes_size:
                     values.prepend(value)
                     is_full = True
@@ -204,3 +207,12 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
                     raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)
 
             yield k, v
+
+    def _check_value_size(self, value_size: int) -> int:
+        """
+        Make sure we don't allow values larger than the update itself creep in earlier in
+        user input validation logic, otherwise we will never consume the value.
+        """
+        if value_size >= self._max_update_bytes_size:
+            raise ValueError("Value size exceeds the maximum update size.")
+        return value_size
