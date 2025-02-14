@@ -38,6 +38,7 @@ __all__ = (
     "NeptuneProjectNotProvided",
     "NeptuneApiTokenNotProvided",
     "NeptuneTooManyRequestsResponseError",
+    "NeptunePreviewStepNotAfterLastCommittedStep",
 )
 
 from typing import Any
@@ -459,4 +460,16 @@ Make sure to specify the API token in the `api_token` parameter of the `Run`
 constructor or with the `NEPTUNE_API_TOKEN` environment variable.
 
 For instructions, see https://docs-beta.neptune.ai/api_token
+"""
+
+
+class NeptunePreviewStepNotAfterLastCommittedStep(NeptuneScaleError):
+    message = """
+{h1}
+NeptunePreviewStepNotAfterLastCommittedStep: Metric preview can only be logged
+for steps greater than the last committed value.
+{end}
+It looks like you tried to log a preview (incomplete) metric update for a step that isn't after
+the last fully committed (complete) update. Once a complete value is recorded, any preview updates
+must only be added for later steps. Please adjust the order of your updates and try again.
 """

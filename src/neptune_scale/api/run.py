@@ -25,6 +25,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
     verify_dict_type,
     verify_max_length,
@@ -393,6 +394,8 @@ class Run(WithResources, AbstractContextManager):
         step: Union[float, int],
         *,
         timestamp: Optional[datetime] = None,
+        preview: bool = False,
+        preview_completion: Optional[float] = None,
     ) -> None:
         """
         Logs the specified metrics to a Neptune run.
@@ -410,11 +413,19 @@ class Run(WithResources, AbstractContextManager):
             data: Dictionary of metrics to log.
                 Each metric value is associated with a step.
                 To log multiple metrics at once, pass multiple key-value pairs.
-            step: Index of the log entry. Must be increasing.
+            step: Index of the log entry. Must be increasing unless preview is set to True.
                 Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
             timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
                 and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
-
+            preview (optional): If set marks the logged metrics as preview values. Preview values may later be overwritten
+                by another preview or by a non-preview value. Writing another preview for the same step overrides the previous
+                value, even if preview_completion is lower than previous. Previews may no longer be logged after a non-preview
+                value is logged for a given metric with greator or equal step.
+            preview_completion (optional): A value between 0 and 1 that marks the level of completion of the calculation
+                that produced the preview value (higher values mean calculation closer to being complete). Ignored if preview
+                is set to False.
+                Note: Metric preview with preview_completion of 1.0 is still considered a preview and can be overwritten.
+                      The final value of a metric for a given step needs to be logged with preview=False.
 
         Examples:
             ```
@@ -427,7 +438,15 @@ class Run(WithResources, AbstractContextManager):
                 )
             ```
         """
-        self.log(step=step, timestamp=timestamp, metrics=data)
+        self._log(
+            timestamp=timestamp,
+            metrics=Metrics(
+                data=data,
+                step=step,
+                preview=preview,
+                preview_completion=preview_completion,
+            ),
+        )
 
     def log_configs(
         self, data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
@@ -463,7 +482,7 @@ class Run(WithResources, AbstractContextManager):
                 )
             ```
         """
-        self.log(configs=data)
+        self._log(configs=data)
 
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
@@ -482,7 +501,7 @@ class Run(WithResources, AbstractContextManager):
             ```
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
-        self.log(tags_add={name: tags})
+        self._log(tags_add={name: tags})
 
     def remove_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
@@ -501,7 +520,7 @@ class Run(WithResources, AbstractContextManager):
             ```
         """
         name = "sys/tags" if not group_tags else "sys/group_tags"
-        self.log(tags_remove={name: tags})
+        self._log(tags_remove={name: tags})
 
     def log(
         self,
@@ -513,6 +532,7 @@ class Run(WithResources, AbstractContextManager):
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
         """
+        This method is retained for backward compatibility.
         See one of the following instead:
 
         - log_configs()
@@ -520,16 +540,24 @@ class Run(WithResources, AbstractContextManager):
         - add_tags()
         - remove_tags()
         """
+        mtr = Metrics(step=step, data=metrics) if metrics is not None else None
+        self._log(timestamp=timestamp, configs=configs, metrics=mtr, tags_add=tags_add, tags_remove=tags_remove)
 
-        verify_type("step", step, (float, int, type(None)))
+    def _log(
+        self,
+        timestamp: Optional[datetime] = None,
+        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        metrics: Optional[Metrics] = None,
+        tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
+        tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
+    ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
-        verify_type("metrics", metrics, (dict, type(None)))
+        verify_type("metrics", metrics, (Metrics, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
         verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
-        verify_dict_type("metrics", metrics, (float, int))
         verify_dict_type("tags_add", tags_add, (list, set, tuple))
         verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
 
@@ -540,7 +568,11 @@ class Run(WithResources, AbstractContextManager):
             return
 
         self._attr_store.log(
-            step=step, timestamp=timestamp, configs=configs, metrics=metrics, tags_add=tags_add, tags_remove=tags_remove
+            timestamp=timestamp,
+            configs=configs,
+            metrics=metrics,
+            tags_add=tags_add,
+            tags_remove=tags_remove,
         )
 
     def _wait(

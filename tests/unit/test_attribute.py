@@ -1,13 +1,21 @@
-from datetime import datetime
-from unittest.mock import Mock
+from datetime import (
+    datetime,
+    timedelta,
+)
+from unittest.mock import (
+    Mock,
+    call,
+)
 
 import pytest
+from freezegun import freeze_time
 from pytest import (
     fixture,
     mark,
 )
 
 from neptune_scale.api.attribute import cleanup_path
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.legacy import Run
 
 
@@ -66,12 +74,58 @@ def test_tags(run, store):
     store.log.assert_called_with(tags_remove={"sys/tags": ("tag1", "tag2")})
 
 
-def test_series(run, store):
-    run["sys/series"].append(1, step=1, timestamp=10)
-    store.log.assert_called_with(metrics={"sys/series": 1}, step=1, timestamp=10)
+def test_append(run, store):
+    run["sys/series"].append(3, step=1, timestamp=10)
+    store.log.assert_called_with(metrics=Metrics(data={"sys/series": 3}, step=1), timestamp=10)
 
     run["sys/series"].append({"foo": 1, "bar": 2}, step=2)
-    store.log.assert_called_with(metrics={"sys/series/foo": 1, "sys/series/bar": 2}, step=2, timestamp=None)
+    store.log.assert_called_with(
+        metrics=Metrics(data={"sys/series/foo": 1, "sys/series/bar": 2}, step=2), timestamp=None
+    )
+
+    run["my/series"].append({"foo": 1, "bar": 2}, step=3, preview=True, preview_completion=0.3)
+    store.log.assert_called_with(
+        metrics=Metrics(data={"my/series/foo": 1, "my/series/bar": 2}, step=3, preview=True, preview_completion=0.3),
+        timestamp=None,
+    )
+
+
+@freeze_time("2024-07-30 12:12:12.000022")
+def test_extend(run, store):
+    now = datetime.now()
+    before = now - timedelta(seconds=1)
+
+    run["my/series"].extend([7, 38], steps=[1, 2], timestamps=[before, now])
+    store.log.assert_has_calls(
+        [
+            call(metrics=Metrics(data={"my/series": 7}, step=1), timestamp=before),
+            call(metrics=Metrics(data={"my/series": 38}, step=2), timestamp=now),
+        ]
+    )
+
+    # timestamp defaulting
+    run["my/series"].extend([7, 38], steps=[3, 4])
+    store.log.assert_has_calls(
+        [
+            call(metrics=Metrics(data={"my/series": 7}, step=3), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 38}, step=4), timestamp=now),
+        ]
+    )
+
+    # previews
+    run["my/series"].extend(
+        [7, 38], steps=[5, 6], previews=[False, True], preview_completions=[1.0, 0.5], timestamps=[now, now]
+    )
+    store.log.assert_has_calls(
+        [
+            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=None), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now),
+        ]
+    )
+
+    # different length of inputs
+    with pytest.raises(ValueError):
+        run["my/series"].extend([7], steps=[7, 8])
 
 
 @pytest.mark.parametrize(

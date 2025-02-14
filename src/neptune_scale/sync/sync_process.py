@@ -39,6 +39,7 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
@@ -118,6 +119,7 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED: GenericFloatValueNanInfUnsupported,
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
+    IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
 }
 
 

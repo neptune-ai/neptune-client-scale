@@ -1,5 +1,6 @@
 __all__ = ("BatchedOperations", "SingleOperation")
 
+from collections.abc import Hashable
 from typing import (
     NamedTuple,
     Optional,
@@ -27,4 +28,4 @@ class SingleOperation(NamedTuple):
     # Size of the metadata in the operation (without project, family, run_id etc.)
     metadata_size: Optional[int]
     # Update metadata key
-    batch_key: Optional[float]
+    batch_key: Hashable

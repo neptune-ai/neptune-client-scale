@@ -82,3 +82,10 @@ def verify_dict_type(
             raise TypeError(f"Keys of dictionary '{var_name}' must be strings (got `{key}`)")
 
         verify_type(f"Values of dictionary '{var_name}'", value, expected_type)
+
+
+def verify_value_between(
+    var_name: str, var: Union[int, float], expected_min: Union[int, float], expected_max: Union[int, float]
+) -> None:
+    if var > expected_max or var < expected_min:
+        raise ValueError(f"{var_name} must have a value between {expected_min} and {expected_max}")
