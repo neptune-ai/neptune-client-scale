@@ -85,7 +85,7 @@ def verify_dict_type(
 
 
 def verify_value_between(
-        var_name: str, var: Union[int, float], expected_min: Union[int, float], expected_max: Union[int, float]
+    var_name: str, var: Union[int, float], expected_min: Union[int, float], expected_max: Union[int, float]
 ) -> None:
     if var > expected_max or var < expected_min:
         raise ValueError(f"{var_name} must have a value between {expected_min} and {expected_max}")

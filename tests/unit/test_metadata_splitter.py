@@ -44,9 +44,7 @@ def test_empty():
     # then
     assert len(result) == 1
     operation, metadata_size = result[0]
-    expected_update = UpdateRunSnapshot(
-        timestamp=Timestamp(seconds=1722341532, nanos=21934)
-    )
+    expected_update = UpdateRunSnapshot(timestamp=Timestamp(seconds=1722341532, nanos=21934))
     assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
     assert metadata_size == expected_update.ByteSize()
 
@@ -92,21 +90,34 @@ def test_configs():
     assert metadata_size >= expected_update.ByteSize()
     assert metadata_size < operation.ByteSize()
 
+
 @freeze_time("2024-07-30 12:12:12.000022")
 @pytest.mark.parametrize(
     "preview,preview_completion,expected_preview_proto",
     [
         pytest.param(
-            False, None, None, id="no preview",
+            False,
+            None,
+            None,
+            id="no preview",
         ),
         pytest.param(
-            False, 0.5, None, id="no preview, preview_completion ignored",
+            False,
+            0.5,
+            None,
+            id="no preview, preview_completion ignored",
         ),
         pytest.param(
-            True, None, Preview(is_preview=True), id="preview with no explicit completion",
+            True,
+            None,
+            Preview(is_preview=True),
+            id="preview with no explicit completion",
         ),
         pytest.param(
-            True, 0.5, Preview(is_preview=True, completion_ratio=0.5), id="preview with specified completion",
+            True,
+            0.5,
+            Preview(is_preview=True, completion_ratio=0.5),
+            id="preview with specified completion",
         ),
     ],
 )
@@ -311,7 +322,7 @@ def test_raise_on_non_finite_float_metrics(value):
 
     # when
     with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
-        builder = MetadataSplitter(
+        MetadataSplitter(
             project="workspace/project",
             run_id="run_id",
             timestamp=datetime.now(),

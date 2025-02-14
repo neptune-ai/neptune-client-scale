@@ -39,6 +39,7 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
+    NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
@@ -58,7 +59,6 @@ from neptune_scale.exceptions import (
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
-    NeptunePreviewStepNotAfterLastCommittedStep,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
