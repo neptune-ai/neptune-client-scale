@@ -13,20 +13,19 @@ from neptune_scale.api.validation import (
     verify_value_between,
 )
 
-__all__ = (
-    "Metrics",
-)
+__all__ = ("Metrics",)
 
 
-@dataclass(slots=True)
+@dataclass
 class Metrics:
     """Class representing a set of metrics at a single step"""
+
     data: dict[str, Union[float, int]]
     step: Optional[Union[float, int]]
     preview: bool = False
     preview_completion: Optional[float] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         verify_type("metrics", self.data, dict)
         verify_type("step", self.step, (float, int, type(None)))
         verify_type("preview", self.preview, bool)

@@ -18,8 +18,8 @@ from typing import (
 
 from more_itertools import peekable
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
-    Preview,
     SET_OPERATION,
+    Preview,
     UpdateRunSnapshot,
     Value,
 )
@@ -65,7 +65,9 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         self._project = project
         self._run_id = run_id
         self._configs = peekable(configs.items()) if configs else None
-        self._metrics_data = peekable(self._skip_non_finite(metrics.step, metrics.data)) if metrics is not None else None
+        self._metrics_data = (
+            peekable(self._skip_non_finite(metrics.step, metrics.data)) if metrics is not None else None
+        )
         self._metrics_preview = metrics.preview if metrics is not None else False
         self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
         self._add_tags = peekable(add_tags.items()) if add_tags else None
@@ -205,9 +207,17 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         include_preview = self._metrics_data and self._metrics_preview
         return UpdateRunSnapshot(
             step=self._step,
-            preview = Preview(is_preview=True, completion_ratio=self._metrics_preview_completion) if include_preview else None,
+            preview=(self._make_preview() if include_preview else None),
             timestamp=self._timestamp,
             assign={},
             append={},
             modify_sets={},
         )
+
+    def _make_preview(self) -> Optional[Preview]:
+        if not self._metrics_preview:
+            return None
+        # let backend default completion
+        if self._metrics_preview_completion is not None:
+            return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
+        return Preview(is_preview=True)

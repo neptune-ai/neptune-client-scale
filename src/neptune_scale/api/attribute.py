@@ -30,7 +30,17 @@ def warn_unsupported_params(fn: Callable) -> Callable:
         if kwargs.get("wait") is not None:
             warn("The `wait` parameter is not yet implemented and will be ignored.")
 
-        expected = {"wait", "step", "timestamp", "steps", "timestamps", "preview", "previews", "preview_completion", "preview_completions"}
+        expected = {
+            "wait",
+            "step",
+            "timestamp",
+            "steps",
+            "timestamps",
+            "preview",
+            "previews",
+            "preview_completion",
+            "preview_completions",
+        }
         extra_kwargs = set(kwargs.keys()) - expected
         if extra_kwargs:
             warn(
@@ -137,8 +147,9 @@ class Attribute:
     ) -> None:
         data = accumulate_dict_values(value, self._path)
         self._store.log(
-                metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
-                timestamp=timestamp)
+            metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
+            timestamp=timestamp,
+        )
 
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
@@ -169,21 +180,30 @@ class Attribute:
         **kwargs: Any,
     ) -> None:
         # TODO: make this compatible with the old client
-        in_args = {"step": steps, "timestamp": timestamps, "preview": previews, "preview_completion": preview_completions}
-        out_args = {}
-        for k, v in in_args.items():
-            if v is not None:
-                if len(v) != len(values):
-                    raise ValueError(f"All lists provided to extend must have the same length; len(value) != len({k})")
-                out_args[k] = v
-        if "timestamp" not in out_args:
-            out_args["timestamp"] = (datetime.now(),) * len(values)
-
-        for i, v in enumerate(values):
-            self.append(v, **{k: v[i] for k, v in out_args.items()})
+        self._validate_lists_length_equal(values, steps, "steps")
+        self._validate_lists_length_equal(values, timestamps, "timestamps")
+        self._validate_lists_length_equal(values, previews, "preview")
+        self._validate_lists_length_equal(values, preview_completions, "preview_completions")
+        if timestamps is None:
+            timestamps = (datetime.now(),) * len(values)
+        it = itertools.zip_longest(values, steps, timestamps, previews or [], preview_completions or [])
+        for value, step, ts, preview, completion in it:
+            kwargs = {}
+            if preview is not None:
+                kwargs["preview"] = preview
+            if completion is not None:
+                kwargs["preview_completion"] = completion
+            self.append(value, step=step, timestamp=ts, wait=wait, **kwargs)
 
     # TODO: add value type validation to all the methods
     # TODO: change Run API to typehint timestamp as Union[datetime, float]
+
+    def _validate_lists_length_equal(
+        self, values: Collection[Any], other: Optional[Collection[Any]], name: str
+    ) -> None:
+        if other is not None:
+            if len(other) != len(values):
+                raise ValueError(f"All lists provided to extend must have the same length; len(value) != len({name})")
 
 
 def cleanup_path(path: str) -> str:

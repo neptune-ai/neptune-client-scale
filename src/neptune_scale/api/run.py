@@ -24,8 +24,8 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.attribute import AttributeStore
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
     verify_dict_type,
     verify_max_length,
@@ -438,13 +438,15 @@ class Run(WithResources, AbstractContextManager):
                 )
             ```
         """
-        self._log(timestamp=timestamp,
-                 metrics=Metrics(
-                     data=data,
-                     step=step,
-                     preview=preview,
-                     preview_completion=preview_completion,
-                ))
+        self._log(
+            timestamp=timestamp,
+            metrics=Metrics(
+                data=data,
+                step=step,
+                preview=preview,
+                preview_completion=preview_completion,
+            ),
+        )
 
     def log_configs(
         self, data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
