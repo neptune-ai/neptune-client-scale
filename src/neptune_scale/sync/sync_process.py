@@ -37,7 +37,6 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
-    NeptuneInternalServerError,
     NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
@@ -54,18 +53,18 @@ from neptune_scale.exceptions import (
     NeptuneStringSetExceedsSizeLimit,
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
-    NeptuneTooManyRequestsResponseError,
-    NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
-    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.net.api_client import (
     ApiClient,
     backend_factory,
+    raise_for_http_status,
     with_api_errors_handling,
 )
 from neptune_scale.sync.aggregating_queue import AggregatingQueue
 from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.files.queue import FileUploadQueue
+from neptune_scale.sync.files.worker import FileUploadWorkerThread
 from neptune_scale.sync.parameters import (
     INTERNAL_QUEUE_FEEDER_THREAD_SLEEP_TIME,
     MAX_QUEUE_SIZE,
@@ -167,6 +166,7 @@ class SyncProcess(Process):
         self,
         operations_queue: Queue,
         errors_queue: ErrorsQueue,
+        file_upload_queue: FileUploadQueue,
         process_link: ProcessLink,
         api_token: str,
         project: str,
@@ -181,6 +181,7 @@ class SyncProcess(Process):
 
         self._external_operations_queue: Queue[SingleOperation] = operations_queue
         self._errors_queue: ErrorsQueue = errors_queue
+        self._file_upload_queue: FileUploadQueue = file_upload_queue
         self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
         self._project: str = project
@@ -213,6 +214,7 @@ class SyncProcess(Process):
             family=self._family,
             api_token=self._api_token,
             errors_queue=self._errors_queue,
+            file_upload_queue=self._file_upload_queue,
             external_operations_queue=self._external_operations_queue,
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
@@ -244,6 +246,7 @@ class SyncProcessWorker(WithResources):
         family: str,
         mode: Literal["async", "disabled"],
         errors_queue: ErrorsQueue,
+        file_upload_queue: FileUploadQueue,
         external_operations_queue: multiprocessing.Queue[SingleOperation],
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
@@ -277,14 +280,30 @@ class SyncProcessWorker(WithResources):
             last_ack_seq=last_ack_seq,
             last_ack_timestamp=last_ack_timestamp,
         )
+        self._file_upload_thread = FileUploadWorkerThread(
+            project=project,
+            neptune_api_token=api_token,
+            input_queue=file_upload_queue,
+            errors_queue=errors_queue,
+        )
 
     @property
     def threads(self) -> tuple[Daemon, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._external_to_internal_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     @property
     def resources(self) -> tuple[Resource, ...]:
-        return self._external_to_internal_thread, self._sync_thread, self._status_tracking_thread
+        return (
+            self._external_to_internal_thread,
+            self._sync_thread,
+            self._status_tracking_thread,
+            self._file_upload_thread,
+        )
 
     def interrupt(self) -> None:
         for thread in self.threads:
@@ -406,7 +425,7 @@ class SenderThread(Daemon, WithResources):
 
         status_code = response.status_code
         if status_code != 200:
-            _raise_exception(status_code)
+            raise_for_http_status(status_code)
 
         return response.parsed
 
@@ -446,20 +465,6 @@ class SenderThread(Daemon, WithResources):
                 self._last_queued_seq.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
-
-
-def _raise_exception(status_code: int) -> None:
-    logger.error("HTTP response error: %s", status_code)
-    if status_code == 403:
-        raise NeptuneUnauthorizedError()
-    elif status_code == 408:
-        raise NeptuneConnectionLostError()
-    elif status_code == 429:
-        raise NeptuneTooManyRequestsResponseError()
-    elif status_code // 100 == 5:
-        raise NeptuneInternalServerError()
-    else:
-        raise NeptuneUnexpectedResponseError()
 
 
 class StatusTrackingThread(Daemon, WithResources):
@@ -508,7 +513,7 @@ class StatusTrackingThread(Daemon, WithResources):
         status_code = response.status_code
 
         if status_code != 200:
-            _raise_exception(status_code)
+            raise_for_http_status(status_code)
 
         return response.parsed
 

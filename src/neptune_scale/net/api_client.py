@@ -15,13 +15,23 @@
 #
 from __future__ import annotations
 
-__all__ = ("HostedApiClient", "MockedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
+__all__ = (
+    "ApiClient",
+    "HostedApiClient",
+    "MockedApiClient",
+    "backend_factory",
+    "raise_for_http_status",
+    "with_api_errors_handling",
+)
 
 import abc
 import functools
 import os
 import uuid
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import (
@@ -64,11 +74,23 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
 from neptune_api.types import Response
+from neptune_storage_api.api.storagebridge import signed_url
+from neptune_storage_api.models import (
+    CreateSignedUrlsRequest,
+    CreateSignedUrlsResponse,
+    FileToSign,
+    Permission,
+    SignedFile,
+)
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
+    NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
+    NeptuneTooManyRequestsResponseError,
     NeptuneUnableToAuthenticateError,
+    NeptuneUnauthorizedError,
+    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
 from neptune_scale.util.abstract import Resource
@@ -129,6 +151,14 @@ class ApiClient(Resource, abc.ABC):
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
 
+    @abc.abstractmethod
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]: ...
+
 
 class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
@@ -151,6 +181,23 @@ class HostedApiClient(ApiClient):
             client=self.backend,
             project_identifier=project,
             body=RequestIdList(ids=[RequestId(value=request_id) for request_id in request_ids]),
+        )
+
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]:
+        permission = Permission(mode)
+        # We ignore the type here, because even though the `signed_url` method is defined in `neptune_storage_api`,
+        # it's fine to pass it a client from `neptune_api` as they are basically the same. The alternative would be
+        # to create a separate client instance for each module from the `neptune-api` package, which is suboptimal.
+        return signed_url.sync_detailed(
+            client=self.backend,  # type: ignore
+            body=CreateSignedUrlsRequest(
+                files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],
+            ),
         )
 
     def close(self) -> None:
@@ -181,6 +228,19 @@ class MockedApiClient(ApiClient):
         )
         return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
 
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]:
+        response_body = CreateSignedUrlsResponse(
+            files=[
+                SignedFile(path=path, project_identifier=project, url=f"http://localhost:9090/{path}") for path in paths
+            ]
+        )
+        return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
+
 
 def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
     if mode == "disabled":
@@ -203,3 +263,19 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             raise e
 
     return wrapper
+
+
+def raise_for_http_status(status_code: int) -> None:
+    """Raise a Neptune exception given a common HTTP response status code"""
+
+    logger.error("HTTP response error: %s", status_code)
+    if status_code == 403:
+        raise NeptuneUnauthorizedError()
+    elif status_code == 408:
+        raise NeptuneConnectionLostError()
+    elif status_code == 429:
+        raise NeptuneTooManyRequestsResponseError()
+    elif status_code // 100 == 5:
+        raise NeptuneInternalServerError()
+    else:
+        raise NeptuneUnexpectedResponseError()
