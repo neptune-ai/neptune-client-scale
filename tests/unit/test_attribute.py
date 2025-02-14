@@ -101,9 +101,9 @@ def test_extend(run, store):
             call(metrics=Metrics(data={"my/series": 38}, step=4), timestamp=now)])
 
     # previews
-    run["my/series"].extend([7,38], steps=[5,6], previews=[False, True], preview_completions=[0.0, 0.5], timestamps=[now,now])
+    run["my/series"].extend([7,38], steps=[5,6], previews=[False, True], preview_completions=[1.0, 0.5], timestamps=[now,now])
     store.log.assert_has_calls([
-            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=0.0), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=None), timestamp=now),
             call(metrics=Metrics(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now)])
 
     # different length of inputs
