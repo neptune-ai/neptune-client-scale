@@ -7,6 +7,7 @@ import warnings
 from collections.abc import (
     Callable,
     Iterator,
+    Mapping,
 )
 from datetime import datetime
 from typing import (
@@ -66,7 +67,9 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         self._project = project
         self._run_id = run_id
         self._configs = peekable(configs.items()) if configs else None
-        self._series_data = peekable(self._skip_non_finite(series.step, series.data)) if series is not None else None
+        self._series_data = (
+            peekable(self._skip_non_finite_numeric_values(series.step, series.data)) if series is not None else None
+        )
         self._series_preview = series.preview if series is not None else False
         self._series_preview_completion = series.preview_completion if series is not None else 0.0
         self._add_tags = peekable(add_tags.items()) if add_tags else None
@@ -180,12 +183,16 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
 
         return size
 
-    def _skip_non_finite(
-        self, step: Optional[Union[float, int]], series: dict[str, float]
-    ) -> Iterator[tuple[str, float]]:
+    def _skip_non_finite_numeric_values(
+        self, step: Optional[Union[float, int]], series: Mapping[str, Union[float, int, str]]
+    ) -> Iterator[tuple[str, Any]]:
         """Yields (metric, value) pairs, skipping non-finite numeric values depending on the env setting."""
 
         for k, v in series.items():
+            if not isinstance(v, (float, int)):
+                yield k, v
+                continue
+
             v = float(v)
 
             if not math.isfinite(v):
