@@ -6,6 +6,8 @@ __all__ = (
     "verify_max_length",
     "verify_project_qualified_name",
     "verify_collection_type",
+    "verify_dict_type",
+    "verify_value_between",
 )
 
 from typing import (
