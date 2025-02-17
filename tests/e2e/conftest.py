@@ -51,8 +51,8 @@ class SyncRun(Run):
     after each logging method call. This is useful for e2e tests, where we
     usually want to wait for the data to be available before fetching it."""
 
-    def log(self, *args, **kwargs):
-        result = super().log(*args, **kwargs)
+    def _log(self, *args, **kwargs):
+        result = super()._log(*args, **kwargs)
         self.wait_for_processing()
         return result
 
