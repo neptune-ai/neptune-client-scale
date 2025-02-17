@@ -25,7 +25,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
@@ -55,22 +55,20 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         run_id: str,
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
-        metrics: Optional[Metrics],
+        series: Optional[SeriesStep],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_PROTOBUF_PAYLOAD_SIZE,
     ):
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
-        self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
+        self._step = make_step(number=series.step) if (series is not None and series.step is not None) else None
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
         self._configs = peekable(configs.items()) if configs else None
-        self._metrics_data = (
-            peekable(self._skip_non_finite(metrics.step, metrics.data)) if metrics is not None else None
-        )
-        self._metrics_preview = metrics.preview if metrics is not None else False
-        self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
+        self._series_data = peekable(self._skip_non_finite(series.step, series.data)) if series is not None else None
+        self._series_preview = series.preview if series is not None else False
+        self._series_preview_completion = series.preview_completion if series is not None else 0.0
         self._add_tags = peekable(add_tags.items()) if add_tags else None
         self._remove_tags = peekable(remove_tags.items()) if remove_tags else None
 
@@ -98,7 +96,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             size=size,
         )
         size = self.populate(
-            assets=self._metrics_data,
+            assets=self._series_data,
             update_producer=lambda key, value: update.append[key].MergeFrom(value),
             size=size,
         )
@@ -182,10 +180,10 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
 
         return size
 
-    def _skip_non_finite(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
-        """Yields (metric, value) pairs, skipping non-finite values depending on the env setting."""
+    def _skip_non_finite(self, step: Optional[float | int], series: dict[str, float]) -> Iterator[tuple[str, float]]:
+        """Yields (metric, value) pairs, skipping non-finite numeric values depending on the env setting."""
 
-        for k, v in metrics.items():
+        for k, v in series.items():
             v = float(v)
 
             if not math.isfinite(v):
@@ -205,7 +203,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             yield k, v
 
     def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
-        include_preview = self._metrics_data and self._metrics_preview
+        include_preview = self._series_data and self._series_preview
         return UpdateRunSnapshot(
             step=self._step,
             preview=(self._make_preview() if include_preview else None),
@@ -216,9 +214,9 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         )
 
     def _make_preview(self) -> Optional[Preview]:
-        if not self._metrics_preview:
+        if not self._series_preview:
             return None
         # let backend default completion
-        if self._metrics_preview_completion is not None:
-            return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
+        if self._series_preview_completion is not None:
+            return Preview(is_preview=True, completion_ratio=self._series_preview_completion)
         return Preview(is_preview=True)

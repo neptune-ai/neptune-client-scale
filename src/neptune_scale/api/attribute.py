@@ -13,7 +13,7 @@ from typing import (
     Union,
 )
 
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 from neptune_scale.sync.operations_queue import OperationsQueue
 
@@ -89,7 +89,7 @@ class AttributeStore:
         self,
         timestamp: Optional[Union[datetime, float]] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Metrics] = None,
+        series: Optional[SeriesStep] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -103,13 +103,13 @@ class AttributeStore:
             run_id=self._run_id,
             timestamp=timestamp,
             configs=configs,
-            metrics=metrics,
+            series=series,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
         for operation, metadata_size in splitter:
-            key = metrics.batch_key() if metrics is not None else None
+            key = series.batch_key() if series is not None else None
             self._operations_queue.enqueue(operation=operation, size=metadata_size, key=key)
 
 
@@ -147,7 +147,7 @@ class Attribute:
     ) -> None:
         data = accumulate_dict_values(value, self._path)
         self._store.log(
-            metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
+            series=SeriesStep(data=data, step=step, preview=preview, preview_completion=preview_completion),
             timestamp=timestamp,
         )
 

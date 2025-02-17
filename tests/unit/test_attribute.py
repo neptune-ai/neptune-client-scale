@@ -15,7 +15,7 @@ from pytest import (
 )
 
 from neptune_scale.api.attribute import cleanup_path
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.legacy import Run
 
 
@@ -76,16 +76,16 @@ def test_tags(run, store):
 
 def test_append(run, store):
     run["sys/series"].append(3, step=1, timestamp=10)
-    store.log.assert_called_with(metrics=Metrics(data={"sys/series": 3}, step=1), timestamp=10)
+    store.log.assert_called_with(series=SeriesStep(data={"sys/series": 3}, step=1), timestamp=10)
 
     run["sys/series"].append({"foo": 1, "bar": 2}, step=2)
     store.log.assert_called_with(
-        metrics=Metrics(data={"sys/series/foo": 1, "sys/series/bar": 2}, step=2), timestamp=None
+        series=SeriesStep(data={"sys/series/foo": 1, "sys/series/bar": 2}, step=2), timestamp=None
     )
 
     run["my/series"].append({"foo": 1, "bar": 2}, step=3, preview=True, preview_completion=0.3)
     store.log.assert_called_with(
-        metrics=Metrics(data={"my/series/foo": 1, "my/series/bar": 2}, step=3, preview=True, preview_completion=0.3),
+        series=SeriesStep(data={"my/series/foo": 1, "my/series/bar": 2}, step=3, preview=True, preview_completion=0.3),
         timestamp=None,
     )
 
@@ -98,8 +98,8 @@ def test_extend(run, store):
     run["my/series"].extend([7, 38], steps=[1, 2], timestamps=[before, now])
     store.log.assert_has_calls(
         [
-            call(metrics=Metrics(data={"my/series": 7}, step=1), timestamp=before),
-            call(metrics=Metrics(data={"my/series": 38}, step=2), timestamp=now),
+            call(series=SeriesStep(data={"my/series": 7}, step=1), timestamp=before),
+            call(series=SeriesStep(data={"my/series": 38}, step=2), timestamp=now),
         ]
     )
 
@@ -107,8 +107,8 @@ def test_extend(run, store):
     run["my/series"].extend([7, 38], steps=[3, 4])
     store.log.assert_has_calls(
         [
-            call(metrics=Metrics(data={"my/series": 7}, step=3), timestamp=now),
-            call(metrics=Metrics(data={"my/series": 38}, step=4), timestamp=now),
+            call(series=SeriesStep(data={"my/series": 7}, step=3), timestamp=now),
+            call(series=SeriesStep(data={"my/series": 38}, step=4), timestamp=now),
         ]
     )
 
@@ -118,8 +118,12 @@ def test_extend(run, store):
     )
     store.log.assert_has_calls(
         [
-            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=None), timestamp=now),
-            call(metrics=Metrics(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now),
+            call(
+                series=SeriesStep(data={"my/series": 7}, step=5, preview=False, preview_completion=None), timestamp=now
+            ),
+            call(
+                series=SeriesStep(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now
+            ),
         ]
     )
 
