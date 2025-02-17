@@ -180,7 +180,9 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
 
         return size
 
-    def _skip_non_finite(self, step: Optional[float | int], series: dict[str, float]) -> Iterator[tuple[str, float]]:
+    def _skip_non_finite(
+        self, step: Optional[Union[float, int]], series: dict[str, float]
+    ) -> Iterator[tuple[str, float]]:
         """Yields (metric, value) pairs, skipping non-finite numeric values depending on the env setting."""
 
         for k, v in series.items():
