@@ -484,6 +484,54 @@ class Run(WithResources, AbstractContextManager):
         """
         self._log(configs=data)
 
+    def log_string_series(
+        self,
+        data: dict[str, str],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
+    ) -> None:
+        """
+        Logs the specified string series to a Neptune run.
+
+        Pass the metadata as a dictionary {key: value} with:
+
+        - key: path to where the metadata should be stored in the run.
+        - value: a string value to append to the series
+
+        For example, {"series/log": "message"}.
+
+        In the attribute path, each forward slash "/" nests the attribute under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
+
+        Args:
+            data: Dictionary of strings to log.
+                Each string value is associated with a step. To log multiple strings at once, pass multiple key-value
+                pairs.
+            step: Index of the log entry. Must be increasing unless preview is set to True.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
+                and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
+
+        Examples:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_string_series(
+                    data={"messages/errors": "error message", "messages/info": "Training completed"},
+                    step=1.2,
+                )
+            ```
+        Args:
+            data:
+            step:
+            timestamp:
+
+        Returns:
+        """
+        self._log(timestamp=timestamp, series=SeriesStep(data=data, step=step))
+
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.

@@ -295,3 +295,21 @@ def test_forking(api_token):
 
     # then
     assert True
+
+
+def test_too_large_string_series_datapoint_raises_error(api_token):
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    with Run(
+        project=project,
+        api_token=api_token,
+        run_id=run_id,
+        fork_run_id="parent-run-id",
+        fork_step=3.14,
+        mode="disabled",
+    ) as run:
+        with pytest.raises(ValueError) as exc:
+            run.log_string_series(data={"attr-name": "a" * 2 * 1024**2}, step=1)
+
+        exc.match(r"data\['attr-name'\] must not exceed.*bytes")
