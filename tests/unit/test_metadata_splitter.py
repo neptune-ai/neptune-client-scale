@@ -11,6 +11,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     ModifySet,
     ModifyStringSet,
+    Preview,
     Step,
     StringSet,
     UpdateRunSnapshot,
@@ -19,6 +20,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from pytest import mark
 
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 
@@ -29,10 +31,9 @@ def test_empty():
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=datetime.now(),
         configs={},
-        metrics={},
+        metrics=None,
         add_tags={},
         remove_tags={},
     )
@@ -43,9 +44,7 @@ def test_empty():
     # then
     assert len(result) == 1
     operation, metadata_size = result[0]
-    expected_update = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0), timestamp=Timestamp(seconds=1722341532, nanos=21934)
-    )
+    expected_update = UpdateRunSnapshot(timestamp=Timestamp(seconds=1722341532, nanos=21934))
     assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
     assert metadata_size == expected_update.ByteSize()
 
@@ -56,7 +55,6 @@ def test_configs():
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=datetime.now(),
         configs={
             "some/string": "value",
@@ -66,7 +64,7 @@ def test_configs():
             "some/datetime": datetime.now(),
             "some/tags": {"tag1", "tag2"},
         },
-        metrics={},
+        metrics=None,
         add_tags={},
         remove_tags={},
     )
@@ -78,7 +76,6 @@ def test_configs():
     assert len(result) == 1
     operation, metadata_size = result[0]
     expected_update = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0),
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
         assign={
             "some/string": Value(string="value"),
@@ -95,17 +92,55 @@ def test_configs():
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
-def test_metrics():
+@pytest.mark.parametrize(
+    "preview,preview_completion,expected_preview_proto",
+    [
+        pytest.param(
+            False,
+            None,
+            None,
+            id="no preview",
+        ),
+        pytest.param(
+            False,
+            0.5,
+            None,
+            id="no preview, preview_completion ignored",
+        ),
+        pytest.param(
+            True,
+            None,
+            Preview(is_preview=True),
+            id="preview with no explicit completion",
+        ),
+        pytest.param(
+            True,
+            0.5,
+            Preview(is_preview=True, completion_ratio=0.5),
+            id="preview with specified completion",
+        ),
+    ],
+)
+def test_metrics(preview, preview_completion, expected_preview_proto):
     # given
+    metrics = Metrics(
+        step=1,
+        data={
+            "some/metric": 3.14,
+        },
+        preview=preview,
+    )
+    if preview_completion is not None:
+        metrics.preview_completion = preview_completion
+
+    # and
+
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=datetime.now(),
         configs={},
-        metrics={
-            "some/metric": 3.14,
-        },
+        metrics=metrics,
         add_tags={},
         remove_tags={},
     )
@@ -119,6 +154,7 @@ def test_metrics():
     expected_update = UpdateRunSnapshot(
         step=Step(whole=1, micro=0),
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
+        preview=expected_preview_proto,
         append={
             "some/metric": Value(float64=3.14),
         },
@@ -134,10 +170,9 @@ def test_tags():
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=datetime.now(),
         configs={},
-        metrics={},
+        metrics=None,
         add_tags={
             "some/tags": {"tag1", "tag2"},
             "some/other_tags2": {"tag2", "tag3"},
@@ -155,7 +190,6 @@ def test_tags():
     assert len(result) == 1
     operation, metadata_size = result[0]
     expected_update = UpdateRunSnapshot(
-        step=Step(whole=1, micro=0),
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
         modify_sets={
             "some/tags": ModifySet(
@@ -182,16 +216,19 @@ def test_splitting():
     # given
     max_size = 1024
     timestamp = datetime.now()
-    metrics = {f"metric{v}": 7 / 9.0 * v for v in range(1000)}
     configs = {f"config{v}": v for v in range(1000)}
     add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
     remove_tags = {f"remove/tag{v}": {f"value{v}"} for v in range(1000)}
+    metrics = Metrics(
+        step=1,
+        data={f"metric{v}": 7 / 9.0 * v for v in range(1000)},
+        preview=True,
+    )
 
     # and
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
@@ -213,10 +250,11 @@ def test_splitting():
     assert all(op.project == "workspace/project" for op, _ in result)
     assert all(op.run_id == "run_id" for op, _ in result)
     assert all(op.update.step.whole == 1 for op, _ in result)
+    assert all(op.update.preview.is_preview if len(op.update.append) > 0 else True for op, _ in result)
     assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
     # Check if all metrics, configs and tags are present in the result
-    assert sorted([key for op, _ in result for key in op.update.append.keys()]) == sorted(list(metrics.keys()))
+    assert sorted([key for op, _ in result for key in op.update.append.keys()]) == sorted(list(metrics.data.keys()))
     assert sorted([key for op, _ in result for key in op.update.assign.keys()]) == sorted(list(configs.keys()))
     assert sorted([key for op, _ in result for key in op.update.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
@@ -228,7 +266,7 @@ def test_split_large_tags():
     # given
     max_size = 1024
     timestamp = datetime.now()
-    metrics = {}
+    metrics = None
     fields = {}
     add_tags = {"add/tag": {f"value{v}" for v in range(1000)}}
     remove_tags = {"remove/tag": {f"value{v}" for v in range(1000)}}
@@ -237,7 +275,6 @@ def test_split_large_tags():
     builder = MetadataSplitter(
         project="workspace/project",
         run_id="run_id",
-        step=1,
         timestamp=timestamp,
         configs=fields,
         metrics=metrics,
@@ -258,7 +295,6 @@ def test_split_large_tags():
     # Common metadata
     assert all(op.project == "workspace/project" for op, _ in result)
     assert all(op.run_id == "run_id" for op, _ in result)
-    assert all(op.update.step.whole == 1 for op, _ in result)
     assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
 
     # Check if all StringSet values are split correctly
@@ -278,21 +314,26 @@ def test_split_large_tags():
 @patch.dict(os.environ, {"NEPTUNE_SKIP_NON_FINITE_METRICS": "False"})
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_raise_on_non_finite_float_metrics(value):
-    builder = MetadataSplitter(
-        project="workspace/project",
-        run_id="run_id",
+    # given
+    metrics = Metrics(
         step=10,
-        timestamp=datetime.now(),
-        configs={},
-        metrics={"bad-metric": value},
-        add_tags={},
-        remove_tags={},
-        max_message_bytes_size=1024,
+        data={"bad-metric": value},
     )
 
+    # when
     with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
-        list(builder)
+        MetadataSplitter(
+            project="workspace/project",
+            run_id="run_id",
+            timestamp=datetime.now(),
+            configs={},
+            metrics=metrics,
+            add_tags={},
+            remove_tags={},
+            max_message_bytes_size=1024,
+        )
 
+    # then
     exc.match("metric `bad-metric`")
     exc.match("step `10`")
     exc.match(f"non-finite value of `{value}`")
@@ -301,21 +342,28 @@ def test_raise_on_non_finite_float_metrics(value):
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_skip_non_finite_float_metrics(value, caplog):
     with caplog.at_level("WARNING"):
+        # given
+        metrics = Metrics(
+            step=10,
+            data={"bad-metric": value},
+        )
+
+        # when
         builder = MetadataSplitter(
             project="workspace/project",
             run_id="run_id",
-            step=10,
             timestamp=datetime.now(),
             configs={},
-            metrics={"bad-metric": value},
+            metrics=metrics,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
         )
 
         result = list(builder)
-        assert len(result) == 1
 
+        # then
+        assert len(result) == 1
         op, _ = result[0]
         assert not op.update.assign
 

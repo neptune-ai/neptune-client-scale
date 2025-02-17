@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ("AggregatingQueue",)
 
 import time
+from collections.abc import Hashable
 from queue import (
     Empty,
     Queue,
@@ -67,7 +68,7 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.monotonic()
 
-        batch_operations: dict[Optional[float], RunOperation] = {}
+        batch_operations: dict[Hashable, RunOperation] = {}
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -153,7 +154,7 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: dict[Optional[float], RunOperation]) -> RunOperation:
+def create_run_batch(operations: dict[Hashable, RunOperation]) -> RunOperation:
     if len(operations) == 1:
         return next(iter(operations.values()))
 

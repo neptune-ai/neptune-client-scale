@@ -19,11 +19,13 @@ from typing import (
 from more_itertools import peekable
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
+    Preview,
     UpdateRunSnapshot,
     Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
+from neptune_scale.api.metrics import Metrics
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
@@ -50,20 +52,24 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         *,
         project: str,
         run_id: str,
-        step: Optional[Union[int, float]],
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
-        metrics: Optional[dict[str, float]],
+        metrics: Optional[Metrics],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = 1024 * 1024,
     ):
-        self._step = None if step is None else make_step(number=step)
+        self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
+        self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
         self._configs = peekable(configs.items()) if configs else None
-        self._metrics = peekable(self._skip_non_finite(step, metrics)) if metrics else None
+        self._metrics_data = (
+            peekable(self._skip_non_finite(metrics.step, metrics.data)) if metrics is not None else None
+        )
+        self._metrics_preview = metrics.preview if metrics is not None else False
+        self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
         self._add_tags = peekable(add_tags.items()) if add_tags else None
         self._remove_tags = peekable(remove_tags.items()) if remove_tags else None
 
@@ -72,25 +78,17 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             - RunOperation(
                 project=self._project,
                 run_id=self._run_id,
-                update=UpdateRunSnapshot(step=self._step, timestamp=self._timestamp),
+                update=self._make_empty_update_snapshot(),
             ).ByteSize()
         )
-
         self._has_returned = False
-        self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
     def __iter__(self) -> MetadataSplitter:
         self._has_returned = False
         return self
 
     def __next__(self) -> tuple[RunOperation, int]:
-        update = UpdateRunSnapshot(
-            step=self._step,
-            timestamp=self._timestamp,
-            assign={},
-            append={},
-            modify_sets={},
-        )
+        update = self._make_empty_update_snapshot()
         size = update.ByteSize()
 
         size = self.populate(
@@ -99,7 +97,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
             size=size,
         )
         size = self.populate(
-            assets=self._metrics,
+            assets=self._metrics_data,
             update_producer=lambda key, value: update.append[key].MergeFrom(value),
             size=size,
         )
@@ -204,3 +202,22 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
                     raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)
 
             yield k, v
+
+    def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
+        include_preview = self._metrics_data and self._metrics_preview
+        return UpdateRunSnapshot(
+            step=self._step,
+            preview=(self._make_preview() if include_preview else None),
+            timestamp=self._timestamp,
+            assign={},
+            append={},
+            modify_sets={},
+        )
+
+    def _make_preview(self) -> Optional[Preview]:
+        if not self._metrics_preview:
+            return None
+        # let backend default completion
+        if self._metrics_preview_completion is not None:
+            return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
+        return Preview(is_preview=True)
