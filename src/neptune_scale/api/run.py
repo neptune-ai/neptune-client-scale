@@ -25,7 +25,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.api.validation import (
     verify_dict_type,
     verify_max_length,
@@ -440,7 +440,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self._log(
             timestamp=timestamp,
-            metrics=Metrics(
+            series=SeriesStep(
                 data=data,
                 step=step,
                 preview=preview,
@@ -540,20 +540,20 @@ class Run(WithResources, AbstractContextManager):
         - add_tags()
         - remove_tags()
         """
-        mtr = Metrics(step=step, data=metrics) if metrics is not None else None
-        self._log(timestamp=timestamp, configs=configs, metrics=mtr, tags_add=tags_add, tags_remove=tags_remove)
+        mtr = SeriesStep(step=step, data=metrics) if metrics is not None else None
+        self._log(timestamp=timestamp, configs=configs, series=mtr, tags_add=tags_add, tags_remove=tags_remove)
 
     def _log(
         self,
         timestamp: Optional[datetime] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Metrics] = None,
+        series: Optional[SeriesStep] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
-        verify_type("metrics", metrics, (Metrics, type(None)))
+        verify_type("series", series, (SeriesStep, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
@@ -570,7 +570,7 @@ class Run(WithResources, AbstractContextManager):
         self._attr_store.log(
             timestamp=timestamp,
             configs=configs,
-            metrics=metrics,
+            series=series,
             tags_add=tags_add,
             tags_remove=tags_remove,
         )
