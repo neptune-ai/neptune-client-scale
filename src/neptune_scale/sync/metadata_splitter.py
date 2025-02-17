@@ -7,6 +7,7 @@ import warnings
 from collections.abc import (
     Callable,
     Iterator,
+    Mapping,
 )
 from datetime import datetime
 from typing import (
@@ -181,11 +182,14 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         return size
 
     def _skip_non_finite(
-        self, step: Optional[Union[float, int]], series: dict[str, float]
+        self, step: Optional[Union[float, int]], series: Mapping[str, Union[float, int, str]]
     ) -> Iterator[tuple[str, float]]:
         """Yields (metric, value) pairs, skipping non-finite numeric values depending on the env setting."""
 
         for k, v in series.items():
+            if not isinstance(v, (float, int)):
+                continue
+
             v = float(v)
 
             if not math.isfinite(v):
