@@ -1,6 +1,7 @@
 # Input validation
 MAX_RUN_ID_LENGTH = 128
 MAX_EXPERIMENT_NAME_LENGTH = 730
+MAX_STRING_SERIES_DATA_POINT_LENGTH = 1024 * 1024
 
 # Operations queue
 MAX_BATCH_SIZE = 100000
@@ -21,6 +22,8 @@ LAG_TRACKER_THREAD_SLEEP_TIME = 1
 # Networking
 REQUEST_TIMEOUT = 30
 MAX_REQUEST_RETRY_SECONDS = 60
+# Maximum size of a single outgoing ingest request payload: a serialized protobuf message.
+MAX_PROTOBUF_PAYLOAD_SIZE = 16 * 1024 * 1024  # 16MB
 
 # User facing
 SHUTDOWN_TIMEOUT = 60  # 1 minute

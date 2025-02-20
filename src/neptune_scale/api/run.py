@@ -25,7 +25,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.api.validation import (
     verify_dict_type,
     verify_max_length,
@@ -440,7 +440,7 @@ class Run(WithResources, AbstractContextManager):
         """
         self._log(
             timestamp=timestamp,
-            metrics=Metrics(
+            series=SeriesStep(
                 data=data,
                 step=step,
                 preview=preview,
@@ -483,6 +483,54 @@ class Run(WithResources, AbstractContextManager):
             ```
         """
         self._log(configs=data)
+
+    def log_string_series(
+        self,
+        data: dict[str, str],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
+    ) -> None:
+        """
+        Logs the specified string series to a Neptune run.
+
+        Pass the metadata as a dictionary {key: value} with:
+
+        - key: path to where the metadata should be stored in the run.
+        - value: a string value to append to the series
+
+        For example, {"series/log": "message"}.
+
+        In the attribute path, each forward slash "/" nests the attribute under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
+
+        Args:
+            data: Dictionary of strings to log.
+                Each string value is associated with a step. To log multiple strings at once, pass multiple key-value
+                pairs.
+            step: Index of the log entry. Must be increasing unless preview is set to True.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
+                and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
+
+        Examples:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_string_series(
+                    data={"messages/errors": "error message", "messages/info": "Training completed"},
+                    step=1.2,
+                )
+            ```
+        Args:
+            data:
+            step:
+            timestamp:
+
+        Returns:
+        """
+        self._log(timestamp=timestamp, series=SeriesStep(data=data, step=step))
 
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
@@ -540,20 +588,20 @@ class Run(WithResources, AbstractContextManager):
         - add_tags()
         - remove_tags()
         """
-        mtr = Metrics(step=step, data=metrics) if metrics is not None else None
-        self._log(timestamp=timestamp, configs=configs, metrics=mtr, tags_add=tags_add, tags_remove=tags_remove)
+        mtr = SeriesStep(step=step, data=metrics) if metrics is not None else None
+        self._log(timestamp=timestamp, configs=configs, series=mtr, tags_add=tags_add, tags_remove=tags_remove)
 
     def _log(
         self,
         timestamp: Optional[datetime] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
-        metrics: Optional[Metrics] = None,
+        series: Optional[SeriesStep] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
-        verify_type("metrics", metrics, (Metrics, type(None)))
+        verify_type("series", series, (SeriesStep, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
@@ -570,7 +618,7 @@ class Run(WithResources, AbstractContextManager):
         self._attr_store.log(
             timestamp=timestamp,
             configs=configs,
-            metrics=metrics,
+            series=series,
             tags_add=tags_add,
             tags_remove=tags_remove,
         )
