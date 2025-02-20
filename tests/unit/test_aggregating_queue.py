@@ -450,7 +450,8 @@ def test__merge_two_different_steps():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update1, update2]
+    for result, expected in zip(batch.update_batch.snapshots, [update1, update2]):
+        assert result == expected
 
 
 @freeze_time("2024-09-01")
@@ -501,7 +502,8 @@ def test__merge_step_with_none():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update2, update1]  # None is always first
+    for result, expected in zip(batch.update_batch.snapshots, [update2, update1]):  # None is always first
+        assert result == expected
 
 
 @freeze_time("2024-09-01")
@@ -563,4 +565,5 @@ def test__merge_two_steps_two_metrics():
 
     assert batch.project == "project"
     assert batch.run_id == "run_id"
-    assert batch.update_batch.snapshots == [update1_merged, update2_merged]
+    for result, expected in zip(batch.update_batch.snapshots, [update1_merged, update2_merged]):
+        assert result == expected
