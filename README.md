@@ -118,7 +118,7 @@ For more instructions, see the Neptune documentation:
 
 ## API reference
 
-See [API reference][api-ref] in Neptune documentation.
+See [API reference][api-ref] in the Neptune documentation.
 
 ---
 
