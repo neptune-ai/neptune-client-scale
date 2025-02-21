@@ -22,7 +22,6 @@ from neptune_scale.sync.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
 from neptune_scale.util import get_logger
 from neptune_scale.util.abstract import Resource
 from neptune_scale.util.daemon import Daemon
-from neptune_scale.util.process_killer import kill_me
 
 logger = get_logger()
 
@@ -44,8 +43,7 @@ class ErrorsQueue(Resource):
 
 
 def default_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
-    logger.error(f"Terminating the process due to an error: {error}")
-    kill_me()
+    logger.error(error)
 
 
 def default_network_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
