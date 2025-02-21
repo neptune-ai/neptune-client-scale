@@ -262,7 +262,7 @@ class Run(WithResources, AbstractContextManager):
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
             if not self._is_closing:
-                logger.error("Child process closed unexpectedly. Terminating.")
+                logger.error("Child process closed unexpectedly.")
                 self._is_closing = True
                 self.terminate()
 
