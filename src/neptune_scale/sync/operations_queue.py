@@ -85,7 +85,7 @@ class OperationsQueue(Resource):
                 raise ValueError(f"Operation size exceeds the maximum allowed size ({MAX_QUEUE_ELEMENT_SIZE})")
 
             with self._lock:
-                self._last_timestamp = now = monotonic()
+                self._last_timestamp = monotonic()
 
                 item = SingleOperation(
                     sequence_id=self._sequence_id,
@@ -102,12 +102,12 @@ class OperationsQueue(Resource):
                 # put an item into the queue again after some of the pending items were processed.
                 try:
                     self._queue.put_nowait(item)
-                    self._last_successful_put_time = now
+                    self._last_successful_put_time = monotonic()
                 except queue.Full:
-                    if now - self._last_successful_put_time < self._free_queue_slot_timeout:
+                    if monotonic() - self._last_successful_put_time < self._free_queue_slot_timeout:
                         try:
                             self._queue.put(item, block=True, timeout=self._free_queue_slot_timeout)
-                            self._last_successful_put_time = now
+                            self._last_successful_put_time = monotonic()
                         except queue.Full:
                             self._on_enqueue_failed("Operations queue is full", operation)
                             return
