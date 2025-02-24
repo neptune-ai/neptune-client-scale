@@ -107,7 +107,7 @@ def test_enqueue_block_and_drop_on_queue_full(monkeypatch, caplog):
         queue.enqueue(operation=RunOperation(), size=10, key="key")
 
     assert not caplog.records, "No error should be logged"
-    assert _elapsed_less_than(t0, 1.0), "First enqueue should not block"
+    assert _elapsed_less_than(t0, 0.5), "First enqueue should not block"
 
     # Second item should wait for the specified timeout before giving up and logging an error
     with caplog.at_level(logging.ERROR, logger="neptune"):
@@ -124,14 +124,14 @@ def test_enqueue_block_and_drop_on_queue_full(monkeypatch, caplog):
         for i in range(5):
             t0 = time.monotonic()
             queue.enqueue(operation=RunOperation(), size=10, key="key")
-            assert _elapsed_less_than(t0, 1.0), f"Enqueue of item {i} should not block"
+            assert _elapsed_less_than(t0, 0.5), f"Enqueue of item {i} should not block"
 
     assert len(caplog.records) == 5, "An error should be logged for each failed enqueue"
     for rec in caplog.records:
         assert "queue is full" in rec.message
 
 
-def test_block_and_raise_on_queue_full(monkeypatch, caplog):
+def test_enqueue_block_and_raise_on_queue_full(monkeypatch, caplog):
     """
     Test the blocking behaviour of enqueue() with the "raise" action on a full queue:
 
@@ -152,7 +152,7 @@ def test_block_and_raise_on_queue_full(monkeypatch, caplog):
         queue.enqueue(operation=RunOperation(), size=10, key="key")
 
     assert not caplog.records, "No errors should be logged"
-    assert _elapsed_less_than(t0, 1.0), "First enqueue should not block"
+    assert _elapsed_less_than(t0, 0.5), "First enqueue should not block"
 
     # Second item should wait for the specified timeout before giving up and
     # raising an exception, without logging an error
@@ -171,7 +171,7 @@ def test_block_and_raise_on_queue_full(monkeypatch, caplog):
             with pytest.raises(NeptuneUnableToLogData) as exc:
                 queue.enqueue(operation=RunOperation(), size=10, key="key")
 
-            assert _elapsed_less_than(t0, 1.0), f"Enqueue of item {i} should not block"
+            assert _elapsed_less_than(t0, 0.5), f"Enqueue of item {i} should not block"
             exc.match("queue is full")
 
     assert not caplog.records, "No errors should be logged"
@@ -203,7 +203,7 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
         t0 = time.monotonic()
         # Step 1: Saturate the queue.
         queue.enqueue(operation=RunOperation(), size=10, key="key")
-        assert _elapsed_less_than(t0, 2), f"{step=}: First enqueue should not block"
+        assert _elapsed_less_than(t0, 0.5), f"{step=}: First enqueue should not block"
 
         # Step 2: Make sure we only block the first call to enqueue() on a full queue.
         with pytest.raises(NeptuneUnableToLogData) as exc:
@@ -218,7 +218,7 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
                 queue.enqueue(operation=RunOperation(), size=10, key="key")
 
             assert _elapsed_less_than(
-                t0, 2
+                t0, 0.5
             ), f"{step=}, enqueue on a full queue should not block if the previous call failed"
             exc.match("queue is full")
 
@@ -241,7 +241,7 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
     t0 = time.monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
     assert _elapsed_more_than(t0, 1.0), "The queue did not block"
-    assert _elapsed_less_than(t0, 2.0), "Waiting on the queue should be interrupted once there is free capacity"
+    assert _elapsed_less_than(t0, 1.5), "Waiting on the queue should be interrupted once there is free capacity"
 
     process.join()
 
@@ -254,9 +254,9 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
     t0 = time.monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
 
-    assert _elapsed_less_than(t0, 2), (
-        "After a successful call to enqueue the next call should not block if the queue " "isot full"
-    )
+    assert _elapsed_less_than(
+        t0, 0.5
+    ), "After a successful call to enqueue the next call should not block if the queue is full"
 
     # Step 7: The first enqueue() to a full queue should always block, if the previous call succeeded
     # block.
@@ -265,9 +265,9 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
         queue.enqueue(operation=RunOperation(), size=10, key="key")
 
     exc.match("queue is full")
-    assert _elapsed_more_than(t0, 2), (
-        "After a successful call to enqueue the next call should block if the queue " "is full"
-    )
+    assert _elapsed_more_than(
+        t0, 2
+    ), "After a successful call to enqueue the next call should block if the queue is full"
 
     # Step 8: Subsequent calls to enqueue() should fail without blocking, because the queue is full and the previous
     # call already blocked and failed.
@@ -276,7 +276,9 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
         with pytest.raises(NeptuneUnableToLogData) as exc:
             queue.enqueue(operation=RunOperation(), size=10, key="key")
 
-        assert _elapsed_less_than(t0, 2), f"{i=}, enqueue on a full queue should not block if the previous call failed"
+        assert _elapsed_less_than(
+            t0, 0.5
+        ), f"{i=}, enqueue on a full queue should not block if the previous call failed"
         exc.match("queue is full")
 
 
