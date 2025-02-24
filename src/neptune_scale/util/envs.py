@@ -14,7 +14,7 @@ SUBPROCESS_KILL_TIMEOUT = "NEPTUNE_SUBPROCESS_KILL_TIMEOUT"
 ALLOW_SELF_SIGNED_CERTIFICATE = "NEPTUNE_ALLOW_SELF_SIGNED_CERTIFICATE"
 SKIP_NON_FINITE_METRICS = "NEPTUNE_SKIP_NON_FINITE_METRICS"
 
-FREE_QUEUE_SLOT_TIMEOUT_SECS = "NEPTUNE_FREE_QUEUE_SLOT_TIMEOUT_SECS"
+LOG_MAX_BLOCKING_TIME_SECONDS = "NEPTUNE_LOG_MAX_BLOCKING_TIME_SECONDS"
 LOG_FAILURE_ACTION = "NEPTUNE_LOG_FAILURE_ACTION"
 
 
@@ -22,13 +22,11 @@ def get_bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).lower() in ("true", "1")
 
 
-def get_int(name: str, default: Optional[int], positive: bool = False) -> Optional[int]:
-    """Get int value from env, returning the default if not found, or if the value is not an int. If positive is
-    True and the value is not positive, the default is returned."""
+def get_int(name: str, default: Optional[int] = None) -> Optional[int]:
+    """Get int value from env, returning the default if not found, or if the value is not an int."""
+
+    value = os.getenv(name)
     try:
-        value = int(os.getenv(name, str(default)))
-        if positive and value <= 0:
-            return default
-        return value
+        return default if value is None else int(value)
     except ValueError:
-        return default
+        raise ValueError(f"Environment variable {name} must be an integer, got '{value}'")

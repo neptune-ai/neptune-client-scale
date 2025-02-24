@@ -51,7 +51,11 @@ class OperationsQueue(Resource):
         self._last_timestamp: Optional[float] = None
         self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
         self._last_successful_put_time = monotonic()
-        self._free_queue_slot_timeout = envs.get_int(envs.FREE_QUEUE_SLOT_TIMEOUT_SECS, None, positive=True) or math.inf
+
+        self._free_queue_slot_timeout = envs.get_int(envs.LOG_MAX_BLOCKING_TIME_SECONDS, None) or math.inf
+        if self._free_queue_slot_timeout < 0:
+            raise ValueError(f"{envs.LOG_MAX_BLOCKING_TIME_SECONDS} must be a non-negative number.")
+
         action = os.getenv(envs.LOG_FAILURE_ACTION, "drop")
         if action not in ("drop", "raise"):
             raise ValueError(f"Invalid value '{action}' for {envs.LOG_FAILURE_ACTION}. Must be 'drop' or 'raise'.")
