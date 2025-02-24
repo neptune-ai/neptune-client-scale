@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ("OperationsQueue",)
 
 import math
+import os
 import queue
 from collections.abc import Hashable
 from multiprocessing import Queue
@@ -13,6 +14,7 @@ from typing import (
 )
 
 from neptune_scale.api.validation import verify_type
+from neptune_scale.exceptions import NeptuneUnableToLogData
 from neptune_scale.sync.parameters import (
     MAX_MULTIPROCESSING_QUEUE_SIZE,
     MAX_QUEUE_ELEMENT_SIZE,
@@ -50,6 +52,11 @@ class OperationsQueue(Resource):
         self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
         self._last_successful_put_time = monotonic()
         self._free_queue_slot_timeout = envs.get_int(envs.FREE_QUEUE_SLOT_TIMEOUT_SECS, None, positive=True) or math.inf
+        action = os.getenv(envs.LOG_FAILURE_ACTION, "drop")
+        if action not in ("drop", "raise"):
+            raise ValueError(f"Invalid value '{action}' for {envs.LOG_FAILURE_ACTION}. Must be 'drop' or 'raise'.")
+
+        self._raise_on_enqueue_failure = action == "raise"
 
     @property
     def queue(self) -> Queue[SingleOperation]:
@@ -98,18 +105,26 @@ class OperationsQueue(Resource):
                             self._queue.put(item, block=True, timeout=self._free_queue_slot_timeout)
                             self._last_successful_put_time = now
                         except queue.Full:
-                            logger.error(f"Dropping operation due to queue being full: {operation}")
+                            self._on_enqueue_failed("Operations queue is full", operation)
                             return
                     else:
-                        logger.error(f"Dropping operation due to queue being full: {operation}")
+                        self._on_enqueue_failed("Operations queue is full", operation)
                         return
 
                 self._sequence_id += 1
-        except Exception as e:
-            logger.error("Failed to enqueue operation: %s %s", e, operation)
+        # Pass this through, as it's raised intentionally in _on_enqueue_failed()
+        except NeptuneUnableToLogData as e:
             raise e
+        except Exception as e:
+            self._on_enqueue_failed(reason=str(e), operation=operation)
 
     def close(self) -> None:
         self._queue.close()
         # This is needed to avoid hanging the main process
         self._queue.cancel_join_thread()
+
+    def _on_enqueue_failed(self, reason: str, operation: RunOperation) -> None:
+        if self._raise_on_enqueue_failure:
+            raise NeptuneUnableToLogData(reason=reason, operation=str(operation))
+        else:
+            logger.error(f"Dropping operation due to error: {reason}. Operation: {operation}")
