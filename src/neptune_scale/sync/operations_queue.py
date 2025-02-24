@@ -103,6 +103,7 @@ class OperationsQueue(Resource):
                     if now - self._last_successful_put_time < self._free_queue_slot_timeout:
                         try:
                             self._queue.put(item, block=True, timeout=self._free_queue_slot_timeout)
+                            # print(">>> put succcess", file=sys.stderr)
                             self._last_successful_put_time = now
                         except queue.Full:
                             self._on_enqueue_failed("Operations queue is full", operation)

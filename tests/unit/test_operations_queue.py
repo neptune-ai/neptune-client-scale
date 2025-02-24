@@ -192,11 +192,11 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
 
     for step in range(3):
         t0 = time.monotonic()
-        # Step 1
+        # Step 1: Saturate the queue.
         queue.enqueue(operation=RunOperation(), size=10, key="key")
         assert time.monotonic() - t0 < 2, f"{step=}: First enqueue should not block"
 
-        # Step 2
+        # Step 2: Make sure we only block the first call to enqueue() on a full queue.
         with pytest.raises(NeptuneUnableToLogData) as exc:
             t0 = time.monotonic()
             queue.enqueue(operation=RunOperation(), size=10, key="key")
@@ -213,26 +213,22 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
             ), f"{step=}, enqueue on a full queue should not block if the previous call failed"
             exc.match("queue is full")
 
-        # Step 3
-        queue.queue.get_nowait()
+        # Step 3: Free up the queue and repeat the process
+        # Note: We use get with a small timeout to give the queue's internal feeder thread some time to actually
+        # send the message otherwise we could get Empty.
+        queue.queue.get(timeout=0.5)
 
-    # Step 4
+    # Step 4: Saturate the queue again. This call should succeed as the queue is empty
     queue.enqueue(operation=RunOperation(), size=10, key="key")
 
     # Used to wait until the process launches
     event = multiprocessing.Event()
-    process = multiprocessing.Process(
-        target=_get_delayed,
-        args=(
-            event,
-            queue.queue,
-        ),
-    )
+    process = multiprocessing.Process(target=_get_delayed, args=(event, queue.queue))
     process.start()
     assert event.wait(timeout=30), "Failed to start child process in time"
 
-    # Step 5
-    # W should be unblocked midway through the wait, so no exception should be raised
+    # Step 5: We should be unblocked midway through the wait because of the child process reading data
+    # from the queue, so no exception should be raised
     t0 = time.monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
     elapsed = time.monotonic() - t0
@@ -241,8 +237,12 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
 
     process.join()
 
-    # Step 6
-    queue.queue.get_nowait()
+    # Step 6: Free up the queue and make sure we don't block on the first enqueue() call after
+    # the previous one which was a success.
+    # Note: We use get with a small timeout to give the queue's internal feeder thread some time to actually
+    # send the message otherwise we could get Empty.
+    queue.queue.get(timeout=0.5)
+
     t0 = time.monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
 
@@ -250,8 +250,8 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
         time.monotonic() - t0 < 2.0
     ), "After a successful call to enqueue the next call should not block if the queue is not full"
 
-    # Step 7
-    # The first enqueue() after the previous call succeeds should always block.
+    # Step 7: The first enqueue() to a full queue should always block, if the previous call succeeded
+    # block.
     with pytest.raises(NeptuneUnableToLogData) as exc:
         t0 = time.monotonic()
         queue.enqueue(operation=RunOperation(), size=10, key="key")
@@ -261,7 +261,8 @@ def test_unblocking_queue_and_locking_again(monkeypatch):
         time.monotonic() - t0 >= 2
     ), "After a successful call to enqueue the next call should block if the queue is full"
 
-    # Step 8
+    # Step 8: Subsequent calls to enqueue() should fail without blocking, because the queue is full and the previous
+    # call already blocked and failed.
     for i in range(3, 10):
         t0 = time.monotonic()
         with pytest.raises(NeptuneUnableToLogData) as exc:
