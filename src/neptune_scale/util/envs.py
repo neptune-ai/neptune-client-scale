@@ -23,7 +23,7 @@ def get_bool(name: str, default: bool) -> bool:
 
 
 def get_int(name: str, default: Optional[int] = None) -> Optional[int]:
-    """Get int value from env, returning the default if not found, or if the value is not an int."""
+    """Get int value from env, returning the default if not found. If the value is not an int, raise ValueError."""
 
     value = os.getenv(name)
     try:
