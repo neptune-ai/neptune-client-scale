@@ -52,8 +52,8 @@ class OperationsQueue(Resource):
         self._queue: Queue[SingleOperation] = Queue(maxsize=min(MAX_MULTIPROCESSING_QUEUE_SIZE, max_size))
         self._last_successful_put_time = monotonic()
 
-        self._free_queue_slot_timeout = envs.get_int(envs.LOG_MAX_BLOCKING_TIME_SECONDS, None) or math.inf
-        if self._free_queue_slot_timeout < 0:
+        self._max_blocking_time = envs.get_int(envs.LOG_MAX_BLOCKING_TIME_SECONDS, None) or math.inf
+        if self._max_blocking_time < 0:
             raise ValueError(f"{envs.LOG_MAX_BLOCKING_TIME_SECONDS} must be a non-negative number.")
 
         action = os.getenv(envs.LOG_FAILURE_ACTION, "drop")
@@ -104,9 +104,9 @@ class OperationsQueue(Resource):
                     self._queue.put_nowait(item)
                     self._last_successful_put_time = monotonic()
                 except queue.Full:
-                    if monotonic() - self._last_successful_put_time < self._free_queue_slot_timeout:
+                    if monotonic() - self._last_successful_put_time < self._max_blocking_time:
                         try:
-                            self._queue.put(item, block=True, timeout=self._free_queue_slot_timeout)
+                            self._queue.put(item, block=True, timeout=self._max_blocking_time)
                             self._last_successful_put_time = monotonic()
                         except queue.Full:
                             self._on_enqueue_failed("Operations queue is full", operation)
