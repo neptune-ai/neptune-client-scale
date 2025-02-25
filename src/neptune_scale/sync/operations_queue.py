@@ -34,6 +34,17 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
+# We use this value when comparing time since the last successful put. This is needed to
+# avoid cases where the actual wait time is lower than the `timeout` due to the resolution of the monotonic clock.
+# The call to put(block=True, timeout=...) could end fractions of a second earlier than the requested timeout. This
+# happens eg. on Windows.
+# The next call would then block again unnecessarily, if made quickly enough, even though the previous one failed:
+# t=0.000s: successful put to empty queue, last_put_time -> 0.000s
+# t=0.010s: failed put with timeout=2s, which blocks and ends early after 1.980s
+# t=1.995s: monotonic() - last_put_time == 1.995s, which is still less than 2s -> we would block again,
+# but we shouldn't
+MONOTONIC_CLOCK_RESOLUTION_UPPER_BOUND = 0.1
+
 
 class OperationsQueue(Resource):
     def __init__(
@@ -104,7 +115,10 @@ class OperationsQueue(Resource):
                     self._queue.put_nowait(item)
                     self._last_successful_put_time = monotonic()
                 except queue.Full:
-                    if monotonic() - self._last_successful_put_time < self._max_blocking_time:
+                    elapsed_since_last_put_success = (
+                        monotonic() - self._last_successful_put_time + MONOTONIC_CLOCK_RESOLUTION_UPPER_BOUND
+                    )
+                    if elapsed_since_last_put_success < self._max_blocking_time:
                         try:
                             self._queue.put(item, block=True, timeout=self._max_blocking_time)
                             self._last_successful_put_time = monotonic()
