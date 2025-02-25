@@ -98,7 +98,13 @@ def _get_delayed(queue):
 
 
 def test_enqueue_blocking_timing(monkeypatch):
-    """Test the blocking behaviour of the queue when depending on whether it's full or empty."""
+    """Test the blocking behaviour of the queue when depending on whether it's full or empty.
+
+    Note that when checking instead of checking if the elapsed time is >= 2.0,
+    we apply some tolerance (check for > 1.9 instead), as the actual time blocking
+    on the queue might vary slightly, in particular we can return tiny fractions of a second earlier
+    """
+
     monkeypatch.setenv(envs.LOG_FAILURE_ACTION, "drop")
     monkeypatch.setenv(envs.LOG_MAX_BLOCKING_TIME_SECONDS, "2")
 
@@ -112,7 +118,7 @@ def test_enqueue_blocking_timing(monkeypatch):
     # Queue full: block on first attempt to enqueue an item
     t0 = monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
-    assert monotonic() - t0 >= 2.0, "enqueue() on a full queue should block"
+    assert monotonic() - t0 > 1.9, "enqueue() on a full queue should block"
 
     # Queue full: don't block on further failed attempts to enqueue items
     t0 = monotonic()
@@ -140,7 +146,7 @@ def test_enqueue_blocking_timing(monkeypatch):
     # Queue full again: we should block
     t0 = monotonic()
     queue.enqueue(operation=RunOperation(), size=10, key="key")
-    assert monotonic() - t0 >= 2.0, "enqueue() on a full queue should block"
+    assert monotonic() - t0 > 1.9, "enqueue() on a full queue should block"
 
     thread.join()
 
