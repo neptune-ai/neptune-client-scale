@@ -20,16 +20,16 @@ def get_type_name(var_type: Union[type, tuple]) -> str:
 
 
 def verify_type(var_name: str, var: Any, expected_type: Union[type, tuple]) -> None:
-    try:
-        if isinstance(expected_type, tuple):
-            type_name = " or ".join(get_type_name(t) for t in expected_type)
-        else:
-            type_name = get_type_name(expected_type)
-    except Exception as e:
-        # Just to be sure that nothing weird will be raised here
-        raise TypeError(f"Incorrect type of {var_name}") from e
-
     if not isinstance(var, expected_type):
+        try:
+            if isinstance(expected_type, tuple):
+                type_name = " or ".join(get_type_name(t) for t in expected_type)
+            else:
+                type_name = get_type_name(expected_type)
+        except Exception as e:
+            # Just to be sure that nothing weird will be raised here
+            raise TypeError(f"Incorrect type of {var_name}") from e
+
         raise TypeError(f"{var_name} must be a {type_name} (was {type(var)})")
 
 
