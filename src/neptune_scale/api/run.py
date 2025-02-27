@@ -387,7 +387,9 @@ class Run(WithResources, AbstractContextManager):
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
 
-        self._operations_repo.save_create_run(create_run)
+        sequence = self._operations_repo.save_create_run(create_run)
+        # TODO patrykg: this is a hack to make sure that the sequence is updated
+        self._attr_store.update_sequence_id(sequence)
 
     def log_metrics(
         self,

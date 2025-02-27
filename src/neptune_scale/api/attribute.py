@@ -127,6 +127,10 @@ class AttributeStore:
             self._last_sequence_id = self._operations_repo.save_update_run_snapshots(operations)
             self._last_timestamp = timestamp.timestamp()
 
+    def update_sequence_id(self, sequence_id: int) -> None:
+        with self._lock:
+            self._last_sequence_id = sequence_id
+
 
 class Attribute:
     """Objects of this class are returned on dict-like access to Run. Attributes have a path and
