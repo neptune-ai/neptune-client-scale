@@ -72,7 +72,7 @@ def test_save_update_run_snapshots(operations_repo, temp_db_path):
     operation_types = cursor.fetchall()
     conn.close()
 
-    assert all(op_type[0] == OperationType.SNAPSHOT for op_type in operation_types)
+    assert all(op_type[0] == OperationType.UPDATE_SNAPSHOT for op_type in operation_types)
 
 
 def test_save_update_run_snapshots_empty_list(operations_repo, temp_db_path):
@@ -124,7 +124,7 @@ def test_get_operations(operations_repo):
     # Then
     assert len(operations) == 2
     assert [op.operation for op in operations] == snapshots[:2]
-    assert all(op.operation_type == OperationType.SNAPSHOT for op in operations)
+    assert all(op.operation_type == OperationType.UPDATE_SNAPSHOT for op in operations)
     assert [op.metadata_size for op in operations] == [size for size in sizes[:2]]
 
     # When - get operations up to a (request size -1) - should return first operation only

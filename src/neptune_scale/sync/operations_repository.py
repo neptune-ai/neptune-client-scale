@@ -2,10 +2,13 @@ from __future__ import annotations
 
 __all__ = ("OperationsRepository", "OperationType", "Operation")
 
+import contextlib
 import os
 import sqlite3
 import threading
 import time
+import typing
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import (
@@ -22,15 +25,17 @@ logger = get_logger()
 
 DB_VERSION = "v1"
 
+SequenceId = typing.NewType("SequenceId", int)
+
 
 class OperationType(IntEnum):
-    SNAPSHOT = 0
+    UPDATE_SNAPSHOT = 0
     CREATE_RUN = 1
 
 
 @dataclass(frozen=True)
 class Operation:
-    sequence_id: int
+    sequence_id: SequenceId
     timestamp: int
     operation_type: OperationType
     operation: Union[UpdateRunSnapshot, CreateRun]
@@ -62,12 +67,11 @@ class OperationsRepository:
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
 
-        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-
         self._init_db()
 
     def _init_db(self) -> None:
-        with self._lock, self._get_connection() as conn:
+        os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+        with self._get_connection() as conn:  # type: ignore
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS run_operations (
@@ -91,16 +95,16 @@ class OperationsRepository:
                 )"""
             )
 
-    def save_update_run_snapshots(self, ops: list[UpdateRunSnapshot]) -> int:
+    def save_update_run_snapshots(self, ops: list[UpdateRunSnapshot]) -> SequenceId:
         current_time = int(time.time() * 1000)  # milliseconds timestamp
         params = []
 
         for update in ops:
             serialized_operation = update.SerializeToString()
             metadata_size = len(serialized_operation)
-            params.append((current_time, OperationType.SNAPSHOT, serialized_operation, metadata_size))
+            params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, metadata_size))
 
-        with self._lock, self._get_connection() as conn:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             cursor.executemany(
@@ -110,10 +114,10 @@ class OperationsRepository:
             cursor.execute("SELECT last_insert_rowid()")
             last_insert_rowid: int = cursor.fetchone()[0]
 
-            return last_insert_rowid
+            return SequenceId(last_insert_rowid)
 
-    def save_create_run(self, run: CreateRun) -> int:
-        with self._lock, self._get_connection() as conn:
+    def save_create_run(self, run: CreateRun) -> SequenceId:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             current_time = int(time.time() * 1000)  # milliseconds timestamp
@@ -124,15 +128,13 @@ class OperationsRepository:
                 "INSERT INTO run_operations (timestamp, operation_type, operation, metadata_size) VALUES (?, ?, ?, ?)",
                 (current_time, OperationType.CREATE_RUN, serialized_operation, metadata_size),
             )
-            return cursor.lastrowid  # type: ignore
+            return SequenceId(cursor.lastrowid)  # type: ignore
 
-    def get_operations(self, up_to_bytes: int) -> list[Operation]:
-        with self._lock, self._get_connection() as conn:
+    def get_operations(self, up_to_bytes: int, window_function_limit: int = 10_000) -> list[Operation]:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
-
-            window_function_limit = 10_000
             cursor.execute(
-                f"""
+                """
                 WITH running_size AS (
                     SELECT
                         sequence_id,
@@ -143,14 +145,17 @@ class OperationsRepository:
                         SUM(metadata_size) OVER (ORDER BY sequence_id ASC) AS cumulative_size
                     FROM run_operations
                     ORDER BY sequence_id ASC
-                    LIMIT {window_function_limit}
+                    LIMIT ?
                 )
                 SELECT sequence_id, timestamp, operation, operation_type, metadata_size
                 FROM running_size
                 WHERE cumulative_size <= ?
                 ORDER BY sequence_id ASC
                 """,
-                (up_to_bytes,),
+                (
+                    window_function_limit,
+                    up_to_bytes,
+                ),
             )
 
             return [_deserialize_operation(row) for row in cursor.fetchall()]
@@ -159,19 +164,19 @@ class OperationsRepository:
         if up_to_seq_id <= 0:
             return 0
 
-        with self._lock, self._get_connection() as conn:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             cursor.execute("DELETE FROM run_operations WHERE sequence_id <= ?", (up_to_seq_id,))
 
             # Return the number of rows affected
-            return cursor.rowcount
+            return cursor.rowcount or 0
 
     def save_metadata(
         self, project: str, run_id: str, parent: Optional[str] = None, fork_step: Optional[float] = None
     ) -> None:
         # TODO maybe should be called with save_create_run
-        with self._lock, self._get_connection() as conn:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             # Check if metadata already exists
@@ -195,7 +200,7 @@ class OperationsRepository:
             )
 
     def get_metadata(self) -> Optional[dict]:
-        with self._lock, self._get_connection() as conn:
+        with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             cursor.execute(
@@ -220,7 +225,8 @@ class OperationsRepository:
                 self._connection = None
                 logger.debug(f"Closed SQLite connection for {self._db_path}")
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextlib.contextmanager  # type: ignore
+    def _get_connection(self) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
         with self._lock:
             if self._connection is None:
                 self._connection = sqlite3.connect(
@@ -232,7 +238,8 @@ class OperationsRepository:
 
                 logger.debug(f"Created new SQLite connection for {self._db_path}")
 
-            return self._connection
+            with self._connection:
+                yield self._connection
 
 
 def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
@@ -241,7 +248,7 @@ def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
 
     deserialized_op = (
         UpdateRunSnapshot.FromString(operation)
-        if op_type == OperationType.SNAPSHOT
+        if op_type == OperationType.UPDATE_SNAPSHOT
         else CreateRun.FromString(operation)
     )
-    return Operation(sequence_id, timestamp, op_type, deserialized_op, metadata_size)
+    return Operation(SequenceId(sequence_id), timestamp, op_type, deserialized_op, metadata_size)
