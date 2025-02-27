@@ -71,7 +71,6 @@ from neptune_scale.exceptions import (
     NeptuneUnableToAuthenticateError,
 )
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
-from neptune_scale.util.abstract import Resource
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.util.logger import get_logger
 
@@ -122,12 +121,14 @@ def create_auth_api_client(
     )
 
 
-class ApiClient(Resource, abc.ABC):
+class ApiClient(abc.ABC):
     @abc.abstractmethod
     def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]: ...
 
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
+
+    def close(self) -> None: ...
 
 
 class HostedApiClient(ApiClient):

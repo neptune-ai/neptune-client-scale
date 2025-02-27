@@ -15,10 +15,9 @@ from neptune_scale.util import (
     Daemon,
     SharedFloat,
 )
-from neptune_scale.util.abstract import Resource
 
 
-class LagTracker(Daemon, Resource):
+class LagTracker(Daemon):
     def __init__(
         self,
         errors_queue: ErrorsQueue,

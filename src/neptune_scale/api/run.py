@@ -5,6 +5,7 @@ Python package
 from __future__ import annotations
 
 import uuid
+from types import TracebackType
 
 from neptune_scale.sync.operations_repository import OperationsRepository
 
@@ -58,10 +59,6 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sync_process import SyncProcess
-from neptune_scale.util.abstract import (
-    Resource,
-    WithResources,
-)
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
     PROJECT_ENV_NAME,
@@ -76,7 +73,7 @@ from neptune_scale.util.shared_var import (
 logger = get_logger()
 
 
-class Run(WithResources, AbstractContextManager):
+class Run(AbstractContextManager):
     """
     Representation of tracked metadata.
     """
@@ -271,19 +268,6 @@ class Run(WithResources, AbstractContextManager):
                 self._is_closing = True
                 self.terminate()
 
-    @property
-    def resources(self) -> tuple[Resource, ...]:
-        if self._lag_tracker is not None:
-            return (
-                self._errors_queue,
-                self._lag_tracker,
-                self._errors_monitor,
-            )
-        return (
-            self._errors_queue,
-            self._errors_monitor,
-        )
-
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
             if self._is_closing:
@@ -314,7 +298,7 @@ class Run(WithResources, AbstractContextManager):
             self._errors_monitor.join()
 
         self._operations_repo.close()
-        super().close()
+        self._errors_queue.close()
 
     def terminate(self) -> None:
         """
@@ -366,6 +350,14 @@ class Run(WithResources, AbstractContextManager):
             atexit.unregister(self._exit_func)
             self._exit_func = None
         self._close(wait=True)
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        self.close()
 
     def _create_run(
         self,

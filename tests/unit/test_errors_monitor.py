@@ -52,7 +52,6 @@ def test_errors_monitor_callbacks_called(error, callback_name):
 
     # when
     errors_queue.put(error)
-    errors_queue.flush()
     errors_monitor.wake_up()
 
     # then
