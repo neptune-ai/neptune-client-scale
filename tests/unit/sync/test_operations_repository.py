@@ -27,6 +27,7 @@ def temp_db_path():
 @pytest.fixture
 def operations_repo(temp_db_path):
     repo = OperationsRepository(db_path=temp_db_path)
+    repo.init_db()
     yield repo
     repo.close()
 
@@ -34,7 +35,7 @@ def operations_repo(temp_db_path):
 def test_init_creates_tables(temp_db_path):
     # When
     repo = OperationsRepository(db_path=temp_db_path)
-
+    repo.init_db()
     # Then
     conn = sqlite3.connect(temp_db_path)
     cursor = conn.cursor()

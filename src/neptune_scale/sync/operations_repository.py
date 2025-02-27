@@ -76,9 +76,7 @@ class OperationsRepository:
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
 
-        self._init_db()
-
-    def _init_db(self) -> None:
+    def init_db(self) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
         with self._get_connection() as conn:  # type: ignore
             conn.execute(
