@@ -225,13 +225,7 @@ class OperationsRepository:
 
             version, project, run_id, parent, fork_step = row
 
-            return Metadata(
-                version=version,
-                project=project,
-                run_id=run_id,
-                parent=parent,
-                fork_step=fork_step
-            )
+            return Metadata(version=version, project=project, run_id=run_id, parent=parent, fork_step=fork_step)
 
     def close(self) -> None:
         with self._lock:
