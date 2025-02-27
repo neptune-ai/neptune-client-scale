@@ -195,6 +195,13 @@ def test_get_metadata_nonexistent(operations_repo):
     assert metadata is None
 
 
+def test_metadata_already_exists_error(operations_repo):
+    operations_repo.save_metadata(project="test", run_id="test")
+
+    with pytest.raises(ValueError, match="Metadata already exists"):
+        operations_repo.save_metadata(project="test2", run_id="test2")
+
+
 def test_close_connection(operations_repo):
     # Given
     connection = operations_repo._connection
