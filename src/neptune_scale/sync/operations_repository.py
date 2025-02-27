@@ -130,8 +130,9 @@ class OperationsRepository:
         with self._lock, self._get_connection() as conn:
             cursor = conn.cursor()
 
+            window_function_limit = 10_000
             cursor.execute(
-                """
+                f"""
                 WITH running_size AS (
                     SELECT
                         sequence_id,
@@ -142,7 +143,7 @@ class OperationsRepository:
                         SUM(metadata_size) OVER (ORDER BY sequence_id ASC) AS cumulative_size
                     FROM run_operations
                     ORDER BY sequence_id ASC
-                    LIMIT 10000
+                    LIMIT {window_function_limit}
                 )
                 SELECT sequence_id, timestamp, operation, operation_type, metadata_size
                 FROM running_size

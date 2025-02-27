@@ -109,8 +109,8 @@ def test_get_operations(operations_repo):
     # Given
     snapshots = []
     for i in range(5):
-        # Create snapshots with increasing sizes
-        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string="a" * (100 * (i + 1)))})
+        # Create snapshots with increasing sizes - up to 5MB
+        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string="a" * (1024 * 1024 * (i + 1)))})
         snapshots.append(snapshot)
 
     operations_repo.save_update_run_snapshots(snapshots)
@@ -118,7 +118,8 @@ def test_get_operations(operations_repo):
     sizes = [i.ByteSize() for i in snapshots]
 
     # When - get operations up to a size that should include the first 2 operations
-    operations = operations_repo.get_operations(up_to_bytes=sizes[0] + sizes[1])
+    request_size = sizes[0] + sizes[1]
+    operations = operations_repo.get_operations(up_to_bytes=request_size)
 
     # Then
     assert len(operations) == 2
@@ -126,7 +127,8 @@ def test_get_operations(operations_repo):
     assert all(op.operation_type == OperationType.SNAPSHOT for op in operations)
     assert [op.metadata_size for op in operations] == [size for size in sizes[:2]]
 
-    assert len(operations_repo.get_operations(up_to_bytes=sizes[0] + sizes[1] - 1)) == 1
+    # When - get operations up to a (request size -1) - should return first operation only
+    assert len(operations_repo.get_operations(up_to_bytes=request_size - 1)) == 1
 
 
 def test_delete_operations(operations_repo, temp_db_path):
