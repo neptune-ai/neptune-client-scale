@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__all__ = ("OperationsRepository", "OperationType", "Operation")
+__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata")
 
 import contextlib
 import os
@@ -40,6 +40,15 @@ class Operation:
     operation_type: OperationType
     operation: Union[UpdateRunSnapshot, CreateRun]
     metadata_size: int
+
+
+@dataclass(frozen=True)
+class Metadata:
+    version: str
+    project: str
+    run_id: str
+    parent: Optional[str] = None
+    fork_step: Optional[float] = None
 
 
 class OperationsRepository:
@@ -199,7 +208,7 @@ class OperationsRepository:
                 (DB_VERSION, project, run_id, parent, fork_step),
             )
 
-    def get_metadata(self) -> Optional[dict]:
+    def get_metadata(self) -> Optional[Metadata]:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
@@ -216,7 +225,13 @@ class OperationsRepository:
 
             version, project, run_id, parent, fork_step = row
 
-            return {"version": version, "project": project, "run_id": run_id, "parent": parent, "fork_step": fork_step}
+            return Metadata(
+                version=version,
+                project=project,
+                run_id=run_id,
+                parent=parent,
+                fork_step=fork_step
+            )
 
     def close(self) -> None:
         with self._lock:

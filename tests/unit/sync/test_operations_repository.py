@@ -11,6 +11,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 
 from neptune_scale.sync.operations_repository import (
+    Metadata,
     OperationsRepository,
     OperationType,
 )
@@ -182,11 +183,9 @@ def test_save_and_get_metadata(operations_repo):
     # Then
     metadata = operations_repo.get_metadata()
     assert metadata is not None
-    assert metadata["version"] == "v1"
-    assert metadata["project"] == project
-    assert metadata["run_id"] == run_id
-    assert metadata["parent"] == parent
-    assert metadata["fork_step"] == fork_step
+
+    expected_metadata = Metadata(version="v1", project=project, run_id=run_id, parent=parent, fork_step=fork_step)
+    assert expected_metadata == metadata
 
 
 def test_get_metadata_nonexistent(operations_repo):
