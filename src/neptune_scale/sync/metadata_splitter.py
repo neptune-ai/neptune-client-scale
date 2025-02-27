@@ -57,7 +57,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         metrics: Optional[Metrics],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
-        max_message_bytes_size: int = 1024 * 1024,
+        max_message_bytes_size: int = 1024 * 1024, #TODO patrykg increase size
     ):
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
         self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
