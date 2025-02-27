@@ -18,10 +18,12 @@ from neptune_scale.api.attribute import cleanup_path
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.legacy import Run
 
+import uuid
+
 
 @fixture
 def run(api_token):
-    run = Run(project="dummy/project", run_id="dummy-run", mode="disabled", api_token=api_token)
+    run = Run(project="dummy/project", run_id=f"{uuid.uuid4()}", mode="disabled", api_token=api_token)
     run._attr_store.log = Mock()
     with run:
         yield run

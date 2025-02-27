@@ -182,7 +182,6 @@ class OperationsRepository:
     def save_metadata(
         self, project: str, run_id: str, parent: Optional[str] = None, fork_step: Optional[float] = None
     ) -> None:
-        # TODO maybe should be called with save_create_run
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
