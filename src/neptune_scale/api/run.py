@@ -198,6 +198,7 @@ class Run(AbstractContextManager):
 
         self._lock = threading.RLock()
 
+        # TODO patrykg change uuid filename to something more descriptive
         operations_repository_path = os.path.join(os.getcwd(), f".neptune/{uuid.uuid4()}.sqlite3")
         self._operations_repo: OperationsRepository = OperationsRepository(
             db_path=operations_repository_path,
