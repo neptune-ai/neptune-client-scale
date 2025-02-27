@@ -14,8 +14,8 @@ if __name__ == "__main__":
             "parameters/batch_size": 64,
         },
     )
-    for step in range(100):
-        metrics = {f"metric{i}": step + i for i in range(100_000)}
+    for step in range(10):
+        metrics = {f"metric{i}": step + i for i in range(100)}
         run.log_metrics(
             data=metrics,
             step=step,

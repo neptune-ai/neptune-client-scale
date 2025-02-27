@@ -244,6 +244,7 @@ class SyncProcess(Process):
             for thread in threads:
                 thread.join(timeout=SHUTDOWN_TIMEOUT)
                 thread.close()  # type: ignore
+            operations_repository.close()
         logger.info("Data synchronization finished")
 
 
@@ -281,8 +282,8 @@ class SenderThread(Daemon):
     def get_next(self) -> Generator[Optional[tuple[RunOperation, int, float]], None, None]:
         metadata = self._operations_repository.get_metadata()
 
-        run_id = metadata["run_id"]  # type: ignore
-        project = metadata["project"]  # type: ignore
+        run_id = metadata.run_id
+        project = metadata.project
 
         while True:
             # TODO patrykg 8MB

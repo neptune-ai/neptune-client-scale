@@ -203,6 +203,8 @@ class Run(WithResources, AbstractContextManager):
         self._operations_repo: OperationsRepository = OperationsRepository(
             db_path=operations_repository_path,
         )
+        self._operations_repo.init_db()
+        self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
 
         self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_repo)
 
@@ -309,6 +311,7 @@ class Run(WithResources, AbstractContextManager):
         if threading.current_thread() != self._errors_monitor:
             self._errors_monitor.join()
 
+        self._operations_repo.close()
         super().close()
 
     def terminate(self) -> None:
@@ -381,8 +384,7 @@ class Run(WithResources, AbstractContextManager):
             experiment_id=experiment_name,
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
-        #TODO insert metadata in constructor(?)
-        self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
+
         self._operations_repo.save_create_run(create_run)
 
     def log_metrics(
