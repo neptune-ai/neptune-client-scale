@@ -5,8 +5,8 @@ __all__ = ("LagTracker",)
 from collections.abc import Callable
 from time import monotonic
 
+from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.sync.errors_tracking import ErrorsQueue
-from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     LAG_TRACKER_THREAD_SLEEP_TIME,
     LAG_TRACKER_TIMEOUT,
@@ -22,7 +22,7 @@ class LagTracker(Daemon, Resource):
     def __init__(
         self,
         errors_queue: ErrorsQueue,
-        operations_queue: OperationsQueue,
+        attribute_store: AttributeStore,
         last_ack_timestamp: SharedFloat,
         async_lag_threshold: float,
         on_async_lag_callback: Callable[[], None],
@@ -30,7 +30,7 @@ class LagTracker(Daemon, Resource):
         super().__init__(name="LagTracker", sleep_time=LAG_TRACKER_THREAD_SLEEP_TIME)
 
         self._errors_queue: ErrorsQueue = errors_queue
-        self._operations_queue: OperationsQueue = operations_queue
+        self._attribute_store: AttributeStore = attribute_store
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
         self._async_lag_threshold: float = async_lag_threshold
         self._on_async_lag_callback: Callable[[], None] = on_async_lag_callback
@@ -41,7 +41,7 @@ class LagTracker(Daemon, Resource):
         with self._last_ack_timestamp:
             self._last_ack_timestamp.wait(timeout=LAG_TRACKER_TIMEOUT)
             last_ack_timestamp = self._last_ack_timestamp.value
-            last_queued_timestamp = self._operations_queue.last_timestamp
+            last_queued_timestamp = self._attribute_store.last_timestamp
 
             # No operations were put into the queue
             if last_queued_timestamp is None:

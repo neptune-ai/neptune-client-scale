@@ -46,7 +46,7 @@ logger = get_logger()
 T = TypeVar("T", bound=Any)
 
 
-class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
+class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def __init__(
         self,
         *,
@@ -87,7 +87,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
         self._has_returned = False
         return self
 
-    def __next__(self) -> tuple[RunOperation, int]:
+    def __next__(self) -> UpdateRunSnapshot:
         update = self._make_empty_update_snapshot()
         size = update.ByteSize()
 
@@ -116,7 +116,7 @@ class MetadataSplitter(Iterator[tuple[RunOperation, int]]):
 
         if not self._has_returned or update.assign or update.append or update.modify_sets:
             self._has_returned = True
-            return RunOperation(project=self._project, run_id=self._run_id, update=update), size
+            return update
         else:
             raise StopIteration
 

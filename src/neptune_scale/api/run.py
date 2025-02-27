@@ -4,6 +4,8 @@ Python package
 
 from __future__ import annotations
 
+from neptune_scale.sync.operations_repository import OperationsRepository
+
 __all__ = ["Run"]
 
 import atexit
@@ -22,7 +24,6 @@ from typing import (
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.api.metrics import Metrics
@@ -46,7 +47,6 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
-from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_QUEUE_SIZE,
@@ -198,12 +198,13 @@ class Run(WithResources, AbstractContextManager):
         self._run_id: str = run_id
 
         self._lock = threading.RLock()
-        self._operations_queue: OperationsQueue = OperationsQueue(
-            lock=self._lock,
-            max_size=max_queue_size,
+
+        operations_repository_path = os.path.join(os.getcwd(), f".neptune/{self._project}-{self._run_id}.sqlite3")
+        self._operations_repo: OperationsRepository = OperationsRepository(
+            db_path=operations_repository_path,
         )
 
-        self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
+        self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_repo)
 
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._errors_monitor = ErrorsMonitor(
@@ -222,7 +223,7 @@ class Run(WithResources, AbstractContextManager):
         self._sync_process = SyncProcess(
             project=self._project,
             family=self._run_id,
-            operations_queue=self._operations_queue.queue,
+            operations_repository_path=operations_repository_path,
             errors_queue=self._errors_queue,
             process_link=self._process_link,
             api_token=input_api_token,
@@ -236,7 +237,7 @@ class Run(WithResources, AbstractContextManager):
         if async_lag_threshold is not None and on_async_lag_callback is not None:
             self._lag_tracker = LagTracker(
                 errors_queue=self._errors_queue,
-                operations_queue=self._operations_queue,
+                attribute_store=self._attr_store,
                 last_ack_timestamp=self._last_ack_timestamp,
                 async_lag_threshold=async_lag_threshold,
                 on_async_lag_callback=on_async_lag_callback,
@@ -271,13 +272,11 @@ class Run(WithResources, AbstractContextManager):
         if self._lag_tracker is not None:
             return (
                 self._errors_queue,
-                self._operations_queue,
                 self._lag_tracker,
                 self._errors_monitor,
             )
         return (
             self._errors_queue,
-            self._operations_queue,
             self._errors_monitor,
         )
 
@@ -376,17 +375,15 @@ class Run(WithResources, AbstractContextManager):
                 parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
             )
 
-        operation = RunOperation(
-            project=self._project,
-            run_id=self._run_id,
-            create=CreateRun(
-                family=self._run_id,
-                fork_point=fork_point,
-                experiment_id=experiment_name,
-                creation_time=None if creation_time is None else datetime_to_proto(creation_time),
-            ),
+        create_run = CreateRun(
+            family=self._run_id,
+            fork_point=fork_point,
+            experiment_id=experiment_name,
+            creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
-        self._operations_queue.enqueue(operation=operation)
+        #TODO insert metadata in constructor(?)
+        self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
+        self._operations_repo.save_create_run(create_run)
 
     def log_metrics(
         self,
@@ -604,20 +601,20 @@ class Run(WithResources, AbstractContextManager):
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
-                    if wait_seq.value >= self._operations_queue.last_sequence_id:
+                    if wait_seq.value >= self._attr_store.last_sequence_id:
                         break
 
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
 
-                last_queued_sequence_id = self._operations_queue.last_sequence_id
+                last_queued_sequence_id = self._attr_store.last_sequence_id
 
                 if value == -1:
-                    if self._operations_queue.last_sequence_id != -1:
+                    if self._attr_store.last_sequence_id != -1:
                         last_print_timestamp = print_message(
                             f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            self._operations_queue.last_sequence_id + 1,
+                            self._attr_store.last_sequence_id + 1,
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
