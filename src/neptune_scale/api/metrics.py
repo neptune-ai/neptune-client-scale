@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import (
     Optional,
@@ -40,6 +39,3 @@ class Metrics:
             self.preview_completion = None
         if self.preview_completion is not None:
             verify_value_between("preview_completion", self.preview_completion, 0.0, 1.0)
-
-    def batch_key(self) -> Hashable:
-        return (self.step, self.preview, self.preview_completion)

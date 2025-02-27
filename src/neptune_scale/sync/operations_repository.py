@@ -5,6 +5,7 @@ from pathlib import Path
 __all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
 
 import contextlib
+import datetime
 import os
 import sqlite3
 import threading
@@ -42,6 +43,10 @@ class Operation:
     operation_type: OperationType
     operation: Union[UpdateRunSnapshot, CreateRun]
     operation_size_bytes: int
+
+    @property
+    def ts(self) -> datetime.datetime:
+        return datetime.datetime.fromtimestamp(self.timestamp / 1000)
 
 
 @dataclass(frozen=True)

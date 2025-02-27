@@ -1,6 +1,7 @@
 import math
 import os
 import random
+import threading
 import time
 import uuid
 from datetime import (
@@ -11,6 +12,8 @@ from datetime import (
 import numpy as np
 from neptune_fetcher import ReadOnlyRun
 from pytest import mark
+
+from neptune_scale.api.run import Run
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 
@@ -164,3 +167,30 @@ def test_single_non_finite_metric(value, sync_run, ro_run):
     path = unique_path("test_series/non_finite")
     sync_run.log_metrics(data={path: value}, step=1)
     assert path not in refresh(ro_run).field_names
+
+
+def test_async_lag_callback():
+    event = threading.Event()
+    with Run(
+        project=NEPTUNE_PROJECT,
+        run_id=f"{uuid.uuid4()}",
+        async_lag_threshold=0.000001,
+        on_async_lag_callback=lambda: event.set(),
+    ) as run:
+        run.wait_for_processing()
+
+        # First callback should be called after run creation
+        event.wait(timeout=60)
+        assert event.is_set()
+        event.clear()
+
+        run.log_configs(
+            data={
+                "parameters/learning_rate": 0.001,
+                "parameters/batch_size": 64,
+            },
+        )
+
+    # Second callback should be called after logging configs
+    event.wait(timeout=60)
+    assert event.is_set()
