@@ -16,7 +16,7 @@ def test__lag_tracker__callback_called():
 
     # and
     errors_queue = Mock()
-    operations_queue = Mock(last_timestamp=time.time())
+    attribute_store = Mock(last_timestamp=time.time())
     last_ack_timestamp = SharedFloat(time.time() - lag)
     callback = Mock()
 
@@ -31,7 +31,7 @@ def test__lag_tracker__callback_called():
     # and
     lag_tracker = LagTracker(
         errors_queue=errors_queue,
-        operations_queue=operations_queue,
+        attribute_store=attribute_store,
         last_ack_timestamp=last_ack_timestamp,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback_with_event,
@@ -60,14 +60,14 @@ def test__lag_tracker__not_called():
 
     # and
     errors_queue = Mock()
-    operations_queue = Mock(last_timestamp=time.time())
+    attribute_store = Mock(last_timestamp=time.time())
     last_ack_timestamp = SharedFloat(time.time() - lag)
     callback = Mock()
 
     # and
     lag_tracker = LagTracker(
         errors_queue=errors_queue,
-        operations_queue=operations_queue,
+        attribute_store=attribute_store,
         last_ack_timestamp=last_ack_timestamp,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback,

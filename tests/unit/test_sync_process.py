@@ -1,4 +1,3 @@
-import queue
 import time
 from unittest.mock import Mock
 
@@ -9,7 +8,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import SubmitResponse
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale import NeptuneScaleWarning
 from neptune_scale.exceptions import (
@@ -17,15 +15,19 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
 )
-from neptune_scale.sync.queue_element import (
-    BatchedOperations,
-    SingleOperation,
+from neptune_scale.sync.operations_repository import (
+    Metadata,
+    Operation,
+    OperationType,
+    SequenceId,
 )
 from neptune_scale.sync.sync_process import (
     SenderThread,
     code_to_exception,
 )
 from neptune_scale.util.shared_var import SharedInt
+
+metadata = Metadata(project="project", run_id="run_id", version="v1")
 
 
 def response(request_ids: list[str], status_code: int = 200):
@@ -35,20 +37,18 @@ def response(request_ids: list[str], status_code: int = 200):
 
 
 def single_operation(update: UpdateRunSnapshot, sequence_id):
-    operation = RunOperation(update=update)
-    return SingleOperation(
-        sequence_id=sequence_id,
-        timestamp=time.process_time(),
-        operation=operation.SerializeToString(),
-        is_batchable=True,
+    return Operation(
+        sequence_id=SequenceId(sequence_id),
+        timestamp=int(time.time() * 1000),
+        operation_type=OperationType.UPDATE_SNAPSHOT,
+        operation=update,
         metadata_size=update.ByteSize(),
-        batch_key=None,
     )
 
 
 def test_sender_thread_work_finishes_when_queue_empty():
     # given
-    operations_queue = Mock()
+    operations_repository = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
     last_queue_seq = SharedInt(initial_value=0)
@@ -56,7 +56,7 @@ def test_sender_thread_work_finishes_when_queue_empty():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        operations_queue=operations_queue,
+        operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
@@ -65,7 +65,8 @@ def test_sender_thread_work_finishes_when_queue_empty():
     sender_thread._backend = backend
 
     # and
-    operations_queue.get.side_effect = queue.Empty
+    operations_repository.get_metadata.side_effect = [metadata]
+    operations_repository.get_operations.side_effect = [[]]
 
     # when
     sender_thread.work()
@@ -76,7 +77,7 @@ def test_sender_thread_work_finishes_when_queue_empty():
 
 def test_sender_thread_processes_single_element():
     # given
-    operations_queue = Mock()
+    operations_repository = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
     last_queue_seq = SharedInt(initial_value=0)
@@ -84,7 +85,7 @@ def test_sender_thread_processes_single_element():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        operations_queue=operations_queue,
+        operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
@@ -92,13 +93,12 @@ def test_sender_thread_processes_single_element():
     )
     sender_thread._backend = backend
 
+    operations_repository.get_metadata.side_effect = [metadata]
+
     # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    operations_queue.get.side_effect = [
-        BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
-        queue.Empty,
-    ]
+    operations_repository.get_operations.side_effect = [[element], []]
 
     # and
     backend.submit.side_effect = [response(["1"])]
@@ -112,7 +112,7 @@ def test_sender_thread_processes_single_element():
 
 def test_sender_thread_processes_element_on_single_retryable_error():
     # given
-    operations_queue = Mock()
+    operations_repository = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
     last_queue_seq = SharedInt(initial_value=0)
@@ -120,21 +120,19 @@ def test_sender_thread_processes_element_on_single_retryable_error():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        operations_queue=operations_queue,
+        operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
         mode="disabled",
     )
     sender_thread._backend = backend
+    operations_repository.get_metadata.side_effect = [metadata]
 
     # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    operations_queue.get.side_effect = [
-        BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
-        queue.Empty,
-    ]
+    operations_repository.get_operations.side_effect = [[element], []]
 
     # and
     backend.submit.side_effect = [
@@ -151,7 +149,7 @@ def test_sender_thread_processes_element_on_single_retryable_error():
 
 def test_sender_thread_fails_on_regular_error():
     # given
-    operations_queue = Mock()
+    operations_repository = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
     last_queue_seq = SharedInt(initial_value=0)
@@ -159,21 +157,19 @@ def test_sender_thread_fails_on_regular_error():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        operations_queue=operations_queue,
+        operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
         mode="disabled",
     )
     sender_thread._backend = backend
+    operations_repository.get_metadata.side_effect = [metadata]
 
     # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    operations_queue.get.side_effect = [
-        BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
-        queue.Empty,
-    ]
+    operations_repository.get_operations.side_effect = [[element], []]
 
     # and
     backend.submit.side_effect = [
@@ -190,7 +186,7 @@ def test_sender_thread_fails_on_regular_error():
 
 def test_sender_thread_processes_element_on_429_and_408_http_statuses():
     # given
-    operations_queue = Mock()
+    operations_repository = Mock()
     status_tracking_queue = Mock()
     errors_queue = Mock()
     last_queue_seq = SharedInt(initial_value=0)
@@ -198,21 +194,19 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        operations_queue=operations_queue,
+        operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
         mode="disabled",
     )
     sender_thread._backend = backend
+    operations_repository.get_metadata.side_effect = [metadata]
 
     # and
     update = UpdateRunSnapshot(assign={"key": Value(string="a")})
     element = single_operation(update, sequence_id=2)
-    operations_queue.get.side_effect = [
-        BatchedOperations(sequence_id=element.sequence_id, timestamp=element.timestamp, operation=element.operation),
-        queue.Empty,
-    ]
+    operations_repository.get_operations.side_effect = [[element], []]
 
     # and
     backend.submit.side_effect = [

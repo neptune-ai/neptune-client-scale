@@ -1,3 +1,4 @@
+import uuid
 from datetime import (
     datetime,
     timedelta,
@@ -17,8 +18,6 @@ from pytest import (
 from neptune_scale.api.attribute import cleanup_path
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.legacy import Run
-
-import uuid
 
 
 @fixture

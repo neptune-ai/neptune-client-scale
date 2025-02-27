@@ -282,6 +282,9 @@ class SenderThread(Daemon):
     def get_next(self) -> Generator[Optional[tuple[RunOperation, int, float]], None, None]:
         metadata = self._operations_repository.get_metadata()
 
+        if not metadata:
+            raise NeptuneUnexpectedError("No metadata found")
+
         run_id = metadata.run_id
         project = metadata.project
 

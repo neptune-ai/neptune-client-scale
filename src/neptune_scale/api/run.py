@@ -4,6 +4,8 @@ Python package
 
 from __future__ import annotations
 
+import uuid
+
 from neptune_scale.sync.operations_repository import OperationsRepository
 
 __all__ = ["Run"]
@@ -199,7 +201,7 @@ class Run(WithResources, AbstractContextManager):
 
         self._lock = threading.RLock()
 
-        operations_repository_path = os.path.join(os.getcwd(), f".neptune/{self._project}-{self._run_id}.sqlite3")
+        operations_repository_path = os.path.join(os.getcwd(), f".neptune/{uuid.uuid4()}.sqlite3")
         self._operations_repo: OperationsRepository = OperationsRepository(
             db_path=operations_repository_path,
         )
