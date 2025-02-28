@@ -20,7 +20,6 @@ from neptune_scale.util import (
 class LagTracker(Daemon):
     def __init__(
         self,
-        errors_queue: ErrorsQueue,
         sequence_tracker: SequenceTracker,
         last_ack_timestamp: SharedFloat,
         async_lag_threshold: float,
@@ -28,7 +27,6 @@ class LagTracker(Daemon):
     ) -> None:
         super().__init__(name="LagTracker", sleep_time=LAG_TRACKER_THREAD_SLEEP_TIME)
 
-        self._errors_queue: ErrorsQueue = errors_queue
         self._sequence_tracker: SequenceTracker = sequence_tracker
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
         self._async_lag_threshold: float = async_lag_threshold

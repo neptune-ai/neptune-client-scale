@@ -57,6 +57,7 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
+from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
@@ -74,7 +75,6 @@ from neptune_scale.util.envs import (
 )
 from neptune_scale.util.generate_run_id import generate_run_id
 from neptune_scale.util.logger import get_logger
-from neptune_scale.util.process_link import ProcessLink
 from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
@@ -244,18 +244,17 @@ class Run(AbstractContextManager):
             self._last_ack_seq: Optional[SharedInt] = SharedInt(-1)
             self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(-1)
 
-            self._process_link: Optional[ProcessLink] = ProcessLink()
             self._sync_process: Optional[SyncProcess] = SyncProcess(
                 project=self._project,
                 family=self._run_id,
                 operations_repository_path=operations_repository_path,
                 errors_queue=self._errors_queue,
-                process_link=self._process_link,
                 api_token=self._api_token,
                 last_queued_seq=self._last_queued_seq,
                 last_ack_seq=self._last_ack_seq,
                 last_ack_timestamp=self._last_ack_timestamp,
             )
+            self._sync_process_supervisor: Optional[ProcessSupervisor] = ProcessSupervisor(self._sync_process, self._handle_sync_process_death)
 
             self._lag_tracker: Optional[LagTracker] = None
             if async_lag_threshold is not None and on_async_lag_callback is not None:
@@ -271,15 +270,15 @@ class Run(AbstractContextManager):
             self._errors_monitor.start()
             with self._lock:
                 self._sync_process.start()
-                self._process_link.start(on_link_closed=self._on_child_link_closed)
+                self._sync_process_supervisor.start()
         else:
             self._errors_queue = None
             self._errors_monitor = None
             self._last_queued_seq = None
             self._last_ack_seq = None
             self._last_ack_timestamp = None
-            self._process_link = None
             self._sync_process = None
+            self._sync_process_supervisor = None
             self._lag_tracker = None
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
@@ -292,7 +291,7 @@ class Run(AbstractContextManager):
                 fork_step=fork_step,
             )
 
-    def _on_child_link_closed(self, _: ProcessLink) -> None:
+    def _handle_sync_process_death(self) -> None:
         with self._lock:
             if not self._is_closing:
                 logger.error("The background synchronization process has stopped unexpectedly.")
@@ -315,8 +314,9 @@ class Run(AbstractContextManager):
             self._sync_process.terminate()
             self._sync_process.join()
 
-        if self._process_link is not None:
-            self._process_link.stop()
+        if self._sync_process_supervisor is not None:
+            self._sync_process_supervisor.interrupt()
+            self._sync_process_supervisor.join()
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
