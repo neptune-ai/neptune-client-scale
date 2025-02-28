@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from neptune_scale.sync.sync_process import SyncProcess
+
 __all__ = ("LagTracker",)
 
 from collections.abc import Callable
@@ -14,9 +16,24 @@ from neptune_scale.sync.parameters import (
 from neptune_scale.util import (
     Daemon,
     SharedFloat,
+    get_logger,
 )
 
+logger = get_logger()
 
+
+class SyncProcessSupervisor(Daemon):
+    def __init__(self, sync_process: SyncProcess, 
+                 callback: Callable[[], None]) -> None:
+        super().__init__(name="SyncProcessSupervisor", sleep_time=0.5)
+        self._sync_process: SyncProcess = sync_process
+        self._callback: Callable[[], None] = callback
+
+    def work(self) -> None:
+        if not self._sync_process.is_alive():
+            logger.error("SyncProcess is not alive.")
+            self._callback()
+            
 class LagTracker(Daemon):
     def __init__(
         self,

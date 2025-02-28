@@ -8,11 +8,12 @@ from neptune_scale.sync.operations_repository import (
 
 __all__ = ("SyncProcess",)
 
-import multiprocessing
+import os
 import queue
 import signal
 import threading
 from collections.abc import Generator
+from functools import partial
 from multiprocessing import Process
 from types import FrameType
 from typing import (
@@ -24,6 +25,7 @@ from typing import (
 )
 
 import backoff
+import psutil
 from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
@@ -82,7 +84,6 @@ from neptune_scale.sync.parameters import (
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.util import (
     Daemon,
-    ProcessLink,
     SharedFloat,
     SharedInt,
     get_logger,
@@ -163,7 +164,6 @@ class SyncProcess(Process):
         self,
         operations_repository_path: str,
         errors_queue: ErrorsQueue,
-        process_link: ProcessLink,
         api_token: str,
         project: str,
         family: str,
@@ -177,7 +177,6 @@ class SyncProcess(Process):
 
         self.operations_repository_path: str = operations_repository_path
         self._errors_queue: ErrorsQueue = errors_queue
-        self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -187,22 +186,10 @@ class SyncProcess(Process):
         self._max_queue_size: int = max_queue_size
         self._mode: Literal["async", "disabled"] = mode
 
-        # This flag is set when a termination signal is caught
-        self._stop_event = multiprocessing.Event()
-
-    def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
-        logger.debug(f"Received signal {safe_signal_name(signum)}")
-        self._stop_event.set()  # Trigger the stop event
-
-    def _on_parent_link_closed(self, _: ProcessLink) -> None:
-        logger.error("SyncProcess: main process closed unexpectedly. Exiting")
-        self._stop_event.set()
-
     def run(self) -> None:
         logger.info("Data synchronization started")
-
-        self._process_link.start(on_link_closed=self._on_parent_link_closed)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+        stop_event = threading.Event()
+        signal.signal(signal.SIGTERM, partial(_handle_stop_signal, stop_event))
 
         status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         operations_repository = OperationsRepository(db_path=self.operations_repository_path)
@@ -230,9 +217,12 @@ class SyncProcess(Process):
             thread.start()
 
         try:
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
+                if not is_parent_running():
+                    logger.error("Parent process closed unexpectedly. Exiting")
+                    stop_event.set()
         except KeyboardInterrupt:
             logger.debug("Data synchronization interrupted by user")
         finally:
@@ -482,3 +472,23 @@ class StatusTrackingThread(Daemon):
             self.interrupt()
             self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e
+
+        # Get current process
+
+
+# Get parent process
+parent_process = psutil.Process(os.getpid()).parent()
+
+
+def is_parent_running() -> bool:
+    try:
+
+        # Check if parent exists and is running
+        return parent_process is not None and parent_process.is_running()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+
+
+def _handle_stop_signal(stop_event: threading.Event, signum: int, frame: Optional[FrameType]) -> None:
+    logger.debug(f"Received signal {safe_signal_name(signum)}")
+    stop_event.set()  # Trigger the stop event
