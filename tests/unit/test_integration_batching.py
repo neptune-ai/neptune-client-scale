@@ -10,7 +10,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.net.serialization import (
     datetime_to_proto,
     make_step,
@@ -25,8 +25,8 @@ from neptune_scale.sync.operations_queue import OperationsQueue
     [
         pytest.param(
             [
-                Metrics(data={"x": 1, "y": 5}, step=1),
-                Metrics(data={"a": 2}, step=1),
+                SeriesStep(data={"x": 1, "y": 5}, step=1),
+                SeriesStep(data={"a": 2}, step=1),
             ],
             [
                 {"step": 1, "append": {"a": 2, "x": 1, "y": 5}},
@@ -35,8 +35,8 @@ from neptune_scale.sync.operations_queue import OperationsQueue
         ),
         pytest.param(
             [
-                Metrics(data={"a": 1, "b": 2}, step=1),
-                Metrics(data={"a": 2}, step=2),
+                SeriesStep(data={"a": 1, "b": 2}, step=1),
+                SeriesStep(data={"a": 2}, step=2),
             ],
             [
                 {"step": 1, "append": {"a": 1, "b": 2}},
@@ -46,9 +46,9 @@ from neptune_scale.sync.operations_queue import OperationsQueue
         ),
         pytest.param(
             [
-                Metrics(data={"a": 1, "b": 2}, step=1, preview=True, preview_completion=0.2),
-                Metrics(data={"a": 10, "b": 20}, step=1, preview=True, preview_completion=0.8),
-                Metrics(data={"a": 100, "b": 200}, step=1),
+                SeriesStep(data={"a": 1, "b": 2}, step=1, preview=True, preview_completion=0.2),
+                SeriesStep(data={"a": 10, "b": 20}, step=1, preview=True, preview_completion=0.8),
+                SeriesStep(data={"a": 100, "b": 200}, step=1),
             ],
             [
                 {"step": 1, "append": {"a": 1, "b": 2}, "preview": True, "preview_completion": 0.2},
@@ -68,7 +68,7 @@ def test__merge_metrics(metrics, expected_updates):
 
     # when
     for m in metrics:
-        store.log(metrics=m)
+        store.log(series=m)
         agg_queue.put_nowait(op_queue.queue.get())
 
     result = agg_queue.get()

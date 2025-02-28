@@ -20,7 +20,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from pytest import mark
 
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.series_step import SeriesStep
 from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 
@@ -33,7 +33,7 @@ def test_empty():
         run_id="run_id",
         timestamp=datetime.now(),
         configs={},
-        metrics=None,
+        series=None,
         add_tags={},
         remove_tags={},
     )
@@ -64,7 +64,7 @@ def test_configs():
             "some/datetime": datetime.now(),
             "some/tags": {"tag1", "tag2"},
         },
-        metrics=None,
+        series=None,
         add_tags={},
         remove_tags={},
     )
@@ -123,7 +123,7 @@ def test_configs():
 )
 def test_metrics(preview, preview_completion, expected_preview_proto):
     # given
-    metrics = Metrics(
+    metrics = SeriesStep(
         step=1,
         data={
             "some/metric": 3.14,
@@ -140,7 +140,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
         run_id="run_id",
         timestamp=datetime.now(),
         configs={},
-        metrics=metrics,
+        series=metrics,
         add_tags={},
         remove_tags={},
     )
@@ -172,7 +172,7 @@ def test_tags():
         run_id="run_id",
         timestamp=datetime.now(),
         configs={},
-        metrics=None,
+        series=None,
         add_tags={
             "some/tags": {"tag1", "tag2"},
             "some/other_tags2": {"tag2", "tag3"},
@@ -219,7 +219,7 @@ def test_splitting():
     configs = {f"config{v}": v for v in range(1000)}
     add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
     remove_tags = {f"remove/tag{v}": {f"value{v}"} for v in range(1000)}
-    metrics = Metrics(
+    metrics = SeriesStep(
         step=1,
         data={f"metric{v}": 7 / 9.0 * v for v in range(1000)},
         preview=True,
@@ -231,7 +231,7 @@ def test_splitting():
         run_id="run_id",
         timestamp=timestamp,
         configs=configs,
-        metrics=metrics,
+        series=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -277,7 +277,7 @@ def test_split_large_tags():
         run_id="run_id",
         timestamp=timestamp,
         configs=fields,
-        metrics=metrics,
+        series=metrics,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -315,7 +315,7 @@ def test_split_large_tags():
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_raise_on_non_finite_float_metrics(value):
     # given
-    metrics = Metrics(
+    metrics = SeriesStep(
         step=10,
         data={"bad-metric": value},
     )
@@ -327,7 +327,7 @@ def test_raise_on_non_finite_float_metrics(value):
             run_id="run_id",
             timestamp=datetime.now(),
             configs={},
-            metrics=metrics,
+            series=metrics,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
@@ -343,7 +343,7 @@ def test_raise_on_non_finite_float_metrics(value):
 def test_skip_non_finite_float_metrics(value, caplog):
     with caplog.at_level("WARNING"):
         # given
-        metrics = Metrics(
+        metrics = SeriesStep(
             step=10,
             data={"bad-metric": value},
         )
@@ -354,7 +354,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
             run_id="run_id",
             timestamp=datetime.now(),
             configs={},
-            metrics=metrics,
+            series=metrics,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
