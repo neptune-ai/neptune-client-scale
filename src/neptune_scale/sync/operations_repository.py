@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata")
+from pathlib import Path
+
+__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
 
 import contextlib
 import os
@@ -39,7 +41,7 @@ class Operation:
     timestamp: int
     operation_type: OperationType
     operation: Union[UpdateRunSnapshot, CreateRun]
-    metadata_size: int
+    operation_size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,7 @@ class Metadata:
     version: str
     project: str
     run_id: str
-    parent: Optional[str] = None
+    fork_run_id: Optional[str] = None
     fork_step: Optional[float] = None
 
 
@@ -60,24 +62,24 @@ class OperationsRepository:
       - timestamp INTEGER: Timestamp of the operation being enqueued
       - operation_type INTEGER NOT NULL: Type of operation (0=snapshot, 1=create_run)
       - operation BLOB NOT NULL: Serialized RunOperation object (protobuf)
-      - metadata_size INTEGER NOT NULL: Size of the metadata in the operation
+      - operation_size_bytes INTEGER NOT NULL: Size of the operation
 
     - Table `metadata`: Contains metadata about runs
       - id INTEGER: Auto-incremented ID (Primary Key)
       - version TEXT: Version identifier
       - project TEXT: Project identifier
       - run_id TEXT: Run identifier
-      - parent TEXT: Parent run identifier (optional)
+      - fork_run_id TEXT: Parent run identifier (optional)
       - fork_step REAL: Fork step (optional)
     """
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
 
     def init_db(self) -> None:
-        os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
+        os.makedirs(self._db_path.parent, exist_ok=True)
         with self._get_connection() as conn:  # type: ignore
             conn.execute(
                 """
@@ -86,7 +88,7 @@ class OperationsRepository:
                     timestamp INTEGER NOT NULL,
                     operation_type INTEGER NOT NULL,
                     operation BLOB NOT NULL,
-                    metadata_size INTEGER NOT NULL
+                    operation_size_bytes INTEGER NOT NULL
                 )
                 """
             )
@@ -97,7 +99,7 @@ class OperationsRepository:
                     version TEXT NOT NULL,
                     project TEXT NOT NULL,
                     run_id TEXT NOT NULL,
-                    parent TEXT,
+                    fork_run_id TEXT,
                     fork_step REAL
                 )"""
             )
@@ -108,14 +110,14 @@ class OperationsRepository:
 
         for update in ops:
             serialized_operation = update.SerializeToString()
-            metadata_size = len(serialized_operation)
-            params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, metadata_size))
+            operation_size_bytes = len(serialized_operation)
+            params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes))
 
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             cursor.executemany(
-                "INSERT INTO run_operations (timestamp, operation_type, operation, metadata_size) VALUES (?, ?, ?, ?)",
+                "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
                 params,
             )
             cursor.execute("SELECT last_insert_rowid()")
@@ -129,40 +131,54 @@ class OperationsRepository:
 
             current_time = int(time.time() * 1000)  # milliseconds timestamp
             serialized_operation = run.SerializeToString()
-            metadata_size = len(serialized_operation)
+            operation_size_bytes = len(serialized_operation)
 
             cursor.execute(
-                "INSERT INTO run_operations (timestamp, operation_type, operation, metadata_size) VALUES (?, ?, ?, ?)",
-                (current_time, OperationType.CREATE_RUN, serialized_operation, metadata_size),
+                "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
             )
             return SequenceId(cursor.lastrowid)  # type: ignore
 
-    def get_operations(self, up_to_bytes: int, window_function_limit: int = 10_000) -> list[Operation]:
+    def get_operations(self, up_to_bytes: int) -> list[Operation]:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
+
+            def find_last_sequence_id_up_to_bytes(up_to_bytes: int) -> Optional[SequenceId]:
+                limit = 50_000  # 2 * 8 bytes * 50_000 = 0.8MB
+                last_sequence = None
+                size = 0
+
+                while True:
+                    cursor.execute(
+                        """
+                        SELECT sequence_id, operation_size_bytes FROM run_operations
+                        WHERE sequence_id > ?
+                        ORDER BY sequence_id ASC
+                        LIMIT ?
+                    """,
+                        (last_sequence or -1, limit),
+                    )
+                    rows = cursor.fetchall()
+                    if not rows:
+                        return last_sequence
+                    for sequence_id, size_bytes in rows:
+                        sequence_id = SequenceId(sequence_id)
+                        if (size + size_bytes) > up_to_bytes:
+                            return last_sequence
+                        last_sequence = sequence_id
+                        size += size_bytes
+
+            last_sequence_id = find_last_sequence_id_up_to_bytes(up_to_bytes)
+            if last_sequence_id is None:
+                return []
             cursor.execute(
                 """
-                WITH running_size AS (
-                    SELECT
-                        sequence_id,
-                        timestamp,
-                        operation,
-                        operation_type,
-                        metadata_size,
-                        SUM(metadata_size) OVER (ORDER BY sequence_id ASC) AS cumulative_size
-                    FROM run_operations
-                    ORDER BY sequence_id ASC
-                    LIMIT ?
-                )
-                SELECT sequence_id, timestamp, operation, operation_type, metadata_size
-                FROM running_size
-                WHERE cumulative_size <= ?
+                SELECT sequence_id, timestamp, operation, operation_type, operation_size_bytes
+                FROM run_operations
+                WHERE sequence_id <= ?
                 ORDER BY sequence_id ASC
                 """,
-                (
-                    window_function_limit,
-                    up_to_bytes,
-                ),
+                (last_sequence_id,),
             )
 
             return [_deserialize_operation(row) for row in cursor.fetchall()]
@@ -180,9 +196,8 @@ class OperationsRepository:
             return cursor.rowcount or 0
 
     def save_metadata(
-        self, project: str, run_id: str, parent: Optional[str] = None, fork_step: Optional[float] = None
+        self, project: str, run_id: str, fork_run_id: Optional[str] = None, fork_step: Optional[float] = None
     ) -> None:
-        # TODO maybe should be called with save_create_run
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
@@ -200,10 +215,10 @@ class OperationsRepository:
             # Insert new metadata
             cursor.execute(
                 """
-                INSERT INTO metadata (version, project, run_id, parent, fork_step)
+                INSERT INTO metadata (version, project, run_id, fork_run_id, fork_step)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (DB_VERSION, project, run_id, parent, fork_step),
+                (DB_VERSION, project, run_id, fork_run_id, fork_step),
             )
 
     def get_metadata(self) -> Optional[Metadata]:
@@ -212,7 +227,7 @@ class OperationsRepository:
 
             cursor.execute(
                 """
-                SELECT version, project, run_id, parent, fork_step
+                SELECT version, project, run_id, fork_run_id, fork_step
                 FROM metadata
                 """
             )
@@ -221,9 +236,11 @@ class OperationsRepository:
             if not row:
                 return None
 
-            version, project, run_id, parent, fork_step = row
+            version, project, run_id, fork_run_id, fork_step = row
 
-            return Metadata(version=version, project=project, run_id=run_id, parent=parent, fork_step=fork_step)
+            return Metadata(
+                version=version, project=project, run_id=run_id, fork_run_id=fork_run_id, fork_step=fork_step
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -250,7 +267,7 @@ class OperationsRepository:
 
 
 def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
-    sequence_id, timestamp, operation, operation_type, metadata_size = row
+    sequence_id, timestamp, operation, operation_type, operation_size_bytes = row
     op_type = OperationType(operation_type)
 
     deserialized_op = (
@@ -258,4 +275,4 @@ def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
         if op_type == OperationType.UPDATE_SNAPSHOT
         else CreateRun.FromString(operation)
     )
-    return Operation(SequenceId(sequence_id), timestamp, op_type, deserialized_op, metadata_size)
+    return Operation(SequenceId(sequence_id), timestamp, op_type, deserialized_op, operation_size_bytes)

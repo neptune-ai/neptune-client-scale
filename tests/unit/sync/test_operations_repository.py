@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -26,7 +27,7 @@ def temp_db_path():
 
 @pytest.fixture
 def operations_repo(temp_db_path):
-    repo = OperationsRepository(db_path=temp_db_path)
+    repo = OperationsRepository(db_path=Path(temp_db_path))
     repo.init_db()
     yield repo
     repo.close()
@@ -34,7 +35,7 @@ def operations_repo(temp_db_path):
 
 def test_init_creates_tables(temp_db_path):
     # When
-    repo = OperationsRepository(db_path=temp_db_path)
+    repo = OperationsRepository(db_path=Path(temp_db_path))
     repo.init_db()
     # Then
     conn = sqlite3.connect(temp_db_path)
@@ -127,10 +128,36 @@ def test_get_operations(operations_repo):
     assert len(operations) == 2
     assert [op.operation for op in operations] == snapshots[:2]
     assert all(op.operation_type == OperationType.UPDATE_SNAPSHOT for op in operations)
-    assert [op.metadata_size for op in operations] == [size for size in sizes[:2]]
+    assert [op.operation_size_bytes for op in operations] == [size for size in sizes[:2]]
 
     # When - get operations up to a (request size -1) - should return first operation only
     assert len(operations_repo.get_operations(up_to_bytes=request_size - 1)) == 1
+
+
+def test_get_operations_size_based_pagination_with_many_items(operations_repo):
+    # Given
+    operations_count = 150_000
+    snapshots = []
+    for i in range(operations_count):
+        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string=f"{i}")})
+        snapshots.append(snapshot)
+
+    operations_repo.save_update_run_snapshots(snapshots)
+
+    sizes = [i.ByteSize() for i in snapshots]
+
+    # When
+    operations = operations_repo.get_operations(up_to_bytes=sum(sizes))
+    assert len(operations) == operations_count
+
+    operations = operations_repo.get_operations(up_to_bytes=sum(sizes[:10_000]))
+    assert len(operations) == 10_000
+
+
+def test_get_operations_empty_db(operations_repo):
+    # Given
+    operations = operations_repo.get_operations(up_to_bytes=10000)
+    assert len(operations) == 0
 
 
 def test_delete_operations(operations_repo, temp_db_path):
@@ -175,17 +202,19 @@ def test_save_and_get_metadata(operations_repo):
     # Given
     project = "test-project"
     run_id = "test-run-id"
-    parent = "parent-run-id"
+    fork_run_id = "parent-run-id"
     fork_step = 1.5
 
     # When
-    operations_repo.save_metadata(project=project, run_id=run_id, parent=parent, fork_step=fork_step)
+    operations_repo.save_metadata(project=project, run_id=run_id, fork_run_id=fork_run_id, fork_step=fork_step)
 
     # Then
     metadata = operations_repo.get_metadata()
     assert metadata is not None
 
-    expected_metadata = Metadata(version="v1", project=project, run_id=run_id, parent=parent, fork_step=fork_step)
+    expected_metadata = Metadata(
+        version="v1", project=project, run_id=run_id, fork_run_id=fork_run_id, fork_step=fork_step
+    )
     assert expected_metadata == metadata
 
 
