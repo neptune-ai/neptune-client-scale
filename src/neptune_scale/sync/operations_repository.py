@@ -165,7 +165,7 @@ class OperationsRepository:
                     for sequence_id, operation_size_bytes in rows:
                         if (total_operations_size_bytes + operation_size_bytes) > up_to_bytes:
                             return _last_sequence_id
-                        _last_sequence_id = sequence_id
+                        _last_sequence_id = SequenceId(sequence_id)
                         total_operations_size_bytes += operation_size_bytes
 
                     # If we have less than limit rows, we can return the last sequence id
