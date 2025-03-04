@@ -280,7 +280,7 @@ class Run(AbstractContextManager):
         if existing_metadata.project != self._project or existing_metadata.run_id != self._run_id:
             # should never happen because we use project and run_id to create the repository path
             raise NeptuneRunConflicting()
-        if existing_metadata.fork_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
+        if existing_metadata.parent_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
             raise NeptuneRunDuplicate()
         else:
             # Same run_id but different fork points
