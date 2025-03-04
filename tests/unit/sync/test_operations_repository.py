@@ -202,18 +202,18 @@ def test_save_and_get_metadata(operations_repo):
     # Given
     project = "test-project"
     run_id = "test-run-id"
-    fork_run_id = "parent-run-id"
+    parent_run_id = "parent-run-id"
     fork_step = 1.5
 
     # When
-    operations_repo.save_metadata(project=project, run_id=run_id, fork_run_id=fork_run_id, fork_step=fork_step)
+    operations_repo.save_metadata(project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step)
 
     # Then
     metadata = operations_repo.get_metadata()
     assert metadata is not None
 
     expected_metadata = Metadata(
-        version="v1", project=project, run_id=run_id, fork_run_id=fork_run_id, fork_step=fork_step
+        version="v1", project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
     )
     assert expected_metadata == metadata
 
