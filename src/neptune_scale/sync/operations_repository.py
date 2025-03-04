@@ -262,8 +262,13 @@ class OperationsRepository:
 
                 logger.debug(f"Created new SQLite connection for {self._db_path}")
 
-            with self._connection:
+            self._connection.execute("BEGIN")
+            try:
                 yield self._connection
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
+                raise
 
 
 def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
