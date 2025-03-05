@@ -18,13 +18,12 @@ __all__ = ["sync"]
 
 import os
 from pathlib import Path
-from typing import (
-    Optional,
-)
+from typing import Optional
 
 import click
 
 from neptune_scale.cli.sync import sync_all
+from neptune_scale.exceptions import NeptuneApiTokenNotProvided
 from neptune_scale.util.envs import API_TOKEN_ENV_NAME
 
 
@@ -59,4 +58,7 @@ def sync(
     api_token: Optional[str],
     sync_no_parent: bool,
 ) -> None:
+    if api_token is None:
+        raise NeptuneApiTokenNotProvided()
+
     sync_all(run_log_file, api_token, sync_no_parent)

@@ -16,23 +16,23 @@
 
 __all__ = ["sync_all"]
 
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Generator
+from typing import Optional
 
-import backoff
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import SubmitResponse
-
-from neptune_scale.exceptions import NeptuneRetryableError, NeptuneUnauthorizedError, NeptuneConnectionLostError, \
-    NeptuneTooManyRequestsResponseError, NeptuneInternalServerError, NeptuneUnexpectedResponseError, \
-    NeptuneSynchronizationStopped, NeptuneUnexpectedError
-from neptune_scale.net.api_client import with_api_errors_handling, backend_factory, ApiClient
-from neptune_scale.sync.operations_repository import OperationsRepository, SequenceId, Operation, OperationType
-from neptune_scale.sync.parameters import MAX_REQUEST_RETRY_SECONDS
-from neptune_scale.util import get_logger
-
+from neptune_scale.api.run import print_message
+from neptune_scale.sync import sync_process
+from neptune_scale.sync.errors_tracking import (
+    ErrorsMonitor,
+    ErrorsQueue,
+)
+from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.sync.sequence_tracker import SequenceTracker
+from neptune_scale.util import (
+    Daemon,
+    SharedFloat,
+    SharedInt,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -46,7 +46,11 @@ def sync_all(
 
     runner = SyncRunner(api_token=api_token, operations_repository=repository)
 
-    runner.work()
+    try:
+        runner.start()
+        runner.wait()
+    finally:
+        runner.stop()
 
 
 class SyncRunner:
@@ -57,87 +61,107 @@ class SyncRunner:
     ) -> None:
         self._api_token: str = api_token
         self._operations_repository: OperationsRepository = operations_repository
+        self._status_tracking_queue: sync_process.PeekableQueue[sync_process.StatusTrackingElement] = (
+            sync_process.PeekableQueue()
+        )
+        self._errors_queue: ErrorsQueue = ErrorsQueue()
+        self._last_queued_seq = SharedInt(-1)
+        self._last_ack_seq = SharedInt(-1)
+        self._last_ack_timestamp = SharedFloat(-1)
+        self._sequence_tracker = SequenceTracker()
+        self.threads: list[Daemon] = []
 
-    def work(self) -> None:
-        backend = backend_factory(api_token=self._api_token, mode="async")
-        metadata = self._operations_repository.get_metadata()
-
-        try:
-            generator = self._stream_operations(metadata.run_id, metadata.project)
-            while (operation := next(generator, None)) is not None:
-                run_operation, sequence_id, timestamp = operation
-
-                try:
-                    logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(""))
-                    request_ids: Optional[SubmitResponse] = self._submit(
-                        backend=backend, family=metadata.run_id, operation=run_operation
-                    )
-
-                    if request_ids is None or not request_ids.request_ids:
-                        raise NeptuneUnexpectedError("Server response is empty")
-
-                    last_request_id = request_ids.request_ids[-1]
-
-                    logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
-                    # self._status_tracking_queue.put(
-                    #     StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)
-                    # )
-
-                    self._operations_repository.delete_operations(up_to_seq_id=sequence_id)
-                except NeptuneRetryableError as e:
-                    # self._errors_queue.put(e)
-                    # Sleep before retry
-                    pass
-
-        except Exception as e:
-            raise NeptuneSynchronizationStopped() from e
-
-
-    @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
-    @with_api_errors_handling
-    def _submit(self, backend: ApiClient, family: str, operation: RunOperation) -> Optional[SubmitResponse]:
-        response = backend.submit(operation=operation, family=family)
-
-        status_code = response.status_code
-        if status_code != 200:
-            self._raise_exception(status_code)
-
-        return response.parsed
-
-    @staticmethod
-    def _raise_exception(status_code: int) -> None:
-        logger.error("HTTP response error: %s", status_code)
-        if status_code == 403:
-            raise NeptuneUnauthorizedError()
-        elif status_code == 408:
-            raise NeptuneConnectionLostError()
-        elif status_code == 429:
-            raise NeptuneTooManyRequestsResponseError()
-        elif status_code // 100 == 5:
-            raise NeptuneInternalServerError()
+    def start(self) -> None:
+        last_sequence_id = self._operations_repository.get_last_sequence_id()
+        if last_sequence_id is not None:
+            self._sequence_tracker.update_sequence_id(last_sequence_id)
         else:
-            raise NeptuneUnexpectedResponseError()
+            logger.info("No operations to process")
+            return
 
-    def _stream_operations(
+        metadata = self._operations_repository.get_metadata()
+        if metadata is None:
+            logger.error("No run metadata found in log")
+            return
+
+        self.threads = [
+            sync_process.SenderThread(
+                api_token=self._api_token,
+                mode="async",
+                operations_repository=self._operations_repository,
+                status_tracking_queue=self._status_tracking_queue,
+                errors_queue=self._errors_queue,
+                family=metadata.run_id,
+                last_queued_seq=self._last_queued_seq,
+            ),
+            sync_process.StatusTrackingThread(
+                api_token=self._api_token,
+                mode="async",
+                project=metadata.project,
+                errors_queue=self._errors_queue,
+                status_tracking_queue=self._status_tracking_queue,
+                last_ack_seq=self._last_ack_seq,
+                last_ack_timestamp=self._last_ack_timestamp,
+            ),
+            ErrorsMonitor(errors_queue=self._errors_queue),
+        ]
+
+        for thread in self.threads:
+            thread.start()
+
+    def wait(
         self,
-        run_id: str,
-        project: str,
-        max_batch_size: int = 15 * 1024 * 1024,
-    ) -> Generator[tuple[RunOperation, SequenceId, datetime], None, None]:
-        while operations := self._operations_repository.get_operations(up_to_bytes=max_batch_size):
-            if operations[0].operation_type == OperationType.CREATE_RUN:
-                create_run = operations.pop(0)
-                operation = RunOperation(project=project, run_id=run_id, create=create_run.operation)  # type: ignore
-                yield operation, create_run.sequence_id, create_run.ts
+        verbose: bool = True,
+    ) -> None:
+        last_queued_sequence_id = self._sequence_tracker.last_sequence_id
+        if last_queued_sequence_id == -1:
+            return
 
-                if not operations:
-                    continue
+        if verbose:
+            logger.info("Waiting for all operations to be processed")
 
-            data, sequence_id, timestamp = self._merge_operations(operations)
-            operation = RunOperation(project=project, run_id=run_id, update_batch=data)  # type: ignore
-            yield operation, sequence_id, timestamp
+        sleep_time: float = 1.0
+        last_print_timestamp: Optional[float] = None
 
-    @staticmethod
-    def _merge_operations(operations: list[Operation]) -> tuple[UpdateRunSnapshots, SequenceId, datetime]:
-        snapshot_batch = UpdateRunSnapshots(snapshots=[op.operation for op in operations])  # type: ignore
-        return snapshot_batch, operations[-1].sequence_id, operations[-1].ts
+        while True:
+            try:
+                with self._last_ack_timestamp:
+                    self._last_ack_timestamp.wait(timeout=sleep_time)
+                    value = self._last_ack_timestamp.value
+
+                last_queued_sequence_id = self._sequence_tracker.last_sequence_id
+
+                if value == -1:
+                    last_print_timestamp = print_message(
+                        "Waiting. No operations were processed yet. Operations to sync: %s",
+                        self._sequence_tracker.last_sequence_id + 1,
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+                elif value < last_queued_sequence_id:
+                    last_print_timestamp = print_message(
+                        "Waiting for remaining %d operation(s) to be processed",
+                        last_queued_sequence_id - value + 1,
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+                else:
+                    # Reaching the last queued sequence ID means that all operations were submitted
+                    if value >= last_queued_sequence_id:
+                        break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
+
+        if verbose:
+            logger.info("All operations were processed")
+
+    def stop(self) -> None:
+        for thread in self.threads:
+            thread.interrupt()
+        for thread in self.threads:
+            thread.join()
+        for thread in self.threads:
+            if hasattr(thread, "close"):
+                thread.close()

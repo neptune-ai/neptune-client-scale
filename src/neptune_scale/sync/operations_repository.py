@@ -262,6 +262,23 @@ class OperationsRepository:
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
             )
 
+    def get_last_sequence_id(self) -> Optional[SequenceId]:
+        with self._get_connection() as conn:  # type: ignore
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT MAX(sequence_id)
+                FROM run_operations
+                """
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return SequenceId(row[0])
+
     def close(self) -> None:
         with self._lock:
             if self._connection is not None:
