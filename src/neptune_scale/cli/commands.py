@@ -46,17 +46,9 @@ def main() -> None:
     metavar="<api-token>",
     help="API token for authentication. Overrides NEPTUNE_API_TOKEN environment variable",
 )
-@click.option(
-    "--sync-no-parent",
-    "sync_no_parent",
-    is_flag=True,
-    default=False,
-    help="Override error if the run is being created as a fork and the parent doesn't exist",
-)
 def sync(
     run_log_file: Path,
     api_token: Optional[str],
-    sync_no_parent: bool,
 ) -> None:
     if api_token is None:
         raise NeptuneApiTokenNotProvided()

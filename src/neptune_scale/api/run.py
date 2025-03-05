@@ -388,7 +388,9 @@ class Run(AbstractContextManager):
 
         create_run = CreateRun(
             family=self._run_id,
-            fork_point=fork_point,
+            fork_point=ForkPoint(
+                parent_project=self._project, parent_run_id="nonexist", step=make_step(number=1)
+            ),
             experiment_id=experiment_name,
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )

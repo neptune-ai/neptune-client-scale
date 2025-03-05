@@ -40,7 +40,6 @@ logger = get_logger()
 def sync_all(
     run_log_file: Path,
     api_token: str,
-    sync_no_parent: bool,
 ) -> None:
     repository = OperationsRepository(db_path=run_log_file)
 
@@ -71,7 +70,9 @@ class SyncRunner:
         self._sequence_tracker = SequenceTracker()
         self.threads: list[Daemon] = []
 
-    def start(self) -> None:
+    def start(
+        self,
+    ) -> None:
         last_sequence_id = self._operations_repository.get_last_sequence_id()
         if last_sequence_id is not None:
             self._sequence_tracker.update_sequence_id(last_sequence_id)
