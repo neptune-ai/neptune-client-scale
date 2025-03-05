@@ -109,8 +109,7 @@ class AttributeStore:
         )
 
         for operation, metadata_size in splitter:
-            key = metrics.batch_key() if metrics is not None else None
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=key)
+            self._operations_queue.enqueue(operation=operation, size=metadata_size)
 
 
 class Attribute:

@@ -3,7 +3,6 @@ from __future__ import annotations
 __all__ = ("AggregatingQueue",)
 
 import time
-from collections.abc import Hashable
 from queue import (
     Empty,
     Queue,
@@ -68,7 +67,7 @@ class AggregatingQueue(Resource):
     def get(self) -> BatchedOperations:
         start = time.monotonic()
 
-        batch_operations: dict[Hashable, RunOperation] = {}
+        batch_operations: list[RunOperation] = []
         batch_sequence_id: Optional[int] = None
         batch_timestamp: Optional[float] = None
 
@@ -92,7 +91,7 @@ class AggregatingQueue(Resource):
             if not batch_operations:
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                batch_operations[element.batch_key] = new_operation
+                batch_operations.append(new_operation)
                 batch_bytes += len(element.operation)
             else:
                 if not element.is_batchable:
@@ -107,10 +106,7 @@ class AggregatingQueue(Resource):
 
                 new_operation = RunOperation()
                 new_operation.ParseFromString(element.operation)
-                if element.batch_key not in batch_operations:
-                    batch_operations[element.batch_key] = new_operation
-                else:
-                    merge_run_operation(batch_operations[element.batch_key], new_operation)
+                batch_operations.append(new_operation)
                 batch_bytes += element.metadata_size
 
             batch_sequence_id = element.sequence_id
@@ -154,54 +150,25 @@ class AggregatingQueue(Resource):
         )
 
 
-def create_run_batch(operations: dict[Hashable, RunOperation]) -> RunOperation:
+def create_run_batch(operations: list[RunOperation]) -> RunOperation:
+    if not operations:
+        raise Empty
+
     if len(operations) == 1:
-        return next(iter(operations.values()))
+        return operations[0]
 
-    batch = None
-    for _, operation in sorted(operations.items(), key=lambda x: (x[0] is not None, x[0])):
-        if batch is None:
-            batch = RunOperation()
-            batch.project = operation.project
-            batch.run_id = operation.run_id
-            batch.create_missing_project = operation.create_missing_project
-            batch.api_key = operation.api_key
+    head = operations[0]
+    batch = RunOperation()
+    batch.project = head.project
+    batch.run_id = head.run_id
+    batch.create_missing_project = head.create_missing_project
+    batch.api_key = head.api_key
 
+    for operation in operations:
         operation_type = operation.WhichOneof("operation")
         if operation_type == "update":
             batch.update_batch.snapshots.append(operation.update)
         else:
             raise ValueError("Cannot batch operation of type %s", operation_type)
 
-    if batch is None:
-        raise Empty
     return batch
-
-
-def merge_run_operation(batch: RunOperation, operation: RunOperation) -> None:
-    """
-    Merge the `operation` into `batch`, taking into account the special case of `modify_sets`.
-
-    Protobuf merges existing map keys by simply overwriting values, instead of calling
-    `MergeFrom` on the existing value, eg: A['foo'] = B['foo'].
-
-    We want this instead:
-
-        batch = {'sys/tags': 'string': { 'values': {'foo': ADD}}}
-        operation = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
-        result = {'sys/tags': 'string': { 'values': {'foo': ADD, 'bar': ADD}}}
-
-    If we called `batch.MergeFrom(operation)` we would get an overwritten value:
-        result = {'sys/tags': 'string': { 'values': {'bar': ADD}}}
-
-    This function ensures that the `modify_sets` are merged correctly, leaving the default
-    behaviour for all other fields.
-    """
-
-    modify_sets = operation.update.modify_sets
-    operation.update.ClearField("modify_sets")
-
-    batch.MergeFrom(operation)
-
-    for k, v in modify_sets.items():
-        batch.update.modify_sets[k].MergeFrom(v)

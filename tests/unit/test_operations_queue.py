@@ -112,24 +112,24 @@ def test_enqueue_blocking_timing(monkeypatch):
 
     # Queue empty: enqueue should not block
     t0 = monotonic()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert monotonic() - t0 < 0.5, "enqueue() on an empty queue should not block"
 
     # Queue full: block on first attempt to enqueue an item
     t0 = monotonic()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert monotonic() - t0 > 1.9, "enqueue() on a full queue should block"
 
     # Queue full: don't block on further failed attempts to enqueue items
     t0 = monotonic()
     for _ in range(5):
-        queue.enqueue(operation=RunOperation(), size=10, key="key")
+        queue.enqueue(operation=RunOperation(), size=10)
     assert monotonic() - t0 < 0.5, "enqueue() on a full queue should not block after the previous call failed"
 
     # Queue empty again: enqueue should not block
     queue.queue.get(timeout=0.5)
     t0 = monotonic()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert monotonic() - t0 < 0.5, "enqueue() on an empty queue should not block"
 
     # Start a thread that consumes an element from the queue while we're blocked on enqueue()
@@ -138,14 +138,14 @@ def test_enqueue_blocking_timing(monkeypatch):
 
     # Queue initially full, but is emptied during wait: enqueue should block but only until there is free space
     t0 = monotonic()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     elapsed = monotonic() - t0
     assert elapsed > 0.5, "enqueue() on a full queue should block"
     assert elapsed < 2.0, "Waiting on the queue should be interrupted once there is free capacity"
 
     # Queue full again: we should block
     t0 = monotonic()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert monotonic() - t0 > 1.9, "enqueue() on a full queue should block"
 
     thread.join()
@@ -161,12 +161,12 @@ def test_enqueue_drop_on_queue_full(monkeypatch, caplog):
     queue = OperationsQueue(lock=threading.RLock(), max_size=1)
 
     # Queue empty: enqueue must succeed
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert not caplog.records, "enqueue() must succeed on an empty queue"
 
     # Queue full: drop subsequent items
     for _ in range(3):
-        queue.enqueue(operation=RunOperation(), size=10, key="key")
+        queue.enqueue(operation=RunOperation(), size=10)
 
     assert len(caplog.records) == 3, "An error should be logged for each failed enqueue()"
     for rec in caplog.records:
@@ -175,7 +175,7 @@ def test_enqueue_drop_on_queue_full(monkeypatch, caplog):
     # Queue empty: enqueue must succeed
     queue.queue.get(timeout=0.5)
     caplog.clear()
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert not caplog.records, "enqueue() must succeed on an empty queue"
 
     # Start a thread that consumes an element from the queue while we're blocked on enqueue()
@@ -183,11 +183,11 @@ def test_enqueue_drop_on_queue_full(monkeypatch, caplog):
     thread.start()
 
     # Queue initially full, but is emptied during wait: enqueue should succeed
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert not caplog.records, "enqueue() must succeed when queue is emptied during wait"
 
     # Queue full: drop the item
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
     assert len(caplog.records) == 1, "a single error should be logged"
     assert "queue is full" in caplog.text
 
@@ -203,28 +203,28 @@ def test_enqueue_raise_on_queue_full(monkeypatch):
     queue = OperationsQueue(lock=threading.RLock(), max_size=1)
 
     # Queue empty: enqueue must succeed
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
 
     # Queue full: drop subsequent items
     for x in range(3):
         with pytest.raises(NeptuneUnableToLogData) as exc:
-            queue.enqueue(operation=RunOperation(), size=10, key="key")
+            queue.enqueue(operation=RunOperation(), size=10)
         exc.match("queue is full")
 
     # Queue empty: enqueue must succeed
     queue.queue.get(timeout=0.5)
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
 
     # Start a thread that consumes an element from the queue while we're blocked on enqueue()
     thread = threading.Thread(target=_get_delayed, args=(queue,))
     thread.start()
 
     # Queue initially full, but is emptied during wait: enqueue() should succeed
-    queue.enqueue(operation=RunOperation(), size=10, key="key")
+    queue.enqueue(operation=RunOperation(), size=10)
 
     # Queue full: drop the item
     with pytest.raises(NeptuneUnableToLogData) as exc:
-        queue.enqueue(operation=RunOperation(), size=10, key="key")
+        queue.enqueue(operation=RunOperation(), size=10)
     exc.match("queue is full")
 
     thread.join()

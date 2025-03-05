@@ -29,7 +29,8 @@ from neptune_scale.sync.operations_queue import OperationsQueue
                 Metrics(data={"a": 2}, step=1),
             ],
             [
-                {"step": 1, "append": {"a": 2, "x": 1, "y": 5}},
+                {"step": 1, "append": {"x": 1, "y": 5}},
+                {"step": 1, "append": {"a": 2}},
             ],
             id="Different metrics, same step",
         ),
