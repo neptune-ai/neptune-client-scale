@@ -13,6 +13,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 
 from neptune_scale.sync.operations_repository import (
     Metadata,
+    NeptuneLocalStorageInUnsupportedVersion,
     OperationsRepository,
     OperationType,
 )
@@ -276,6 +277,23 @@ def test_save_update_run_snapshots_too_large(operations_repo):
         operations_repo.save_update_run_snapshots(
             [UpdateRunSnapshot(assign={"key": Value(string="a" * 1024 * 1024 * 2)})]
         )
+
+
+def test_unsupported_version_error(operations_repo, temp_db_path):
+    # Given - create a database with an unsupported version
+    operations_repo.init_db()
+    operations_repo.save_metadata(project="test", run_id="test")
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.execute("UPDATE metadata SET version = 'unsupported_version'")
+    conn.commit()
+    conn.close()
+
+    # When/Then - trying to initialize with an existing DB with wrong version should raise an error
+    with pytest.raises(NeptuneLocalStorageInUnsupportedVersion):
+        operations_repo = OperationsRepository(db_path=Path(temp_db_path))
+        operations_repo.init_db()
+        operations_repo.get_metadata()
 
 
 def get_operation_count(db_path: str) -> int:

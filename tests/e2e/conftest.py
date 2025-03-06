@@ -1,8 +1,6 @@
 import logging
 import os
 import uuid
-
-os.environ["NEPTUNE_DEBUG_MODE"] = "1"
 from datetime import (
     datetime,
     timezone,

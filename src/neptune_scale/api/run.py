@@ -42,9 +42,8 @@ from neptune_scale.api.validation import (
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
+    NeptuneConflictingDataInLocalStorage,
     NeptuneProjectNotProvided,
-    NeptuneRunConflicting,
-    NeptuneRunDuplicate,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -280,12 +279,15 @@ class Run(AbstractContextManager):
     ) -> None:
         if existing_metadata.project != self._project or existing_metadata.run_id != self._run_id:
             # should never happen because we use project and run_id to create the repository path
-            raise NeptuneRunConflicting()
+            raise NeptuneConflictingDataInLocalStorage()
         if existing_metadata.parent_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
-            raise NeptuneRunDuplicate()
+            logger.warning(
+                "Run already exists in local storage with the same parent run and fork point. Resuming the run."
+            )
+            return
         else:
             # Same run_id but different fork points
-            raise NeptuneRunConflicting()
+            raise NeptuneConflictingDataInLocalStorage()
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:

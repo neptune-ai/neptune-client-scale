@@ -3,13 +3,10 @@ import uuid
 import pytest
 
 from neptune_scale import Run
-from neptune_scale.exceptions import (
-    NeptuneRunConflicting,
-    NeptuneRunDuplicate,
-)
+from neptune_scale.exceptions import NeptuneConflictingDataInLocalStorage
 
 
-def test_resume_false_with_matching_fork_point(api_token):
+def test_resume_false_with_matching_fork_point(api_token, caplog):
     project = "workspace/project"
     run_id = str(uuid.uuid4())
     fork_run_id = "parent-run"
@@ -27,8 +24,8 @@ def test_resume_false_with_matching_fork_point(api_token):
         pass
 
     # Then try to create the same run again without resume
-    with pytest.raises(NeptuneRunDuplicate):
-        Run(
+    with caplog.at_level("WARNING"):
+        with Run(
             project=project,
             api_token=api_token,
             run_id=run_id,
@@ -36,7 +33,9 @@ def test_resume_false_with_matching_fork_point(api_token):
             mode="disabled",
             fork_run_id=fork_run_id,
             fork_step=fork_step,
-        )
+        ):
+            pass
+    assert "Run already exists in local storage" in caplog.text
 
     # Then try to use the same run_id with a different project
     with Run(
@@ -64,7 +63,7 @@ def test_resume_false_with_conflicting_fork_point(
         pass
 
     # Then try to create the same run but with a different fork point
-    with pytest.raises(NeptuneRunConflicting):
+    with pytest.raises(NeptuneConflictingDataInLocalStorage):
         Run(
             project=project,
             api_token=api_token,
