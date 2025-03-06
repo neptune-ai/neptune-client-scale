@@ -53,4 +53,4 @@ def sync(
     if api_token is None:
         raise NeptuneApiTokenNotProvided()
 
-    sync_all(run_log_file, api_token, sync_no_parent)
+    sync_all(run_log_file, api_token)

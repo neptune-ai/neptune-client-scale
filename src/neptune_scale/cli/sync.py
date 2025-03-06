@@ -25,10 +25,12 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
-from neptune_scale.sync.operations_repository import OperationsRepository
-from neptune_scale.sync.sequence_tracker import SequenceTracker
+from neptune_scale.sync.operations_repository import (
+    OperationsRepository,
+    SequenceId,
+)
+from neptune_scale.sync.sync_process import SyncProcess
 from neptune_scale.util import (
-    Daemon,
     SharedFloat,
     SharedInt,
     get_logger,
@@ -41,9 +43,7 @@ def sync_all(
     run_log_file: Path,
     api_token: str,
 ) -> None:
-    repository = OperationsRepository(db_path=run_log_file)
-
-    runner = SyncRunner(api_token=api_token, operations_repository=repository)
+    runner = SyncRunner(api_token=api_token, run_log_file=run_log_file)
 
     try:
         runner.start()
@@ -56,27 +56,25 @@ class SyncRunner:
     def __init__(
         self,
         api_token: str,
-        operations_repository: OperationsRepository,
+        run_log_file: Path,
     ) -> None:
         self._api_token: str = api_token
-        self._operations_repository: OperationsRepository = operations_repository
-        self._status_tracking_queue: sync_process.PeekableQueue[sync_process.StatusTrackingElement] = (
-            sync_process.PeekableQueue()
-        )
+        self._run_log_file: Path = run_log_file
+        self._operations_repository: OperationsRepository = OperationsRepository(db_path=run_log_file)
+        self._process_link = sync_process.ProcessLink()
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._last_queued_seq = SharedInt(-1)
         self._last_ack_seq = SharedInt(-1)
         self._last_ack_timestamp = SharedFloat(-1)
-        self._sequence_tracker = SequenceTracker()
-        self.threads: list[Daemon] = []
+        self._last_queued_seq_id: Optional[SequenceId] = None
+        self._sync_process: Optional[SyncProcess] = None
+        self._errors_monitor: Optional[ErrorsMonitor] = None
 
     def start(
         self,
     ) -> None:
-        last_sequence_id = self._operations_repository.get_last_sequence_id()
-        if last_sequence_id is not None:
-            self._sequence_tracker.update_sequence_id(last_sequence_id)
-        else:
+        self._last_queued_seq_id = self._operations_repository.get_last_sequence_id()
+        if self._last_queued_seq_id is None:
             logger.info("No operations to process")
             return
 
@@ -85,37 +83,30 @@ class SyncRunner:
             logger.error("No run metadata found in log")
             return
 
-        self.threads = [
-            sync_process.SenderThread(
-                api_token=self._api_token,
-                mode="async",
-                operations_repository=self._operations_repository,
-                status_tracking_queue=self._status_tracking_queue,
-                errors_queue=self._errors_queue,
-                family=metadata.run_id,
-                last_queued_seq=self._last_queued_seq,
-            ),
-            sync_process.StatusTrackingThread(
-                api_token=self._api_token,
-                mode="async",
-                project=metadata.project,
-                errors_queue=self._errors_queue,
-                status_tracking_queue=self._status_tracking_queue,
-                last_ack_seq=self._last_ack_seq,
-                last_ack_timestamp=self._last_ack_timestamp,
-            ),
-            ErrorsMonitor(errors_queue=self._errors_queue),
-        ]
+        self._sync_process = sync_process.SyncProcess(
+            operations_repository_path=self._run_log_file,
+            errors_queue=self._errors_queue,
+            process_link=self._process_link,
+            api_token=self._api_token,
+            project=metadata.project,
+            family=metadata.run_id,
+            mode="async",
+            last_queued_seq=self._last_queued_seq,
+            last_ack_seq=self._last_ack_seq,
+            last_ack_timestamp=self._last_ack_timestamp,
+        )
+        self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
 
-        for thread in self.threads:
-            thread.start()
+        self._sync_process.start()
+        self._process_link.start()
+
+        self._errors_monitor.start()
 
     def wait(
         self,
         verbose: bool = True,
     ) -> None:
-        last_queued_sequence_id = self._sequence_tracker.last_sequence_id
-        if last_queued_sequence_id == -1:
+        if self._last_queued_seq_id is None:
             return
 
         if verbose:
@@ -126,30 +117,26 @@ class SyncRunner:
 
         while True:
             try:
-                with self._last_ack_timestamp:
-                    self._last_ack_timestamp.wait(timeout=sleep_time)
-                    value = self._last_ack_timestamp.value
+                with self._last_ack_seq:
+                    self._last_ack_seq.wait(timeout=sleep_time)
+                    last_ack_seq_id = self._last_ack_seq.value
 
-                last_queued_sequence_id = self._sequence_tracker.last_sequence_id
-
-                if value == -1:
+                if last_ack_seq_id == -1:
                     last_print_timestamp = print_message(
                         "Waiting. No operations were processed yet. Operations to sync: %s",
-                        self._sequence_tracker.last_sequence_id + 1,
+                        self._last_queued_seq_id + 1,
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
-                elif value < last_queued_sequence_id:
+                elif last_ack_seq_id < self._last_queued_seq_id:
                     last_print_timestamp = print_message(
                         "Waiting for remaining %d operation(s) to be processed",
-                        last_queued_sequence_id - value + 1,
+                        self._last_queued_seq_id - last_ack_seq_id + 1,
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
-                else:
-                    # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id:
-                        break
+                elif last_ack_seq_id >= self._last_queued_seq_id:
+                    break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
@@ -159,10 +146,14 @@ class SyncRunner:
             logger.info("All operations were processed")
 
     def stop(self) -> None:
-        for thread in self.threads:
-            thread.interrupt()
-        for thread in self.threads:
-            thread.join()
-        for thread in self.threads:
-            if hasattr(thread, "close"):
-                thread.close()
+        if self._errors_monitor is not None:
+            self._errors_monitor.interrupt()
+            self._errors_monitor.join()
+
+        if self._sync_process is not None:
+            self._sync_process.terminate()
+            self._sync_process.join()
+            self._process_link.stop()
+
+        self._operations_repository.close()
+        self._errors_queue.close()
