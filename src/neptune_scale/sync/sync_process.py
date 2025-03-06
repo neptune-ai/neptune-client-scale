@@ -5,6 +5,7 @@ from pathlib import Path
 
 from neptune_scale.sync.operations_repository import (
     Metadata,
+    Operation,
     OperationsRepository,
     OperationType,
     SequenceId,
@@ -17,7 +18,6 @@ import multiprocessing
 import queue
 import signal
 import threading
-from collections.abc import Generator
 from multiprocessing import Process
 from types import FrameType
 from typing import (
@@ -297,39 +297,40 @@ class SenderThread(Daemon):
                 - len(self._metadata.project)
                 - 200  # 200 bytes for RunOperation overhead,
             )
-            generator = _stream_operations(
-                self._operations_repository, self._metadata.run_id, self._metadata.project, max_operations_size
-            )
-            while (operation := next(generator, None)) is not None:
-                run_operation, sequence_id, timestamp = operation
+            while operations := self._operations_repository.get_operations(up_to_bytes=max_operations_size):
+                partitioned_operations = _partition_by_type_and_size(
+                    operations, self._metadata.run_id, self._metadata.project, max_operations_size
+                )
+                for run_operation, sequence_id, timestamp in partitioned_operations:
+                    try:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                "Submitting operation #%d with size of %d bytes", sequence_id, run_operation.ByteSize()
+                            )
+                        request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
-                try:
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            "Submitting operation #%d with size of %d bytes", sequence_id, run_operation.ByteSize()
+                        if request_ids is None or not request_ids.request_ids:
+                            raise NeptuneUnexpectedError("Server response is empty")
+
+                        last_request_id = request_ids.request_ids[-1]
+
+                        logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
+                        self._status_tracking_queue.put(
+                            StatusTrackingElement(
+                                sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp
+                            )
                         )
-                    request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
-                    if request_ids is None or not request_ids.request_ids:
-                        raise NeptuneUnexpectedError("Server response is empty")
+                        self._operations_repository.delete_operations(up_to_seq_id=sequence_id)
+                        # Update Last PUT sequence id and notify threads in the main process
+                        with self._last_queued_seq:
+                            self._last_queued_seq.value = sequence_id
+                            self._last_queued_seq.notify_all()
+                    except NeptuneRetryableError as e:
+                        self._errors_queue.put(e)
+                        # Sleep before retry
+                        return
 
-                    last_request_id = request_ids.request_ids[-1]
-
-                    logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
-                    self._status_tracking_queue.put(
-                        StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)
-                    )
-
-                    self._operations_repository.delete_operations(up_to_seq_id=sequence_id)
-                except NeptuneRetryableError as e:
-                    self._errors_queue.put(e)
-                    # Sleep before retry
-                    break
-
-                # Update Last PUT sequence id and notify threads in the main process
-                with self._last_queued_seq:
-                    self._last_queued_seq.value = sequence_id
-                    self._last_queued_seq.notify_all()
         except Exception as e:
             self._errors_queue.put(e)
             with self._last_queued_seq:
@@ -356,43 +357,51 @@ def _raise_exception(status_code: int) -> None:
         raise NeptuneUnexpectedResponseError()
 
 
-def _stream_operations(
-    operations_repository: OperationsRepository, run_id: str, project: str, max_batch_size: int
-) -> Generator[tuple[RunOperation, SequenceId, datetime.datetime], None, None]:
-    while operations := operations_repository.get_operations(up_to_bytes=max_batch_size):
-        batch = UpdateRunSnapshots()
-        total_operations_size_bytes = 0
-        last_sequence_id, last_timestamp = None, None
-        for operation in operations:
-            if operation.operation_type == OperationType.CREATE_RUN:
-                if batch.snapshots:
-                    yield (
-                        RunOperation(project=project, run_id=run_id, update_batch=batch),
-                        last_sequence_id,
-                        last_timestamp,
-                    )  # type: ignore
-                    batch = UpdateRunSnapshots()
-                    total_operations_size_bytes = 0
-                    last_sequence_id, last_timestamp = None, None
+def _partition_by_type_and_size(
+    operations: list[Operation], run_id: str, project: str, max_batch_size: int
+) -> list[tuple[RunOperation, SequenceId, datetime.datetime]]:
+    grouped: list[list[Operation]] = []
+    batch: list[Operation] = []
+    batch_type: Optional[OperationType] = None
+    batch_size = 0
 
-                yield (
-                    RunOperation(project=project, run_id=run_id, create=operation.operation),  # type: ignore
-                    operation.sequence_id,
-                    operation.ts,
-                )
-            elif operation.operation_type == OperationType.UPDATE_SNAPSHOT:
-                total_operations_size_bytes += (
-                    operation.operation_size_bytes + 5
-                )  # 1 byte for wire type, 4 bytes for size (2mb)
-                if total_operations_size_bytes >= max_batch_size:
-                    break
-                batch.snapshots.append(operation.operation)  # type: ignore
-                last_sequence_id, last_timestamp = operation.sequence_id, operation.ts
-            else:
-                raise ValueError(f"Unexpected operation type: {operation.operation_type}")
+    def op_size_with_overhead(_op: Operation) -> int:
+        return _op.operation_size_bytes + 5  # 1 byte for wire type, 4 bytes for size (2mb)
 
-        if batch.snapshots:
-            yield RunOperation(project=project, run_id=run_id, update_batch=batch), last_sequence_id, last_timestamp  # type: ignore
+    for op in operations:
+        reset_batch = (
+            # we don't mix operation types in a single batch
+            op.operation_type != batch_type
+            # only one CREATE_RUN per batch
+            or batch_type == OperationType.CREATE_RUN
+            # batch cannot be too big
+            or batch_size + op_size_with_overhead(op) > max_batch_size
+        )
+        if reset_batch:
+            if batch:
+                grouped.append(batch)
+            batch = []
+            batch_type = op.operation_type
+            batch_size = 0
+
+        batch.append(op)
+        batch_size += op_size_with_overhead(op)
+
+    if batch:
+        grouped.append(batch)
+
+    def to_run_operation(ops: list[Operation]) -> tuple[RunOperation, SequenceId, datetime.datetime]:
+        if ops[0].operation_type == OperationType.CREATE_RUN:
+            return (
+                RunOperation(project=project, run_id=run_id, create=ops[0].operation),  # type: ignore
+                ops[-1].sequence_id,
+                ops[-1].ts,
+            )
+        else:
+            snapshots = UpdateRunSnapshots(snapshots=[_op.operation for _op in ops])  # type: ignore
+            return RunOperation(project=project, run_id=run_id, update_batch=snapshots), ops[-1].sequence_id, ops[-1].ts
+
+    return [(to_run_operation(ops)) for ops in grouped]  # type: ignore
 
 
 class StatusTrackingThread(Daemon):
