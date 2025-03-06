@@ -120,7 +120,7 @@ class OperationsRepository:
             operation_size_bytes = len(serialized_operation)
 
             if operation_size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
-                raise ValueError(f"Operation size is too large: {operation_size_bytes} bytes")
+                raise RuntimeError(f"Operation size is too large: {operation_size_bytes} bytes")
 
             params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes))
 
@@ -152,7 +152,7 @@ class OperationsRepository:
 
     def get_operations(self, up_to_bytes: int) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
-            raise ValueError(
+            raise RuntimeError(
                 f"up to bytes is too small: {up_to_bytes} bytes, minimum is {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
             )
 
@@ -230,7 +230,7 @@ class OperationsRepository:
 
             count = cursor.fetchone()[0]
             if count > 0:
-                raise ValueError("Metadata already exists")
+                raise RuntimeError("Metadata already exists")
 
             # Insert new metadata
             cursor.execute(

@@ -229,7 +229,7 @@ def test_get_metadata_nonexistent(operations_repo):
 def test_metadata_already_exists_error(operations_repo):
     operations_repo.save_metadata(project="test", run_id="test")
 
-    with pytest.raises(ValueError, match="Metadata already exists"):
+    with pytest.raises(RuntimeError, match="Metadata already exists"):
         operations_repo.save_metadata(project="test2", run_id="test2")
 
 
@@ -267,12 +267,12 @@ def test_timestamp_in_operations(mock_time, operations_repo):
 
 
 def test_get_operations_up_to_bytes_too_small(operations_repo):
-    with pytest.raises(ValueError, match=r"up to bytes is too small: 100 bytes.*"):
+    with pytest.raises(RuntimeError, match=r"up to bytes is too small: 100 bytes.*"):
         operations_repo.get_operations(up_to_bytes=100)
 
 
 def test_save_update_run_snapshots_too_large(operations_repo):
-    with pytest.raises(ValueError, match="Operation size is too large: 2097172 bytes"):
+    with pytest.raises(RuntimeError, match="Operation size is too large: 2097172 bytes"):
         operations_repo.save_update_run_snapshots(
             [UpdateRunSnapshot(assign={"key": Value(string="a" * 1024 * 1024 * 2)})]
         )
