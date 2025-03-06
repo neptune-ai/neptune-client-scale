@@ -262,13 +262,13 @@ class OperationsRepository:
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
             )
 
-    def get_last_sequence_id(self) -> Optional[SequenceId]:
+    def get_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             cursor.execute(
                 """
-                SELECT MAX(sequence_id)
+                SELECT MIN(sequence_id), MAX(sequence_id)
                 FROM run_operations
                 """
             )
@@ -277,7 +277,10 @@ class OperationsRepository:
             if not row:
                 return None
 
-            return SequenceId(row[0])
+            min_seq_id, max_seq_id = row
+            if min_seq_id is None or max_seq_id is None:
+                return None
+            return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     def close(self) -> None:
         with self._lock:

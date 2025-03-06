@@ -19,7 +19,8 @@ __all__ = ["sync_all"]
 from pathlib import Path
 from typing import Optional
 
-from neptune_scale.api.run import print_message
+from tqdm import tqdm
+
 from neptune_scale.sync import sync_process
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
@@ -66,15 +67,15 @@ class SyncRunner:
         self._last_queued_seq = SharedInt(-1)
         self._last_ack_seq = SharedInt(-1)
         self._last_ack_timestamp = SharedFloat(-1)
-        self._last_queued_seq_id: Optional[SequenceId] = None
+        self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._sync_process: Optional[SyncProcess] = None
         self._errors_monitor: Optional[ErrorsMonitor] = None
 
     def start(
         self,
     ) -> None:
-        self._last_queued_seq_id = self._operations_repository.get_last_sequence_id()
-        if self._last_queued_seq_id is None:
+        self._log_seq_id_range = self._operations_repository.get_sequence_id_range()
+        if self._log_seq_id_range is None:
             logger.info("No operations to process")
             return
 
@@ -102,48 +103,27 @@ class SyncRunner:
 
         self._errors_monitor.start()
 
-    def wait(
-        self,
-        verbose: bool = True,
-    ) -> None:
-        if self._last_queued_seq_id is None:
+    def wait(self, progress_bar_enabled: bool = True, wait_time: float = 0.1) -> None:
+        if self._log_seq_id_range is None:
             return
 
-        if verbose:
-            logger.info("Waiting for all operations to be processed")
+        total_count = self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1
+        with tqdm(desc="Syncing operations", total=total_count, disable=not progress_bar_enabled) as progress_bar:
+            while True:
+                try:
+                    with self._last_ack_seq:
+                        self._last_ack_seq.wait(timeout=wait_time)
+                        last_ack_seq_id = self._last_ack_seq.value
 
-        sleep_time: float = 1.0
-        last_print_timestamp: Optional[float] = None
+                    if last_ack_seq_id != -1:
+                        acked_count = last_ack_seq_id - self._log_seq_id_range[0] + 1
+                        progress_bar.update(acked_count - progress_bar.n)
 
-        while True:
-            try:
-                with self._last_ack_seq:
-                    self._last_ack_seq.wait(timeout=sleep_time)
-                    last_ack_seq_id = self._last_ack_seq.value
-
-                if last_ack_seq_id == -1:
-                    last_print_timestamp = print_message(
-                        "Waiting. No operations were processed yet. Operations to sync: %s",
-                        self._last_queued_seq_id + 1,
-                        last_print=last_print_timestamp,
-                        verbose=verbose,
-                    )
-                elif last_ack_seq_id < self._last_queued_seq_id:
-                    last_print_timestamp = print_message(
-                        "Waiting for remaining %d operation(s) to be processed",
-                        self._last_queued_seq_id - last_ack_seq_id + 1,
-                        last_print=last_print_timestamp,
-                        verbose=verbose,
-                    )
-                elif last_ack_seq_id >= self._last_queued_seq_id:
-                    break
-            except KeyboardInterrupt:
-                if verbose:
+                    if last_ack_seq_id >= self._log_seq_id_range[1]:
+                        break
+                except KeyboardInterrupt:
                     logger.warning("Waiting interrupted by user")
-                return
-
-        if verbose:
-            logger.info("All operations were processed")
+                    return
 
     def stop(self) -> None:
         if self._errors_monitor is not None:
