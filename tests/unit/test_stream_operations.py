@@ -4,7 +4,6 @@ from unittest.mock import Mock
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
-    UpdateRunSnapshots,
     Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
@@ -14,7 +13,7 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
     SequenceId,
 )
-from neptune_scale.sync.sync_process import _merge_operations as merge_operations
+from neptune_scale.sync.parameters import MAX_REQUEST_SIZE_BYTES
 from neptune_scale.sync.sync_process import _stream_operations as stream_operations
 
 
@@ -37,7 +36,7 @@ def test_stream_operations_empty_operations():
     operations_repository = Mock()
     operations_repository.get_operations.return_value = []
 
-    generator = stream_operations(operations_repository, "test_run_id", "test_project")
+    generator = stream_operations(operations_repository, "test_run_id", "test_project", MAX_REQUEST_SIZE_BYTES)
     assert list(generator) == []
 
 
@@ -47,7 +46,7 @@ def test_stream_operations_create_run_only():
     create_run_op = create_operation(1, OperationType.CREATE_RUN)
     operations_repository.get_operations.side_effect = [[create_run_op], []]
 
-    generator = stream_operations(operations_repository, "test_run_id", "test_project")
+    generator = stream_operations(operations_repository, "test_run_id", "test_project", MAX_REQUEST_SIZE_BYTES)
     result = next(generator)
 
     assert isinstance(result, tuple)
@@ -70,7 +69,7 @@ def test_stream_operations_update_operations_only():
     update_op2 = create_operation(2, OperationType.UPDATE_SNAPSHOT)
     operations_repository.get_operations.side_effect = [[update_op1, update_op2], []]
 
-    generator = stream_operations(operations_repository, "test_run_id", "test_project")
+    generator = stream_operations(operations_repository, "test_run_id", "test_project", MAX_REQUEST_SIZE_BYTES)
     result = next(generator)
 
     assert isinstance(result, tuple)
@@ -94,7 +93,7 @@ def test_stream_operations_create_run_and_updates():
     update_op2 = create_operation(3, OperationType.UPDATE_SNAPSHOT)
     operations_repository.get_operations.side_effect = [[create_run_op, update_op1, update_op2], []]
 
-    generator = stream_operations(operations_repository, "test_run_id", "test_project")
+    generator = stream_operations(operations_repository, "test_run_id", "test_project", MAX_REQUEST_SIZE_BYTES)
 
     # First yield should be the CREATE_RUN operation
     result1 = next(generator)
@@ -122,7 +121,7 @@ def test_stream_operations_multiple_batches():
     update_op3 = create_operation(4, OperationType.UPDATE_SNAPSHOT)
     operations_repository.get_operations.side_effect = [[create_run_op, update_op1], [update_op2, update_op3], []]
 
-    generator = stream_operations(operations_repository, "test_run_id", "test_project")
+    generator = stream_operations(operations_repository, "test_run_id", "test_project", MAX_REQUEST_SIZE_BYTES)
 
     # First yield should be the CREATE_RUN operation
     result1 = next(generator)
@@ -147,21 +146,3 @@ def test_stream_operations_multiple_batches():
 
     # The generator should exit after this
     assert list(generator) == []
-
-
-def test_merge_operations():
-    operations = []
-    for i in range(5):
-        op = create_operation(i, OperationType.UPDATE_SNAPSHOT)
-        operations.append(op)
-
-    result = merge_operations(operations)
-
-    assert isinstance(result, tuple)
-    assert len(result) == 3
-    snapshot_batch, sequence_id, timestamp = result
-
-    assert isinstance(snapshot_batch, UpdateRunSnapshots)
-    assert len(snapshot_batch.snapshots) == 5
-    assert sequence_id == 4
-    assert timestamp == operations[-1].ts

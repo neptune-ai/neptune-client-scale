@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+
 __all__ = ("MetadataSplitter",)
 
 import math
@@ -57,7 +59,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         metrics: Optional[Metrics],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
-        max_message_bytes_size: int = 8 * 1024 * 1024,  # 8 MB
+        max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
         self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None

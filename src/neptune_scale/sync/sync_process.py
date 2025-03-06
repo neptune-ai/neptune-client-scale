@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from neptune_scale.sync.operations_repository import (
     Metadata,
-    Operation,
     OperationsRepository,
     OperationType,
     SequenceId,
 )
 
 __all__ = ("SyncProcess",)
+
 import datetime
 import multiprocessing
 import queue
@@ -76,6 +77,7 @@ from neptune_scale.net.api_client import (
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.parameters import (
     MAX_REQUEST_RETRY_SECONDS,
+    MAX_REQUEST_SIZE_BYTES,
     MAX_REQUESTS_STATUS_BATCH_SIZE,
     SHUTDOWN_TIMEOUT,
     STATUS_TRACKING_THREAD_SLEEP_TIME,
@@ -177,7 +179,7 @@ class SyncProcess(Process):
     ) -> None:
         super().__init__(name="SyncProcess")
 
-        self.operations_repository_path: Path = operations_repository_path
+        self._operations_repository_path: Path = operations_repository_path
         self._errors_queue: ErrorsQueue = errors_queue
         self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
@@ -206,7 +208,7 @@ class SyncProcess(Process):
         signal.signal(signal.SIGTERM, self._handle_signal)
 
         status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
-        operations_repository = OperationsRepository(db_path=self.operations_repository_path)
+        operations_repository = OperationsRepository(db_path=self._operations_repository_path)
         threads = [
             SenderThread(
                 api_token=self._api_token,
@@ -289,12 +291,23 @@ class SenderThread(Daemon):
 
     def work(self) -> None:
         try:
-            generator = _stream_operations(self._operations_repository, self._metadata.run_id, self._metadata.project)
+            max_operations_size = (
+                MAX_REQUEST_SIZE_BYTES
+                - len(self._metadata.run_id)
+                - len(self._metadata.project)
+                - 200  # 200 bytes for RunOperation overhead,
+            )
+            generator = _stream_operations(
+                self._operations_repository, self._metadata.run_id, self._metadata.project, max_operations_size
+            )
             while (operation := next(generator, None)) is not None:
                 run_operation, sequence_id, timestamp = operation
 
                 try:
-                    logger.debug("Submitting operation #%d with size of %d bytes", sequence_id, len(""))
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "Submitting operation #%d with size of %d bytes", sequence_id, run_operation.ByteSize()
+                        )
                     request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
                     if request_ids is None or not request_ids.request_ids:
@@ -343,29 +356,43 @@ def _raise_exception(status_code: int) -> None:
         raise NeptuneUnexpectedResponseError()
 
 
-def _merge_operations(operations: list[Operation]) -> tuple[UpdateRunSnapshots, SequenceId, datetime.datetime]:
-    snapshot_batch = UpdateRunSnapshots(snapshots=[op.operation for op in operations])  # type: ignore
-    return snapshot_batch, operations[-1].sequence_id, operations[-1].ts
-
-
 def _stream_operations(
-    operations_repository: OperationsRepository,
-    run_id: str,
-    project: str,
-    max_batch_size: int = 15 * 1024 * 1024,
+    operations_repository: OperationsRepository, run_id: str, project: str, max_batch_size: int
 ) -> Generator[tuple[RunOperation, SequenceId, datetime.datetime], None, None]:
     while operations := operations_repository.get_operations(up_to_bytes=max_batch_size):
-        if operations[0].operation_type == OperationType.CREATE_RUN:
-            create_run = operations.pop(0)
-            operation = RunOperation(project=project, run_id=run_id, create=create_run.operation)  # type: ignore
-            yield operation, create_run.sequence_id, create_run.ts
+        batch = UpdateRunSnapshots()
+        total_operations_size_bytes = 0
+        last_sequence_id, last_timestamp = None, None
+        for operation in operations:
+            if operation.operation_type == OperationType.CREATE_RUN:
+                if batch.snapshots:
+                    yield (
+                        RunOperation(project=project, run_id=run_id, update_batch=batch),
+                        last_sequence_id,
+                        last_timestamp,
+                    )  # type: ignore
+                    batch = UpdateRunSnapshots()
+                    total_operations_size_bytes = 0
+                    last_sequence_id, last_timestamp = None, None
 
-            if not operations:
-                continue
+                yield (
+                    RunOperation(project=project, run_id=run_id, create=operation.operation),  # type: ignore
+                    operation.sequence_id,
+                    operation.ts,
+                )
+            elif operation.operation_type == OperationType.UPDATE_SNAPSHOT:
+                total_operations_size_bytes += (
+                    operation.operation_size_bytes + 5
+                )  # 1 byte for wire type, 4 bytes for size (2mb)
+                if total_operations_size_bytes >= max_batch_size:
+                    break
+                batch.snapshots.append(operation.operation)  # type: ignore
+                last_sequence_id, last_timestamp = operation.sequence_id, operation.ts
+            else:
+                raise ValueError(f"Unexpected operation type: {operation.operation_type}")
 
-        data, sequence_id, timestamp = _merge_operations(operations)
-        operation = RunOperation(project=project, run_id=run_id, update_batch=data)  # type: ignore
-        yield operation, sequence_id, timestamp
+        if batch.snapshots:
+            yield RunOperation(project=project, run_id=run_id, update_batch=batch), last_sequence_id, last_timestamp  # type: ignore
 
 
 class StatusTrackingThread(Daemon):

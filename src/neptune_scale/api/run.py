@@ -118,6 +118,7 @@ class Run(AbstractContextManager):
             creation_time: Custom creation time of the run.
             fork_run_id: If forking from an existing run, ID of the run to fork from.
             fork_step: If forking from an existing run, step number to fork from.
+            max_queue_size: Deprecated.
             async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
                 (in seconds). If the duration exceeds the threshold, the callback function is triggered.
             on_async_lag_callback: Callback function triggered when the duration between the queueing and synchronization
@@ -217,7 +218,7 @@ class Run(AbstractContextManager):
 
         self._sequence_tracker = SequenceTracker()
         self._attr_store: AttributeStore = AttributeStore(
-            self._project, self._run_id, self._operations_repo, sequence_tracker=self._sequence_tracker
+            self._project, self._run_id, self._operations_repo, self._sequence_tracker
         )
 
         self._errors_queue: ErrorsQueue = ErrorsQueue()
@@ -715,4 +716,4 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
 
 def _create_repository_path(project: str, run_id: str) -> Path:
     sanitized_project = project.replace("/", "_")
-    return Path(os.getcwd()) / f".neptune/{sanitized_project}_{run_id}.sqlite3"
+    return Path(os.getcwd()) / ".neptune" / f"{sanitized_project}_{run_id}.sqlite3"

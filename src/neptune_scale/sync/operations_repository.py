@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+
 __all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
 
 import contextlib
@@ -116,6 +118,10 @@ class OperationsRepository:
         for update in ops:
             serialized_operation = update.SerializeToString()
             operation_size_bytes = len(serialized_operation)
+
+            if operation_size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
+                raise ValueError(f"Operation size is too large: {operation_size_bytes} bytes")
+
             params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes))
 
         with self._get_connection() as conn:  # type: ignore
@@ -145,6 +151,11 @@ class OperationsRepository:
             return SequenceId(cursor.lastrowid)  # type: ignore
 
     def get_operations(self, up_to_bytes: int) -> list[Operation]:
+        if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
+            raise ValueError(
+                f"up to bytes is too small: {up_to_bytes} bytes, minimum is {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
+            )
+
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
