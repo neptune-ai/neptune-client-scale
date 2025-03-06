@@ -41,7 +41,7 @@ __all__ = (
     "NeptuneTooManyRequestsResponseError",
     "NeptunePreviewStepNotAfterLastCommittedStep",
     "NeptuneConflictingDataInLocalStorage",
-    "NeptuneLocalStorageInUnsupportedVersion"
+    "NeptuneLocalStorageInUnsupportedVersion",
 )
 
 from typing import Any
