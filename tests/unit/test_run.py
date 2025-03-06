@@ -1,10 +1,14 @@
+import os
 import uuid
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
 
 from neptune_scale import Run
+from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.util import envs
 
 
 # Set short timeouts on blocking operations for quicker test execution
@@ -334,3 +338,59 @@ def test_components_in_mode(api_token, mode):
             assert run._sync_process is None
         else:
             assert run._sync_process is not None
+
+
+def test_run_with_default_log_directory(monkeypatch, api_token):
+    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+
+    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
+        project = "workspace/project"
+        run_id = str(uuid.uuid4())
+
+        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+            ...
+
+        mock.assert_called_once()
+        assert str(mock.call_args[1]["db_path"]).startswith(os.getcwd()), "$CWD should be used by default"
+
+
+def test_run_respects_log_directory_from_env(monkeypatch, api_token):
+    monkeypatch.setenv(envs.LOG_DIRECTORY, "env-path")
+
+    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
+        project = "workspace/project"
+        run_id = str(uuid.uuid4())
+
+        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+            ...
+
+        mock.assert_called_once()
+        assert str(mock.call_args[1]["db_path"]).startswith("env-path")
+
+
+def test_run_respects_log_directory_from_argument(monkeypatch, api_token):
+    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+
+    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
+        project = "workspace/project"
+        run_id = str(uuid.uuid4())
+
+        with Run(log_directory="path-from-arg", project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+            ...
+
+        mock.assert_called_once()
+        assert str(mock.call_args[1]["db_path"]).startswith("path-from-arg")
+
+
+def test_run_log_directory_argument_overrides_env(monkeypatch, api_token):
+    monkeypatch.setenv(envs.LOG_DIRECTORY, "from-env")
+
+    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
+        project = "workspace/project"
+        run_id = str(uuid.uuid4())
+
+        with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+            ...
+
+        mock.assert_called_once()
+        assert str(mock.call_args[1]["db_path"]).startswith("from-arg")
