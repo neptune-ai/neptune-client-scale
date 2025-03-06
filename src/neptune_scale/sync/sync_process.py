@@ -397,9 +397,11 @@ def _partition_by_type_and_size(
                 ops[-1].sequence_id,
                 ops[-1].ts,
             )
-        else:
+        elif ops[0].operation_type == OperationType.UPDATE_SNAPSHOT:
             snapshots = UpdateRunSnapshots(snapshots=[_op.operation for _op in ops])  # type: ignore
             return RunOperation(project=project, run_id=run_id, update_batch=snapshots), ops[-1].sequence_id, ops[-1].ts
+        else:
+            raise NeptuneUnexpectedError("Unknown operation type")
 
     return [(to_run_operation(ops)) for ops in grouped]  # type: ignore
 
