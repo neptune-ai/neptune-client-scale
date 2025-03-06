@@ -108,7 +108,9 @@ class SyncRunner:
             return
 
         total_count = self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1
-        with tqdm(desc="Syncing operations", total=total_count, disable=not progress_bar_enabled) as progress_bar:
+        with tqdm(
+            desc="Syncing operations", total=total_count, unit="op", disable=not progress_bar_enabled
+        ) as progress_bar:
             while True:
                 try:
                     with self._last_ack_seq:

@@ -160,6 +160,37 @@ def test_get_operations_empty_db(operations_repo):
     assert len(operations) == 0
 
 
+def test_get_sequence_id_range_single(operations_repo):
+    # Given
+    snapshots = [UpdateRunSnapshot(assign={"key": Value(string="a")})]
+    operations_repo.save_update_run_snapshots(snapshots)
+
+    # When
+    start_end = operations_repo.get_sequence_id_range()
+
+    # Then
+    assert start_end == (1, 1)
+
+
+def test_get_sequence_id_range_multiple(operations_repo):
+    # Given
+    for i in range(5):
+        snapshots = [UpdateRunSnapshot(assign={f"key_{i}": Value(string=f"value_{i}")})]
+        operations_repo.save_update_run_snapshots(snapshots)
+
+    # When
+    start_end = operations_repo.get_sequence_id_range()
+
+    # Then
+    assert start_end == (1, 5)
+
+
+def test_get_sequence_id_range_empty_db(operations_repo):
+    # Given
+    start_end = operations_repo.get_sequence_id_range()
+    assert start_end is None
+
+
 def test_delete_operations(operations_repo, temp_db_path):
     # Given
     snapshots = []
