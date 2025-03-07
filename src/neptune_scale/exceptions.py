@@ -34,6 +34,7 @@ __all__ = (
     "GenericFloatValueNanInfUnsupported",
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
+    "NeptuneSynchronizationInterrupted",
     "NeptuneSynchronizationStopped",
     "NeptuneAsyncLagThresholdExceeded",
     "NeptuneProjectNotProvided",
@@ -90,6 +91,18 @@ NeptuneBadRequestError({status_code}): {reason}
 
 class NeptuneSynchronizationStopped(NeptuneScaleError):
     message = "Internal synchronization process was stopped."
+
+
+class NeptuneSynchronizationInterrupted(NeptuneScaleWarning):
+    message = """
+{h1}
+NeptuneSynchronizationInterrupted: The background synchronization process was closed unexpectedly.
+{end}
+
+<insert proper messaging here>
+Your data will continue to be recorded in local storage. You can manually synchronize it with the Neptune backend
+later, by running `neptune sync`
+"""
 
 
 class NeptuneUnableToLogData(NeptuneScaleError):

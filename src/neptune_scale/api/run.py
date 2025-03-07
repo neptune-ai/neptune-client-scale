@@ -47,6 +47,7 @@ from neptune_scale.exceptions import (
     NeptuneConflictingDataInLocalStorage,
     NeptuneLocalStorageInUnsupportedVersion,
     NeptuneProjectNotProvided,
+    NeptuneSynchronizationInterrupted,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -306,9 +307,8 @@ class Run(AbstractContextManager):
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
             if not self._is_closing:
-                logger.error("Child process closed unexpectedly.")
-                self._is_closing = True
-                self.terminate()
+                assert self._errors_queue  # Is never None when a sync process was created
+                self._errors_queue.put(NeptuneSynchronizationInterrupted())
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
@@ -647,8 +647,6 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
-                        if verbose and not self._is_closing:
-                            logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
                     assert wait_seq is not None
