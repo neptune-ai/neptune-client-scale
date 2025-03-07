@@ -22,7 +22,7 @@ def test_resume_false_with_matching_fork_point(api_token, caplog):
         project=project,
         api_token=api_token,
         run_id=run_id,
-        mode="disabled",
+        mode="offline",
         fork_run_id=fork_run_id,
         fork_step=fork_step,
     ):
@@ -35,7 +35,7 @@ def test_resume_false_with_matching_fork_point(api_token, caplog):
             api_token=api_token,
             run_id=run_id,
             resume=False,
-            mode="disabled",
+            mode="offline",
             fork_run_id=fork_run_id,
             fork_step=fork_step,
         ):
@@ -48,7 +48,7 @@ def test_resume_false_with_matching_fork_point(api_token, caplog):
         api_token=api_token,
         run_id=run_id,
         resume=False,
-        mode="disabled",
+        mode="offline",
         fork_run_id=fork_run_id,
         fork_step=fork_step,
     ):
@@ -63,7 +63,7 @@ def test_resume_false_with_conflicting_fork_point(
 
     # First create a run with one fork point
     with Run(
-        project=project, api_token=api_token, run_id=run_id, mode="disabled", fork_run_id="parent-run-1", fork_step=5
+        project=project, api_token=api_token, run_id=run_id, mode="offline", fork_run_id="parent-run-1", fork_step=5
     ):
         pass
 
@@ -74,7 +74,7 @@ def test_resume_false_with_conflicting_fork_point(
             api_token=api_token,
             run_id=run_id,
             resume=False,
-            mode="disabled",
+            mode="offline",
             fork_run_id="parent-run-2",
             fork_step=10,
         )
@@ -85,7 +85,7 @@ def test_resume_false_with_conflicting_fork_point(
         api_token=api_token,
         run_id=run_id,
         resume=False,
-        mode="disabled",
+        mode="offline",
         fork_run_id="parent-run-2",
         fork_step=10,
     ):
@@ -105,7 +105,7 @@ def test_resume_true(
         project=project,
         api_token=api_token,
         run_id=run_id,
-        mode="disabled",
+        mode="offline",
         fork_run_id=fork_run_id,
         fork_step=fork_step,
     ):
@@ -118,7 +118,7 @@ def test_resume_true(
         api_token=api_token,
         run_id=run_id,
         resume=True,
-        mode="disabled",
+        mode="offline",
     ):
         pass
 
@@ -130,11 +130,11 @@ def test_resume_true_without_fork_point(
     run_id = str(uuid.uuid4())
 
     # First create a run with one fork point
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
         pass
 
     # Then resume the run with a different fork point
-    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="disabled"):
+    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="offline"):
         pass
 
 
@@ -145,7 +145,7 @@ def test_resume_true_with_no_metadata(
     run_id = str(uuid.uuid4())
 
     # Create a run with resume=True but no pre-existing metadata
-    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="disabled"):
+    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="offline"):
         pass
 
 

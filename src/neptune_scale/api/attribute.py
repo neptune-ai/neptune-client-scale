@@ -128,7 +128,7 @@ class Attribute:
         run['bar'].append(1, step=10)
     """
 
-    def __init__(self, store: AttributeStore, path: str) -> None:
+    def __init__(self, store: Optional[AttributeStore], path: str) -> None:
         self._store = store
         self._path = path
 
@@ -136,7 +136,8 @@ class Attribute:
     @warn_unsupported_params
     def assign(self, value: Any, *, wait: bool = False) -> None:
         data = accumulate_dict_values(value, self._path)
-        self._store.log(configs=data)
+        if self._store is not None:
+            self._store.log(configs=data)
 
     @warn_unsupported_params
     def append(
@@ -151,10 +152,11 @@ class Attribute:
         **kwargs: Any,
     ) -> None:
         data = accumulate_dict_values(value, self._path)
-        self._store.log(
-            metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
-            timestamp=timestamp,
-        )
+        if self._store is not None:
+            self._store.log(
+                metrics=Metrics(data=data, step=step, preview=preview, preview_completion=preview_completion),
+                timestamp=timestamp,
+            )
 
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
@@ -162,7 +164,8 @@ class Attribute:
     def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        self._store.log(tags_add={self._path: values})
+        if self._store is not None:
+            self._store.log(tags_add={self._path: values})
 
     @warn_unsupported_params
     # TODO: this should be Iterable in Run as well
@@ -170,7 +173,8 @@ class Attribute:
     def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        self._store.log(tags_remove={self._path: values})
+        if self._store is not None:
+            self._store.log(tags_remove={self._path: values})
 
     @warn_unsupported_params
     def extend(

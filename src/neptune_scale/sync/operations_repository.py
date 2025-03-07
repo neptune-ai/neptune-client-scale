@@ -81,6 +81,9 @@ class OperationsRepository:
     """
 
     def __init__(self, db_path: Path) -> None:
+        if not db_path.is_absolute():
+            raise RuntimeError("db_path must be an absolute path")
+
         self._db_path = db_path
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
