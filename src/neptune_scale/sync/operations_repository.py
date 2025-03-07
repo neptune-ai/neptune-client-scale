@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
@@ -258,9 +257,6 @@ class OperationsRepository:
                 return None
 
             version, project, run_id, parent_run_id, fork_step = row
-
-            if version != DB_VERSION:
-                raise NeptuneLocalStorageInUnsupportedVersion()
 
             return Metadata(
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step

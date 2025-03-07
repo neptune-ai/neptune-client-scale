@@ -8,6 +8,7 @@ from pathlib import Path
 from types import TracebackType
 
 from neptune_scale.sync.operations_repository import (
+    DB_VERSION,
     Metadata,
     OperationsRepository,
 )
@@ -43,6 +44,7 @@ from neptune_scale.api.validation import (
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneConflictingDataInLocalStorage,
+    NeptuneLocalStorageInUnsupportedVersion,
     NeptuneProjectNotProvided,
 )
 from neptune_scale.net.serialization import (
@@ -211,9 +213,8 @@ class Run(AbstractContextManager):
         # Save metadata if it doesn't exist
         if existing_metadata is None:
             self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
-        # Check for conflicts when not resuming
-        elif not resume:
-            self._check_for_run_conflicts(existing_metadata, fork_run_id, fork_step)
+        else:
+            _validate_existing_db(existing_metadata, resume, self._project, self._run_id, fork_run_id, fork_step)
 
         self._sequence_tracker = SequenceTracker()
         self._attr_store: AttributeStore = AttributeStore(
@@ -273,21 +274,6 @@ class Run(AbstractContextManager):
                 fork_step=fork_step,
             )
             self.wait_for_processing(verbose=False)
-
-    def _check_for_run_conflicts(
-        self, existing_metadata: Metadata, fork_run_id: Optional[str], fork_step: Optional[float]
-    ) -> None:
-        if existing_metadata.project != self._project or existing_metadata.run_id != self._run_id:
-            # should never happen because we use project and run_id to create the repository path
-            raise NeptuneConflictingDataInLocalStorage()
-        if existing_metadata.parent_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
-            logger.warning(
-                "Run already exists in local storage with the same parent run and fork point. Resuming the run."
-            )
-            return
-        else:
-            # Same run_id but different fork points
-            raise NeptuneConflictingDataInLocalStorage()
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
@@ -719,3 +705,30 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
 def _create_repository_path(project: str, run_id: str) -> Path:
     sanitized_project = project.replace("/", "_")
     return Path(os.getcwd()) / ".neptune" / f"{sanitized_project}_{run_id}.sqlite3"
+
+
+def _validate_existing_db(
+    existing_metadata: Metadata,
+    resume: bool,
+    project: str,
+    run_id: str,
+    fork_run_id: Optional[str],
+    fork_step: Optional[float],
+) -> None:
+    if existing_metadata.version != DB_VERSION:
+        raise NeptuneLocalStorageInUnsupportedVersion()
+
+    if existing_metadata.project != project or existing_metadata.run_id != run_id:
+        # should never happen because we use project and run_id to create the repository path
+        raise NeptuneConflictingDataInLocalStorage()
+
+    # Check for conflicts when not resuming, because we don't allow fork points in resumed runs
+    if resume:
+        return
+
+    if existing_metadata.parent_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
+        logger.warning("Run already exists in local storage with the same parent run and fork point. Resuming the run.")
+        return
+    else:
+        # Same run_id but different fork points
+        raise NeptuneConflictingDataInLocalStorage()
