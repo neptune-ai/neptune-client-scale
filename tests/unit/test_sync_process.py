@@ -70,7 +70,7 @@ def operations_repo():
         repo.init_db()
         repo.save_metadata("project", "run_id")
         yield repo
-        repo.close()
+        repo.close(cleanup_files=True)
 
 
 def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock):
