@@ -22,7 +22,6 @@ from multiprocessing import Process
 from types import FrameType
 from typing import (
     Generic,
-    Literal,
     NamedTuple,
     Optional,
     TypeVar,
@@ -172,7 +171,6 @@ class SyncProcess(Process):
         api_token: str,
         project: str,
         family: str,
-        mode: Literal["async", "disabled"],
         last_queued_seq: SharedInt,
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -188,7 +186,6 @@ class SyncProcess(Process):
         self._last_queued_seq: SharedInt = last_queued_seq
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
-        self._mode: Literal["async", "disabled"] = mode
 
         # This flag is set when a termination signal is caught
         self._stop_event = multiprocessing.Event()
@@ -217,11 +214,9 @@ class SyncProcess(Process):
                 errors_queue=self._errors_queue,
                 family=self._family,
                 last_queued_seq=self._last_queued_seq,
-                mode=self._mode,
             ),
             StatusTrackingThread(
                 api_token=self._api_token,
-                mode=self._mode,
                 project=self._project,
                 errors_queue=self._errors_queue,
                 status_tracking_queue=status_tracking_queue,
@@ -260,7 +255,6 @@ class SenderThread(Daemon):
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
         last_queued_seq: SharedInt,
-        mode: Literal["async", "disabled"],
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
@@ -270,7 +264,6 @@ class SenderThread(Daemon):
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
         self._last_queued_seq: SharedInt = last_queued_seq
-        self._mode: Literal["async", "disabled"] = mode
 
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
@@ -279,7 +272,7 @@ class SenderThread(Daemon):
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
+            self._backend = backend_factory(api_token=self._api_token)
 
         response = self._backend.submit(operation=operation, family=self._family)
 
@@ -408,7 +401,6 @@ class StatusTrackingThread(Daemon):
     def __init__(
         self,
         api_token: str,
-        mode: Literal["async", "disabled"],
         project: str,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
@@ -418,7 +410,6 @@ class StatusTrackingThread(Daemon):
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
-        self._mode: Literal["async", "disabled"] = mode
         self._project: str = project
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
@@ -441,7 +432,7 @@ class StatusTrackingThread(Daemon):
     @with_api_errors_handling
     def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token, mode=self._mode)
+            self._backend = backend_factory(api_token=self._api_token)
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
 

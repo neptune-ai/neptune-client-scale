@@ -67,6 +67,7 @@ from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.sync.sync_process import SyncProcess
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
+    MODE_ENV_NAME,
     PROJECT_ENV_NAME,
 )
 from neptune_scale.util.logger import get_logger
@@ -91,7 +92,7 @@ class Run(AbstractContextManager):
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
-        mode: Literal["async", "disabled"] = "async",
+        mode: Optional[Literal["async", "offline", "disabled"]] = None,
         experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
         fork_run_id: Optional[str] = None,
@@ -114,7 +115,7 @@ class Run(AbstractContextManager):
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
             resume: Whether to resume an existing run.
-            mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
+            mode: Mode of operation. If set to "offline", metadata are stored locally. If set to "disabled", the run doesn't log any metadata.
             experiment_name: If creating a run as an experiment, name (ID) of the experiment to be associated with the run.
             creation_time: Custom creation time of the run.
             fork_run_id: If forking from an existing run, ID of the run to fork from.
@@ -182,6 +183,8 @@ class Run(AbstractContextManager):
         assert api_token is not None  # mypy
         input_api_token: str = api_token
 
+        mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
+
         verify_non_empty("run_id", run_id)
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
@@ -203,69 +206,86 @@ class Run(AbstractContextManager):
 
         self._lock = threading.RLock()
 
-        operations_repository_path = _create_repository_path(self._project, self._run_id)
-        self._operations_repo: OperationsRepository = OperationsRepository(
-            db_path=operations_repository_path,
-        )
-        self._operations_repo.init_db()
-        existing_metadata = self._operations_repo.get_metadata()
-
-        # Save metadata if it doesn't exist
-        if existing_metadata is None:
-            self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
-        else:
-            _validate_existing_db(existing_metadata, resume, self._project, self._run_id, fork_run_id, fork_step)
-
-        self._sequence_tracker = SequenceTracker()
-        self._attr_store: AttributeStore = AttributeStore(
-            self._project, self._run_id, self._operations_repo, self._sequence_tracker
-        )
-
-        self._errors_queue: ErrorsQueue = ErrorsQueue()
-        self._errors_monitor = ErrorsMonitor(
-            errors_queue=self._errors_queue,
-            on_queue_full_callback=on_queue_full_callback,
-            on_network_error_callback=on_network_error_callback,
-            on_error_callback=on_error_callback,
-            on_warning_callback=on_warning_callback,
-        )
-
-        self._last_queued_seq = SharedInt(-1)
-        self._last_ack_seq = SharedInt(-1)
-        self._last_ack_timestamp = SharedFloat(-1)
-
-        self._process_link = ProcessLink()
-        self._sync_process = SyncProcess(
-            project=self._project,
-            family=self._run_id,
-            operations_repository_path=operations_repository_path,
-            errors_queue=self._errors_queue,
-            process_link=self._process_link,
-            api_token=input_api_token,
-            last_queued_seq=self._last_queued_seq,
-            last_ack_seq=self._last_ack_seq,
-            last_ack_timestamp=self._last_ack_timestamp,
-            mode=mode,
-        )
-        self._lag_tracker: Optional[LagTracker] = None
-        if async_lag_threshold is not None and on_async_lag_callback is not None:
-            self._lag_tracker = LagTracker(
-                errors_queue=self._errors_queue,
-                sequence_tracker=self._sequence_tracker,
-                last_ack_timestamp=self._last_ack_timestamp,
-                async_lag_threshold=async_lag_threshold,
-                on_async_lag_callback=on_async_lag_callback,
+        if mode in ("offline", "async"):
+            operations_repository_path = _create_repository_path(self._project, self._run_id)
+            self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
+                db_path=operations_repository_path,
             )
-            self._lag_tracker.start()
+            self._operations_repo.init_db()
+            existing_metadata = self._operations_repo.get_metadata()
 
-        self._errors_monitor.start()
-        with self._lock:
-            self._sync_process.start()
-            self._process_link.start(on_link_closed=self._on_child_link_closed)
+            # Save metadata if it doesn't exist
+            if existing_metadata is None:
+                self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
+            else:
+                _validate_existing_db(existing_metadata, resume, self._project, self._run_id, fork_run_id, fork_step)
+
+            self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
+            self._attr_store: Optional[AttributeStore] = AttributeStore(
+                self._project, self._run_id, self._operations_repo, self._sequence_tracker
+            )
+        else:
+            self._operations_repo = None
+            self._sequence_tracker = None
+            self._attr_store = None
+
+        if mode == "async":
+            assert self._sequence_tracker is not None
+
+            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
+            self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
+                errors_queue=self._errors_queue,
+                on_queue_full_callback=on_queue_full_callback,
+                on_network_error_callback=on_network_error_callback,
+                on_error_callback=on_error_callback,
+                on_warning_callback=on_warning_callback,
+            )
+
+            self._last_queued_seq: Optional[SharedInt] = SharedInt(-1)
+            self._last_ack_seq: Optional[SharedInt] = SharedInt(-1)
+            self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(-1)
+
+            self._process_link: Optional[ProcessLink] = ProcessLink()
+            self._sync_process: Optional[SyncProcess] = SyncProcess(
+                project=self._project,
+                family=self._run_id,
+                operations_repository_path=operations_repository_path,
+                errors_queue=self._errors_queue,
+                process_link=self._process_link,
+                api_token=input_api_token,
+                last_queued_seq=self._last_queued_seq,
+                last_ack_seq=self._last_ack_seq,
+                last_ack_timestamp=self._last_ack_timestamp,
+            )
+
+            self._lag_tracker: Optional[LagTracker] = None
+            if async_lag_threshold is not None and on_async_lag_callback is not None:
+                self._lag_tracker = LagTracker(
+                    errors_queue=self._errors_queue,
+                    sequence_tracker=self._sequence_tracker,
+                    last_ack_timestamp=self._last_ack_timestamp,
+                    async_lag_threshold=async_lag_threshold,
+                    on_async_lag_callback=on_async_lag_callback,
+                )
+                self._lag_tracker.start()
+
+            self._errors_monitor.start()
+            with self._lock:
+                self._sync_process.start()
+                self._process_link.start(on_link_closed=self._on_child_link_closed)
+        else:
+            self._errors_queue = None
+            self._errors_monitor = None
+            self._last_queued_seq = None
+            self._last_ack_seq = None
+            self._last_ack_timestamp = None
+            self._process_link = None
+            self._sync_process = None
+            self._lag_tracker = None
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        if not resume:
+        if mode != "disabled" and not resume:
             # Create a new run
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
@@ -291,28 +311,34 @@ class Run(AbstractContextManager):
 
             logger.debug(f"Run is closing, wait={wait}")
 
-        if self._sync_process.is_alive():
+        if self._sync_process is not None and self._sync_process.is_alive():
             if wait:
                 self.wait_for_processing()
 
             self._sync_process.terminate()
             self._sync_process.join()
-            self._process_link.stop()
+
+            if self._process_link is not None:
+                self._process_link.stop()
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
             self._lag_tracker.wake_up()
             self._lag_tracker.join()
 
-        self._errors_monitor.interrupt()
+        if self._errors_monitor is not None:
+            self._errors_monitor.interrupt()
 
-        # Don't call join() if being called from the error thread, as this will
-        # result in a "cannot join current thread" exception.
-        if threading.current_thread() != self._errors_monitor:
-            self._errors_monitor.join()
+            # Don't call join() if being called from the error thread, as this will
+            # result in a "cannot join current thread" exception.
+            if threading.current_thread() != self._errors_monitor:
+                self._errors_monitor.join()
 
-        self._operations_repo.close()
-        self._errors_queue.close()
+        if self._operations_repo is not None:
+            self._operations_repo.close()
+
+        if self._errors_queue is not None:
+            self._errors_queue.close()
 
     def terminate(self) -> None:
         """
@@ -380,6 +406,10 @@ class Run(AbstractContextManager):
         fork_run_id: Optional[str],
         fork_step: Optional[Union[int, float]],
     ) -> None:
+        if self._operations_repo is None or self._sequence_tracker is None:
+            logger.debug("Run is in mode that doesn't support creating runs.")
+            return
+
         fork_point: Optional[ForkPoint] = None
         if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
@@ -575,6 +605,10 @@ class Run(AbstractContextManager):
         if self._is_closing:
             return
 
+        if self._attr_store is None:
+            logger.debug("Run is in mode that doesn't support logging.")
+            return
+
         self._attr_store.log(
             timestamp=timestamp,
             configs=configs,
@@ -587,7 +621,7 @@ class Run(AbstractContextManager):
         self,
         phrase: str,
         sleep_time: float,
-        wait_seq: SharedInt,
+        wait_seq: Optional[SharedInt],
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
@@ -604,11 +638,13 @@ class Run(AbstractContextManager):
         while True:
             try:
                 with self._lock:
-                    if not self._sync_process.is_alive():
+                    if self._sync_process is None or not self._sync_process.is_alive():
                         if verbose and not self._is_closing:
-                            # TODO: error out here?
                             logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
+
+                    assert wait_seq is not None
+                    assert self._sequence_tracker is not None
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
