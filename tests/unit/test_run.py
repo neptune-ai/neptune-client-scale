@@ -30,26 +30,28 @@ def short_timeouts():
                 patch.setattr(mod, name, timeout)
 
 
-def test_context_manager(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_context_manager(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # when
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
         ...
 
     # then
     assert True
 
 
-def test_close(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_close(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # and
-    run = Run(project=project, api_token=api_token, run_id=run_id, mode="disabled")
+    run = Run(project=project, api_token=api_token, run_id=run_id, mode=mode)
 
     # when
     run.close()
@@ -58,7 +60,8 @@ def test_close(api_token):
     assert True
 
 
-def test_run_id_too_long(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_id_too_long(api_token, mode):
     # given
     project = "workspace/project"
 
@@ -67,14 +70,15 @@ def test_run_id_too_long(api_token):
 
     # then
     with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+        with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
             ...
 
     # and
     assert True
 
 
-def test_invalid_project_name(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_invalid_project_name(api_token, mode):
     # given
     run_id = str(uuid.uuid4())
 
@@ -83,20 +87,21 @@ def test_invalid_project_name(api_token):
 
     # then
     with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
+        with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
             ...
 
     # and
     assert True
 
 
-def test_metadata(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_metadata(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.log(
             step=1,
             timestamp=datetime.now(),
@@ -123,13 +128,14 @@ def test_metadata(api_token):
     assert True
 
 
-def test_tags(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_tags(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.add_tags(["tag1", "tag2"])
         run.add_tags(["tag3", "tag4"], group_tags=True)
         run.remove_tags(["tag1"])
@@ -147,13 +153,14 @@ def test_tags(api_token):
     assert True
 
 
-def test_log_without_step(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_without_step(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.log(
             timestamp=datetime.now(),
             configs={
@@ -165,13 +172,14 @@ def test_log_without_step(api_token):
     assert True
 
 
-def test_log_configs(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_configs(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.log_configs({"int": 1})
         run.log_configs({"float": 3.14})
         run.log_configs({"bool": True})
@@ -183,13 +191,14 @@ def test_log_configs(api_token):
     assert True
 
 
-def test_log_step_float(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_step_float(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.log(
             step=3.14,
             timestamp=datetime.now(),
@@ -202,13 +211,14 @@ def test_log_step_float(api_token):
     assert True
 
 
-def test_log_no_timestamp(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_no_timestamp(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
         run.log(
             step=3.14,
             configs={
@@ -220,13 +230,14 @@ def test_log_no_timestamp(api_token):
     assert True
 
 
-def test_resume(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_resume(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
 
     # when
-    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="disabled") as run:
+    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode=mode) as run:
         run.log(
             step=3.14,
             configs={
@@ -239,7 +250,8 @@ def test_resume(api_token):
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
-def test_creation_time(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_creation_time(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
@@ -250,7 +262,7 @@ def test_creation_time(api_token):
         api_token=api_token,
         run_id=run_id,
         creation_time=datetime.now(),
-        mode="disabled",
+        mode=mode,
     ):
         ...
 
@@ -258,7 +270,8 @@ def test_creation_time(api_token):
     assert True
 
 
-def test_assign_experiment(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_assign_experiment(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
@@ -269,7 +282,7 @@ def test_assign_experiment(api_token):
         api_token=api_token,
         run_id=run_id,
         experiment_name="experiment_id",
-        mode="disabled",
+        mode=mode,
     ):
         ...
 
@@ -277,7 +290,8 @@ def test_assign_experiment(api_token):
     assert True
 
 
-def test_forking(api_token):
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_forking(api_token, mode):
     # given
     project = "workspace/project"
     run_id = str(uuid.uuid4())
@@ -289,9 +303,34 @@ def test_forking(api_token):
         run_id=run_id,
         fork_run_id="parent-run-id",
         fork_step=3.14,
-        mode="disabled",
+        mode=mode,
     ):
         ...
 
     # then
     assert True
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_components_in_mode(api_token, mode):
+    # given
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    # when
+    with Run(
+        project=project,
+        api_token=api_token,
+        run_id=run_id,
+        mode=mode,
+    ) as run:
+        # then
+        if mode == "disabled":
+            assert run._attr_store is None
+        else:
+            assert run._attr_store is not None
+
+        if mode in ("disabled", "offline"):
+            assert run._sync_process is None
+        else:
+            assert run._sync_process is not None

@@ -86,7 +86,6 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
 
@@ -114,7 +113,6 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
 
@@ -146,7 +144,6 @@ def test_sender_thread_processes_element_on_single_retryable_error(operations_re
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
 
@@ -182,7 +179,6 @@ def test_sender_thread_fails_on_regular_error():
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
     operations_repository_mock.get_metadata.side_effect = [metadata]
@@ -218,7 +214,6 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
 
@@ -253,7 +248,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -290,7 +284,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batches(op
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -331,7 +324,6 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         last_queued_seq=last_queue_seq,
-        mode="disabled",
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
