@@ -35,7 +35,7 @@ def operations_repo(temp_db_path):
 
 
 def test_raise_on_relative_path():
-    with pytest.raises(ValueError, match="db_path must be .* absolute"):
+    with pytest.raises(RuntimeError, match="db_path must be .* absolute"):
         OperationsRepository(db_path=Path("relative/path"))
 
 

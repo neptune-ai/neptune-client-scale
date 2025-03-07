@@ -214,15 +214,8 @@ class Run(AbstractContextManager):
         self._lock = threading.RLock()
 
         if mode in ("offline", "async"):
-            if log_directory is None:
-                target_log_directory = os.getenv(envs.LOG_DIRECTORY)
-                if target_log_directory is not None:
-                    verify_non_empty(envs.LOG_DIRECTORY, target_log_directory)
-            else:
-                verify_non_empty("log_directory", log_directory)
-                target_log_directory = str(log_directory)
-
-            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, target_log_directory)
+            log_directory = log_directory or os.getenv(envs.LOG_DIRECTORY)
+            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, log_directory)
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
                 db_path=operations_repository_path,
             )
@@ -753,18 +746,12 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
     return last_print
 
 
-def _resolve_run_db_path(project: str, run_id: str, user_path: Optional[str]) -> Path:
-    # TODO: better sanitization
+def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
     sanitized_project = re.sub(r"[\\/]", "_", project)
     sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
-    basename = f"{sanitized_project}_{sanitized_run_id}.sqlite3"
+    directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
-    if user_path is not None:
-        path = Path(user_path) / basename
-    else:
-        path = Path(os.getcwd()) / ".neptune" / basename
-
-    return path.absolute()
+    return (directory / f"{sanitized_project}_{sanitized_run_id}.sqlite3").absolute()
 
 
 def _validate_existing_db(

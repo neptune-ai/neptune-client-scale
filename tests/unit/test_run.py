@@ -1,4 +1,3 @@
-import os
 import sys
 import tempfile
 import uuid
@@ -366,80 +365,62 @@ def mock_repo(monkeypatch, temp_dir):
         yield mock
 
 
-def test_run_with_default_log_directory(monkeypatch, temp_dir, mock_repo, api_token):
-    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+@pytest.mark.parametrize(
+    ["log_dir_env", "log_dir_arg", "expected_path_relative_to_tmp_dir"],
+    [
+        (None, None, ""),
+        ("from-env", None, "from-env"),
+        (None, "from-arg", "from-arg"),
+        ("from-env", "from-arg", "from-arg"),
+    ],
+)
+def test_relative_run_log_directory(
+    monkeypatch, temp_dir, mock_repo, api_token, log_dir_env, log_dir_arg, expected_path_relative_to_tmp_dir
+):
     monkeypatch.chdir(temp_dir)
 
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
+    if log_dir_env is None:
+        monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+    else:
+        monkeypatch.setenv(envs.LOG_DIRECTORY, log_dir_env)
 
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
+    with Run(
+        log_directory=log_dir_arg,
+        project="workspace/project",
+        api_token=api_token,
+        run_id=str(uuid.uuid4()),
+        mode="offline",
+    ):
         ...
 
     mock_repo.assert_called_once()
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(os.getcwd()), "$CWD should be used by default"
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / expected_path_relative_to_tmp_dir)
 
 
-def test_run_relative_log_directory_from_env(monkeypatch, temp_dir, mock_repo, api_token):
-    monkeypatch.setenv(envs.LOG_DIRECTORY, "from-env")
+@pytest.mark.parametrize(
+    ["abs_log_dir_suffix_env", "abs_log_dir_suffix_arg", "expected_suffix"],
+    [
+        ("from-env", None, "from-env"),
+        (None, "from-arg", "from-arg"),
+        ("from-env", "from-arg", "from-arg"),
+    ],
+)
+def test_absolute_run_log_directory(
+    monkeypatch, temp_dir, mock_repo, api_token, abs_log_dir_suffix_env, abs_log_dir_suffix_arg, expected_suffix
+):
+    if abs_log_dir_suffix_env is None:
+        monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+    else:
+        monkeypatch.setenv(envs.LOG_DIRECTORY, str(Path(temp_dir / abs_log_dir_suffix_env).resolve()))
 
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
+    with Run(
+        log_directory=abs_log_dir_suffix_arg,
+        project="workspace/project",
+        api_token=api_token,
+        run_id=str(uuid.uuid4()),
+        mode="offline",
+    ):
         ...
 
     mock_repo.assert_called_once()
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-env")
-
-
-def test_run_relative_log_directory_from_argument(monkeypatch, temp_dir, mock_repo, api_token):
-    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
-
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="offline"):
-        ...
-
-    mock_repo.assert_called_once()
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-arg")
-
-
-def test_run_log_directory_argument_overrides_env(monkeypatch, temp_dir, mock_repo, api_token):
-    monkeypatch.setenv(envs.LOG_DIRECTORY, str(temp_dir / "from-env"))
-
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="offline"):
-        ...
-
-    mock_repo.assert_called_once()
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-arg")
-
-
-def test_run_absolute_log_directory_from_argument(monkeypatch, temp_dir, mock_repo, api_token):
-    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
-
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    absolute_path = str(Path(temp_dir / "absolute-path").resolve())
-    with Run(log_directory=absolute_path, project=project, api_token=api_token, run_id=run_id, mode="offline"):
-        ...
-
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(absolute_path)
-
-
-def test_run_absolute_log_directory_from_env(monkeypatch, temp_dir, mock_repo, api_token):
-    absolute_path = str(Path(temp_dir / "absolute-path").resolve())
-    monkeypatch.setenv(envs.LOG_DIRECTORY, absolute_path)
-
-    project = "workspace/project"
-    run_id = str(uuid.uuid4())
-
-    with Run(log_directory=absolute_path, project=project, api_token=api_token, run_id=run_id, mode="offline"):
-        ...
-
-    assert mock_repo.call_args[1]["db_path"].is_relative_to(absolute_path)
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / expected_suffix)
