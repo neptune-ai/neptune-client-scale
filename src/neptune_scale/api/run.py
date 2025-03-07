@@ -4,6 +4,7 @@ Python package
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import TracebackType
 
@@ -65,6 +66,7 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.util import envs
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
     MODE_ENV_NAME,
@@ -97,6 +99,7 @@ class Run(AbstractContextManager):
         creation_time: Optional[datetime] = None,
         fork_run_id: Optional[str] = None,
         fork_step: Optional[Union[int, float]] = None,
+        log_directory: Optional[Union[str, Path]] = None,
         max_queue_size: Optional[int] = None,
         async_lag_threshold: Optional[float] = None,
         on_async_lag_callback: Optional[Callable[[], None]] = None,
@@ -120,6 +123,9 @@ class Run(AbstractContextManager):
             creation_time: Custom creation time of the run.
             fork_run_id: If forking from an existing run, ID of the run to fork from.
             fork_step: If forking from an existing run, step number to fork from.
+            log_directory: The base directory where the run's database will be stored. If the path is absolute,
+                it is used as provided. If the path is relative, it is treated as relative to the current
+                working directory. If set to None, the default is `.neptune` in the current working directory.
             max_queue_size: Deprecated.
             async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
                 (in seconds). If the duration exceeds the threshold, the callback function is triggered.
@@ -140,6 +146,7 @@ class Run(AbstractContextManager):
         verify_type("creation_time", creation_time, (datetime, type(None)))
         verify_type("fork_run_id", fork_run_id, (str, type(None)))
         verify_type("fork_step", fork_step, (int, float, type(None)))
+        verify_type("log_directory", log_directory, (str, Path, type(None)))
         verify_type("async_lag_threshold", async_lag_threshold, (int, float, type(None)))
         verify_type("on_async_lag_callback", on_async_lag_callback, (Callable, type(None)))
         verify_type("on_queue_full_callback", on_queue_full_callback, (Callable, type(None)))
@@ -207,7 +214,8 @@ class Run(AbstractContextManager):
         self._lock = threading.RLock()
 
         if mode in ("offline", "async"):
-            operations_repository_path = _create_repository_path(self._project, self._run_id)
+            log_directory = log_directory or os.getenv(envs.LOG_DIRECTORY)
+            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, log_directory)
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
                 db_path=operations_repository_path,
             )
@@ -738,9 +746,12 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
     return last_print
 
 
-def _create_repository_path(project: str, run_id: str) -> Path:
-    sanitized_project = project.replace("/", "_")
-    return Path(os.getcwd()) / ".neptune" / f"{sanitized_project}_{run_id}.sqlite3"
+def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
+    sanitized_project = re.sub(r"[\\/]", "_", project)
+    sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
+    directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
+
+    return (directory / f"{sanitized_project}_{sanitized_run_id}.sqlite3").absolute()
 
 
 def _validate_existing_db(
