@@ -34,6 +34,11 @@ def operations_repo(temp_db_path):
     repo.close()
 
 
+def test_raise_on_relative_path():
+    with pytest.raises(ValueError, match="db_path must be .* absolute"):
+        OperationsRepository(db_path=Path("relative/path"))
+
+
 def test_init_creates_tables(temp_db_path):
     # When
     repo = OperationsRepository(db_path=Path(temp_db_path))
