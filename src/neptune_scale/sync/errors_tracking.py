@@ -20,13 +20,12 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.sync.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
 from neptune_scale.util import get_logger
-from neptune_scale.util.abstract import Resource
 from neptune_scale.util.daemon import Daemon
 
 logger = get_logger()
 
 
-class ErrorsQueue(Resource):
+class ErrorsQueue:
     def __init__(self) -> None:
         self._errors_queue: multiprocessing.Queue[BaseException] = multiprocessing.Queue()
 
@@ -60,7 +59,7 @@ def default_warning_callback(error: BaseException, last_seen_at: Optional[float]
     logger.warning(error)
 
 
-class ErrorsMonitor(Daemon, Resource):
+class ErrorsMonitor(Daemon):
     def __init__(
         self,
         errors_queue: ErrorsQueue,

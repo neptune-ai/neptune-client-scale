@@ -40,6 +40,8 @@ __all__ = (
     "NeptuneApiTokenNotProvided",
     "NeptuneTooManyRequestsResponseError",
     "NeptunePreviewStepNotAfterLastCommittedStep",
+    "NeptuneConflictingDataInLocalStorage",
+    "NeptuneLocalStorageInUnsupportedVersion",
 )
 
 from typing import Any
@@ -493,3 +495,13 @@ It looks like you tried to log a preview (incomplete) metric update for a step t
 the last fully committed (complete) update. Once a complete value is recorded, any preview updates
 must only be added for later steps. Please adjust the order of your updates and try again.
 """
+
+
+class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
+    message = """The local storage database is in an unsupported version.
+    This may happen when you try to use a database created with a newer version of Neptune Scale with an older version of the library.
+    Please either upgrade Neptune Scale to the latest version or create a new local storage database."""
+
+
+class NeptuneConflictingDataInLocalStorage(NeptuneScaleError):
+    message = """NeptuneConflictingDataInLocalStorage: Conflicting data found in local storage."""

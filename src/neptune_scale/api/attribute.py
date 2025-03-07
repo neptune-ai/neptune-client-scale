@@ -15,7 +15,8 @@ from typing import (
 
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
-from neptune_scale.sync.operations_queue import OperationsQueue
+from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.sync.sequence_tracker import SequenceTracker
 
 __all__ = ("Attribute", "AttributeStore")
 
@@ -65,11 +66,14 @@ class AttributeStore:
     end consuming the queue (which would be SyncProcess).
     """
 
-    def __init__(self, project: str, run_id: str, operations_queue: OperationsQueue) -> None:
+    def __init__(
+        self, project: str, run_id: str, operations_repo: OperationsRepository, sequence_tracker: SequenceTracker
+    ) -> None:
         self._project = project
         self._run_id = run_id
-        self._operations_queue = operations_queue
+        self._operations_repo = operations_repo
         self._attributes: dict[str, Attribute] = {}
+        self._sequence_tracker = sequence_tracker
 
     def __getitem__(self, path: str) -> "Attribute":
         path = cleanup_path(path)
@@ -108,9 +112,10 @@ class AttributeStore:
             remove_tags=tags_remove,
         )
 
-        for operation, metadata_size in splitter:
-            key = metrics.batch_key() if metrics is not None else None
-            self._operations_queue.enqueue(operation=operation, size=metadata_size, key=key)
+        operations = list(splitter)
+        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
+
+        self._sequence_tracker.update_sequence_id(sequence_id)
 
 
 class Attribute:

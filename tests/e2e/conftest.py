@@ -46,17 +46,6 @@ def project(request):
     return ReadOnlyProject(project=project_name)
 
 
-class SyncRun(Run):
-    """A neptune_scale.Run instance that waits for processing to complete
-    after each logging method call. This is useful for e2e tests, where we
-    usually want to wait for the data to be available before fetching it."""
-
-    def _log(self, *args, **kwargs):
-        result = super()._log(*args, **kwargs)
-        self.wait_for_processing()
-        return result
-
-
 @fixture(scope="module")
 def run_init_kwargs(project):
     """Arguments to initialize a neptune_scale.Run instance"""
@@ -85,13 +74,9 @@ def run(project, run_init_kwargs):
     run = Run(**run_init_kwargs)
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})
 
-    return run
+    yield run
 
-
-@fixture(scope="module")
-def sync_run(project, run, run_init_kwargs):
-    """Blocking run for logging data"""
-    return SyncRun(project=run_init_kwargs["project"], run_id=run_init_kwargs["run_id"], resume=True)
+    run.terminate()
 
 
 @fixture

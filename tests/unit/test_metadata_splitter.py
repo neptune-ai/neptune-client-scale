@@ -17,7 +17,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from pytest import mark
 
 from neptune_scale.api.metrics import Metrics
@@ -43,10 +42,9 @@ def test_empty():
 
     # then
     assert len(result) == 1
-    operation, metadata_size = result[0]
+    operation = result[0]
     expected_update = UpdateRunSnapshot(timestamp=Timestamp(seconds=1722341532, nanos=21934))
-    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
-    assert metadata_size == expected_update.ByteSize()
+    assert operation == expected_update
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -74,7 +72,7 @@ def test_configs():
 
     # then
     assert len(result) == 1
-    operation, metadata_size = result[0]
+    operation = result[0]
     expected_update = UpdateRunSnapshot(
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
         assign={
@@ -86,9 +84,7 @@ def test_configs():
             "some/tags": Value(string_set=StringSet(values={"tag1", "tag2"})),
         },
     )
-    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
-    assert metadata_size >= expected_update.ByteSize()
-    assert metadata_size < operation.ByteSize()
+    assert operation == expected_update
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -150,7 +146,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
 
     # then
     assert len(result) == 1
-    operation, metadata_size = result[0]
+    operation = result[0]
     expected_update = UpdateRunSnapshot(
         step=Step(whole=1, micro=0),
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
@@ -159,9 +155,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
             "some/metric": Value(float64=3.14),
         },
     )
-    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
-    assert metadata_size >= expected_update.ByteSize()
-    assert metadata_size < operation.ByteSize()
+    assert operation == expected_update
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -188,7 +182,7 @@ def test_tags():
 
     # then
     assert len(result) == 1
-    operation, metadata_size = result[0]
+    operation = result[0]
     expected_update = UpdateRunSnapshot(
         timestamp=Timestamp(seconds=1722341532, nanos=21934),
         modify_sets={
@@ -206,9 +200,7 @@ def test_tags():
             ),
         },
     )
-    assert operation == RunOperation(project="workspace/project", run_id="run_id", update=expected_update)
-    assert metadata_size >= expected_update.ByteSize()
-    assert metadata_size < operation.ByteSize()
+    assert operation == expected_update
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -244,19 +236,17 @@ def test_splitting():
     assert len(result) > 1
 
     # Every message should be smaller than max_size
-    assert all(len(op.SerializeToString()) <= max_size for op, _ in result)
+    assert all(len(op.SerializeToString()) <= max_size for op in result)
 
     # Common metadata
-    assert all(op.project == "workspace/project" for op, _ in result)
-    assert all(op.run_id == "run_id" for op, _ in result)
-    assert all(op.update.step.whole == 1 for op, _ in result)
-    assert all(op.update.preview.is_preview if len(op.update.append) > 0 else True for op, _ in result)
-    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
+    assert all(op.step.whole == 1 for op in result)
+    assert all(op.preview.is_preview if len(op.append) > 0 else True for op in result)
+    assert all(op.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
 
     # Check if all metrics, configs and tags are present in the result
-    assert sorted([key for op, _ in result for key in op.update.append.keys()]) == sorted(list(metrics.data.keys()))
-    assert sorted([key for op, _ in result for key in op.update.assign.keys()]) == sorted(list(configs.keys()))
-    assert sorted([key for op, _ in result for key in op.update.modify_sets.keys()]) == sorted(
+    assert sorted([key for op in result for key in op.append.keys()]) == sorted(list(metrics.data.keys()))
+    assert sorted([key for op in result for key in op.assign.keys()]) == sorted(list(configs.keys()))
+    assert sorted([key for op in result for key in op.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
 
@@ -290,23 +280,19 @@ def test_split_large_tags():
     assert len(result) > 1
 
     # Every message should be smaller than max_size
-    assert all(len(op.SerializeToString()) <= max_size for op, _ in result)
+    assert all(len(op.SerializeToString()) <= max_size for op in result)
 
     # Common metadata
-    assert all(op.project == "workspace/project" for op, _ in result)
-    assert all(op.run_id == "run_id" for op, _ in result)
-    assert all(op.update.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op, _ in result)
+    assert all(op.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
 
     # Check if all StringSet values are split correctly
-    assert {key for op, _ in result for key in op.update.modify_sets.keys()} == set(
+    assert {key for op in result for key in op.modify_sets.keys()} == set(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
 
     # Check if all tags are present in the result
-    assert {tag for op, _ in result for tag in op.update.modify_sets["add/tag"].string.values.keys()} == add_tags[
-        "add/tag"
-    ]
-    assert {tag for op, _ in result for tag in op.update.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
+    assert {tag for op in result for tag in op.modify_sets["add/tag"].string.values.keys()} == add_tags["add/tag"]
+    assert {tag for op in result for tag in op.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
         "remove/tag"
     ]
 
@@ -364,8 +350,8 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
         # then
         assert len(result) == 1
-        op, _ = result[0]
-        assert not op.update.assign
+        operation = result[0]
+        assert not operation.assign
 
         assert "Skipping a non-finite value" in caplog.text
         assert "bad-metric" in caplog.text

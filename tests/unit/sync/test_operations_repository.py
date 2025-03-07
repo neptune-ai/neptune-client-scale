@@ -16,6 +16,7 @@ from neptune_scale.sync.operations_repository import (
     OperationsRepository,
     OperationType,
 )
+from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 
 @pytest.fixture
@@ -101,7 +102,7 @@ def test_save_create_run(operations_repo, temp_db_path):
     count = get_operation_count(temp_db_path)
     assert count == 1
 
-    operation = operations_repo.get_operations(up_to_bytes=10000)[0]
+    operation = operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)[0]
 
     assert operation.operation_type == OperationType.CREATE_RUN
     assert operation.sequence_id == 1
@@ -112,8 +113,7 @@ def test_get_operations(operations_repo):
     # Given
     snapshots = []
     for i in range(5):
-        # Create snapshots with increasing sizes - up to 5MB
-        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string="a" * (1024 * 1024 * (i + 1)))})
+        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string="a" * (1024 * 1024 * 2 - 100))})
         snapshots.append(snapshot)
 
     operations_repo.save_update_run_snapshots(snapshots)
@@ -139,7 +139,7 @@ def test_get_operations_size_based_pagination_with_many_items(operations_repo):
     operations_count = 150_000
     snapshots = []
     for i in range(operations_count):
-        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string=f"{i}")})
+        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string=f"{i}" * 50)})
         snapshots.append(snapshot)
 
     operations_repo.save_update_run_snapshots(snapshots)
@@ -156,7 +156,7 @@ def test_get_operations_size_based_pagination_with_many_items(operations_repo):
 
 def test_get_operations_empty_db(operations_repo):
     # Given
-    operations = operations_repo.get_operations(up_to_bytes=10000)
+    operations = operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
     assert len(operations) == 0
 
 
@@ -170,7 +170,7 @@ def test_delete_operations(operations_repo, temp_db_path):
     operations_repo.save_update_run_snapshots(snapshots)
 
     # Get the operations to find their sequence IDs
-    operations = operations_repo.get_operations(up_to_bytes=10000)
+    operations = operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
     assert len(operations) == 5
 
     # When - delete the first 3 operations
@@ -229,7 +229,7 @@ def test_get_metadata_nonexistent(operations_repo):
 def test_metadata_already_exists_error(operations_repo):
     operations_repo.save_metadata(project="test", run_id="test")
 
-    with pytest.raises(ValueError, match="Metadata already exists"):
+    with pytest.raises(RuntimeError, match="Metadata already exists"):
         operations_repo.save_metadata(project="test2", run_id="test2")
 
 
@@ -264,6 +264,18 @@ def test_timestamp_in_operations(mock_time, operations_repo):
     # Expected timestamp in milliseconds
     expected_timestamp = int(1234.567 * 1000)
     assert timestamp == expected_timestamp
+
+
+def test_get_operations_up_to_bytes_too_small(operations_repo):
+    with pytest.raises(RuntimeError, match=r"up to bytes is too small: 100 bytes.*"):
+        operations_repo.get_operations(up_to_bytes=100)
+
+
+def test_save_update_run_snapshots_too_large(operations_repo):
+    with pytest.raises(RuntimeError, match="Operation size is too large: 2097172 bytes"):
+        operations_repo.save_update_run_snapshots(
+            [UpdateRunSnapshot(assign={"key": Value(string="a" * 1024 * 1024 * 2)})]
+        )
 
 
 def get_operation_count(db_path: str) -> int:
