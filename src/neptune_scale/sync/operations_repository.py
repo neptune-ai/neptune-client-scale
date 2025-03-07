@@ -265,12 +265,29 @@ class OperationsRepository:
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
             )
 
-    def close(self) -> None:
+    def _is_run_operations_empty(self) -> bool:
+        with self._get_connection() as conn:  # type: ignore
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM run_operations")
+            count: int = cursor.fetchone()[0]
+            return count == 0
+
+    def close(self, cleanup_files: bool) -> None:
         with self._lock:
             if self._connection is not None:
-                self._connection.close()
-                self._connection = None
-                logger.debug(f"Closed SQLite connection for {self._db_path}")
+                if cleanup_files and self._is_run_operations_empty():
+                    self._connection.close()
+                    self._connection = None
+                    try:
+                        os.remove(self._db_path)
+                    except OSError:
+                        logger.debug(f"Failed to delete SQLite database file {self._db_path}", exc_info=True)
+                        pass
+                    logger.debug(f"Deleted SQLite database file {self._db_path}")
+                else:
+                    self._connection.close()
+                    self._connection = None
+                    logger.debug(f"Closed SQLite connection for {self._db_path}")
 
     @contextlib.contextmanager  # type: ignore
     def _get_connection(self) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
