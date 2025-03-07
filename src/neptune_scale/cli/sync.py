@@ -91,7 +91,6 @@ class SyncRunner:
             api_token=self._api_token,
             project=metadata.project,
             family=metadata.run_id,
-            mode="async",
             last_queued_seq=self._last_queued_seq,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,

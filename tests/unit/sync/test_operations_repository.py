@@ -11,6 +11,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 
+from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
 from neptune_scale.sync.operations_repository import (
     Metadata,
     OperationsRepository,
@@ -267,6 +268,23 @@ def test_metadata_already_exists_error(operations_repo):
 
     with pytest.raises(RuntimeError, match="Metadata already exists"):
         operations_repo.save_metadata(project="test2", run_id="test2")
+
+
+def test_metadata_unsupported_version_error(temp_db_path, operations_repo):
+    conn = sqlite3.connect(temp_db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO metadata (version, project, run_id, parent_run_id, fork_step)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        ("wrong", "test1", "test1", None, None),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(NeptuneLocalStorageInUnsupportedVersion):
+        operations_repo.get_metadata()
 
 
 def test_close_connection(operations_repo):

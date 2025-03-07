@@ -24,6 +24,7 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
 
+from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
 from neptune_scale.util import get_logger
 
 logger = get_logger()
@@ -260,6 +261,9 @@ class OperationsRepository:
                 return None
 
             version, project, run_id, parent_run_id, fork_step = row
+
+            if version != DB_VERSION:
+                raise NeptuneLocalStorageInUnsupportedVersion()
 
             return Metadata(
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step

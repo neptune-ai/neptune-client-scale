@@ -9,7 +9,6 @@ from pathlib import Path
 from types import TracebackType
 
 from neptune_scale.sync.operations_repository import (
-    DB_VERSION,
     Metadata,
     OperationsRepository,
 )
@@ -45,7 +44,6 @@ from neptune_scale.api.validation import (
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneConflictingDataInLocalStorage,
-    NeptuneLocalStorageInUnsupportedVersion,
     NeptuneProjectNotProvided,
 )
 from neptune_scale.net.serialization import (
@@ -762,9 +760,6 @@ def _validate_existing_db(
     fork_run_id: Optional[str],
     fork_step: Optional[float],
 ) -> None:
-    if existing_metadata.version != DB_VERSION:
-        raise NeptuneLocalStorageInUnsupportedVersion()
-
     if existing_metadata.project != project or existing_metadata.run_id != run_id:
         # should never happen because we use project and run_id to create the repository path
         raise NeptuneConflictingDataInLocalStorage()
