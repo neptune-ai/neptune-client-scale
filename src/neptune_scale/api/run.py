@@ -123,8 +123,9 @@ class Run(AbstractContextManager):
             creation_time: Custom creation time of the run.
             fork_run_id: If forking from an existing run, ID of the run to fork from.
             fork_step: If forking from an existing run, step number to fork from.
-            log_directory: Base directory in which to store the run's database. Defaults to `.neptune` in the current
-                working directory.
+            log_directory: The base directory where the run's database will be stored. If the path is absolute,
+                it is used as provided. If the path is relative, it is treated as relative to the current
+                working directory. If set to None, the default is `.neptune` in the current working directory.
             max_queue_size: Deprecated.
             async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
                 (in seconds). If the duration exceeds the threshold, the callback function is triggered.
@@ -221,7 +222,7 @@ class Run(AbstractContextManager):
                 verify_non_empty("log_directory", log_directory)
                 target_log_directory = str(log_directory)
 
-            operations_repository_path = _construct_run_db_path(self._project, self._run_id, target_log_directory)
+            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, target_log_directory)
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
                 db_path=operations_repository_path,
             )
@@ -752,16 +753,18 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
     return last_print
 
 
-def _construct_run_db_path(project: str, run_id: str, user_path: Optional[str]) -> Path:
+def _resolve_run_db_path(project: str, run_id: str, user_path: Optional[str]) -> Path:
     # TODO: better sanitization
     sanitized_project = re.sub(r"[\\/]", "_", project)
     sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
     basename = f"{sanitized_project}_{sanitized_run_id}.sqlite3"
 
     if user_path is not None:
-        return Path(user_path) / basename
+        path = Path(user_path) / basename
     else:
-        return Path(os.getcwd()) / ".neptune" / basename
+        path = Path(os.getcwd()) / ".neptune" / basename
+
+    return path.absolute()
 
 
 def _validate_existing_db(

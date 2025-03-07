@@ -1,6 +1,9 @@
 import os
+import sys
+import tempfile
 import uuid
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -340,57 +343,103 @@ def test_components_in_mode(api_token, mode):
             assert run._sync_process is not None
 
 
-def test_run_with_default_log_directory(monkeypatch, api_token):
+@pytest.fixture
+def temp_dir():
+    temp_dir = tempfile.TemporaryDirectory()
+    yield Path(temp_dir.name).resolve()
+
+    try:
+        temp_dir.cleanup()
+    except Exception:
+        # There are issues with windows workers: the temporary dir is being
+        # held busy which results in an error during cleanup. We ignore these for now.
+        if sys.platform != "win32":
+            raise
+
+
+@pytest.fixture
+def mock_repo(monkeypatch, temp_dir):
+    # Always switch to the temporary directory to avoid any side effects between tests.
+    monkeypatch.chdir(temp_dir)
+
+    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
+        yield mock
+
+
+def test_run_with_default_log_directory(monkeypatch, temp_dir, mock_repo, api_token):
     monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+    monkeypatch.chdir(temp_dir)
 
-    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
-        project = "workspace/project"
-        run_id = str(uuid.uuid4())
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
 
-        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
-            ...
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
 
-        mock.assert_called_once()
-        assert str(mock.call_args[1]["db_path"]).startswith(os.getcwd()), "$CWD should be used by default"
-
-
-def test_run_respects_log_directory_from_env(monkeypatch, api_token):
-    monkeypatch.setenv(envs.LOG_DIRECTORY, "env-path")
-
-    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
-        project = "workspace/project"
-        run_id = str(uuid.uuid4())
-
-        with Run(project=project, api_token=api_token, run_id=run_id, mode="disabled"):
-            ...
-
-        mock.assert_called_once()
-        assert str(mock.call_args[1]["db_path"]).startswith("env-path")
+    mock_repo.assert_called_once()
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(os.getcwd()), "$CWD should be used by default"
 
 
-def test_run_respects_log_directory_from_argument(monkeypatch, api_token):
-    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
-
-    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
-        project = "workspace/project"
-        run_id = str(uuid.uuid4())
-
-        with Run(log_directory="path-from-arg", project=project, api_token=api_token, run_id=run_id, mode="disabled"):
-            ...
-
-        mock.assert_called_once()
-        assert str(mock.call_args[1]["db_path"]).startswith("path-from-arg")
-
-
-def test_run_log_directory_argument_overrides_env(monkeypatch, api_token):
+def test_run_relative_log_directory_from_env(monkeypatch, temp_dir, mock_repo, api_token):
     monkeypatch.setenv(envs.LOG_DIRECTORY, "from-env")
 
-    with patch("neptune_scale.api.run.OperationsRepository", side_effect=OperationsRepository) as mock:
-        project = "workspace/project"
-        run_id = str(uuid.uuid4())
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
 
-        with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="disabled"):
-            ...
+    with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
 
-        mock.assert_called_once()
-        assert str(mock.call_args[1]["db_path"]).startswith("from-arg")
+    mock_repo.assert_called_once()
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-env")
+
+
+def test_run_relative_log_directory_from_argument(monkeypatch, temp_dir, mock_repo, api_token):
+    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
+
+    mock_repo.assert_called_once()
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-arg")
+
+
+def test_run_log_directory_argument_overrides_env(monkeypatch, temp_dir, mock_repo, api_token):
+    monkeypatch.setenv(envs.LOG_DIRECTORY, str(temp_dir / "from-env"))
+
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    with Run(log_directory="from-arg", project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
+
+    mock_repo.assert_called_once()
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / "from-arg")
+
+
+def test_run_absolute_log_directory_from_argument(monkeypatch, temp_dir, mock_repo, api_token):
+    monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
+
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    absolute_path = str(Path(temp_dir / "absolute-path").resolve())
+    with Run(log_directory=absolute_path, project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
+
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(absolute_path)
+
+
+def test_run_absolute_log_directory_from_env(monkeypatch, temp_dir, mock_repo, api_token):
+    absolute_path = str(Path(temp_dir / "absolute-path").resolve())
+    monkeypatch.setenv(envs.LOG_DIRECTORY, absolute_path)
+
+    project = "workspace/project"
+    run_id = str(uuid.uuid4())
+
+    with Run(log_directory=absolute_path, project=project, api_token=api_token, run_id=run_id, mode="offline"):
+        ...
+
+    assert mock_repo.call_args[1]["db_path"].is_relative_to(absolute_path)
