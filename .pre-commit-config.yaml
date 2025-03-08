@@ -33,5 +33,6 @@ repos:
           - neptune-api==0.11.0
           - more-itertools
           - backoff
+          - types-click
 default_language_version:
   python: python3

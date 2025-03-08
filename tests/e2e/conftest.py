@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import uuid
 from datetime import (
     datetime,
@@ -83,3 +84,20 @@ def run(project, run_init_kwargs):
 def ro_run(project, run, run_init_kwargs):
     """ReadOnlyRun pointing to the same run as the neptune_scale.Run"""
     return ReadOnlyRun(read_only_project=project, custom_id=run_init_kwargs["run_id"])
+
+
+def unique_path(prefix):
+    return f"{prefix}__{datetime.now(timezone.utc).isoformat('-', 'seconds')}__{str(uuid.uuid4())[-4:]}"
+
+
+def random_series(length=10, start_step=0):
+    """Return a 2-tuple of step and value lists, both of length `length`"""
+    assert length > 0
+    assert start_step >= 0
+
+    j = random.random()
+    # Round to 0 to avoid floating point errors
+    steps = [round((j + x) ** 2.0, 0) for x in range(start_step, length)]
+    values = [round((j + x) ** 3.0, 0) for x in range(len(steps))]
+
+    return steps, values

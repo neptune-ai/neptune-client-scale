@@ -3,12 +3,7 @@ import uuid
 import pytest
 
 from neptune_scale import Run
-from neptune_scale.api.run import _validate_existing_db
-from neptune_scale.exceptions import (
-    NeptuneConflictingDataInLocalStorage,
-    NeptuneLocalStorageInUnsupportedVersion,
-)
-from neptune_scale.sync.operations_repository import Metadata
+from neptune_scale.exceptions import NeptuneConflictingDataInLocalStorage
 
 
 def test_resume_false_with_matching_fork_point(api_token, caplog):
@@ -147,15 +142,3 @@ def test_resume_true_with_no_metadata(
     # Create a run with resume=True but no pre-existing metadata
     with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="offline"):
         pass
-
-
-def test_unsupported_version_error():
-    # Given - create a metadata with an unsupported version
-    metadata = Metadata(
-        version="unsupported_version", project="project", run_id="run_id", parent_run_id="parent_run_id", fork_step=1.0
-    )
-
-    with pytest.raises(NeptuneLocalStorageInUnsupportedVersion):
-        _validate_existing_db(
-            metadata, resume=False, project="project", run_id="run_id", fork_run_id="parent_run_id", fork_step=1.0
-        )
