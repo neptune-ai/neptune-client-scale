@@ -44,6 +44,10 @@ def sync_all(
     run_log_file: Path,
     api_token: str,
 ) -> None:
+    if not run_log_file.exists():
+        raise FileNotFoundError(f"Run log file {run_log_file} does not exist")
+    run_log_file = run_log_file.resolve()
+
     runner = SyncRunner(api_token=api_token, run_log_file=run_log_file)
 
     try:
