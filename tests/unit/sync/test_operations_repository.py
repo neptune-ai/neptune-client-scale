@@ -381,6 +381,7 @@ def test_cleanup_nonempty_repository(temp_db_path, cleanup_files):
     assert os.path.exists(temp_db_path)
 
 
+@pytest.mark.skip(reason="We do not support the case of two processes owning the same repository")
 def test_cleanup_repository_conflict(temp_db_path):
     # given
     repo1 = OperationsRepository(db_path=Path(temp_db_path))

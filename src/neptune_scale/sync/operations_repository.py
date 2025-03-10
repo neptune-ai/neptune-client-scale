@@ -292,8 +292,14 @@ class OperationsRepository:
     def _is_run_operations_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM run_operations")
+
+            cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='run_operations'")
             count: int = cursor.fetchone()[0]
+            if count == 0:
+                return True
+
+            cursor.execute("SELECT COUNT(*) FROM run_operations")
+            count = cursor.fetchone()[0]
             return count == 0
 
     def close(self, cleanup_files: bool) -> None:
