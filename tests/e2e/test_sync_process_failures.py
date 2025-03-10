@@ -44,6 +44,11 @@ def _kill_sync_process(run, after=None):
 
     assert run._sync_process.exitcode is not None, "SyncProcess did not terminate"
 
+    # We need to delay here a bit. Even though process is now dead, the monitoring threads
+    # could still be processing that information buffered in queues, and we don't have
+    # other better means to wait for that.
+    time.sleep(0.5)
+
 
 @pytest.fixture(autouse=True)
 def use_temp_db_dir(temp_dir, monkeypatch):
@@ -55,10 +60,6 @@ def test_warning_callback_after_sync_process_dies():
     error_callback = Mock()
     run = Run(run_id=str(uuid.uuid4()), on_error_callback=error_callback)
     _kill_sync_process(run)
-
-    # We need to delay here a bit. Even though process is now dead, the monitoring threads
-    # could still be processing that information, and we have not good means to wait for that.
-    time.sleep(0.5)
 
     error_callback.assert_called_once()
     assert isinstance(error_callback.call_args.args[0], NeptuneSynchronizationStopped)
