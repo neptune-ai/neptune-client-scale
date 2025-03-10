@@ -341,7 +341,7 @@ class Run(AbstractContextManager):
                 self._errors_monitor.join()
 
         if self._operations_repo is not None:
-            self._operations_repo.close()
+            self._operations_repo.close(cleanup_files=True)
 
         if self._errors_queue is not None:
             self._errors_queue.close()

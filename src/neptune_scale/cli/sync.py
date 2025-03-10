@@ -140,5 +140,5 @@ class SyncRunner:
             self._sync_process.join()
             self._process_link.stop()
 
-        self._operations_repository.close()
+        self._operations_repository.close(cleanup_files=True)
         self._errors_queue.close()

@@ -32,7 +32,7 @@ def operations_repo(temp_db_path):
     repo = OperationsRepository(db_path=Path(temp_db_path))
     repo.init_db()
     yield repo
-    repo.close()
+    repo.close(cleanup_files=True)
 
 
 def test_raise_on_relative_path():
@@ -58,7 +58,7 @@ def test_init_creates_tables(temp_db_path):
 
     # Cleanup
     conn.close()
-    repo.close()
+    repo.close(cleanup_files=True)
 
 
 def test_save_update_run_snapshots(operations_repo, temp_db_path):
@@ -293,7 +293,7 @@ def test_close_connection(operations_repo):
     assert connection is not None
 
     # When
-    operations_repo.close()
+    operations_repo.close(cleanup_files=True)
 
     # Then
     assert operations_repo._connection is None
@@ -341,3 +341,86 @@ def get_operation_count(db_path: str) -> int:
         return count
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_empty_repository(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+    assert not os.path.exists(temp_db_path)
+
+    # when
+    repo.init_db()
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path) != cleanup_files
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_nonempty_repository(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+
+@pytest.mark.skip(reason="We do not support the case of two processes owning the same repository")
+def test_cleanup_repository_conflict(temp_db_path):
+    # given
+    repo1 = OperationsRepository(db_path=Path(temp_db_path))
+    repo2 = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo1.init_db()
+    repo2.init_db()
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo2.close(cleanup_files=True)
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo1.close(cleanup_files=True)
+
+    # then
+    assert not os.path.exists(temp_db_path)
+
+
+def test_cleanup_repository_resume(temp_db_path):
+    # when
+    repo1 = OperationsRepository(db_path=Path(temp_db_path))
+    repo1.init_db()
+    repo1.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
+    repo1.close(cleanup_files=True)
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo2 = OperationsRepository(db_path=Path(temp_db_path))
+    repo2.delete_operations(up_to_seq_id=1)
+    repo2.close(cleanup_files=True)
+
+    # then
+    assert not os.path.exists(temp_db_path)
