@@ -9,7 +9,6 @@ from pathlib import Path
 from types import TracebackType
 
 from neptune_scale.sync.operations_repository import (
-    DB_VERSION,
     Metadata,
     OperationsRepository,
 )
@@ -45,7 +44,6 @@ from neptune_scale.api.validation import (
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneConflictingDataInLocalStorage,
-    NeptuneLocalStorageInUnsupportedVersion,
     NeptuneProjectNotProvided,
 )
 from neptune_scale.net.serialization import (
@@ -184,12 +182,6 @@ class Run(AbstractContextManager):
         assert project is not None  # mypy
         input_project: str = project
 
-        api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        if api_token is None:
-            raise NeptuneApiTokenNotProvided()
-        assert api_token is not None  # mypy
-        input_api_token: str = api_token
-
         mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
         verify_non_empty("run_id", run_id)
@@ -239,6 +231,12 @@ class Run(AbstractContextManager):
 
         if mode == "async":
             assert self._sequence_tracker is not None
+
+            api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
+            if api_token is None:
+                raise NeptuneApiTokenNotProvided()
+            assert api_token is not None  # mypy
+            input_api_token: str = api_token
 
             self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
@@ -762,9 +760,6 @@ def _validate_existing_db(
     fork_run_id: Optional[str],
     fork_step: Optional[float],
 ) -> None:
-    if existing_metadata.version != DB_VERSION:
-        raise NeptuneLocalStorageInUnsupportedVersion()
-
     if existing_metadata.project != project or existing_metadata.run_id != run_id:
         # should never happen because we use project and run_id to create the repository path
         raise NeptuneConflictingDataInLocalStorage()

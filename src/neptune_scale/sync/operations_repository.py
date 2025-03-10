@@ -24,6 +24,7 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
 
+from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
 from neptune_scale.util import get_logger
 
 logger = get_logger()
@@ -261,9 +262,32 @@ class OperationsRepository:
 
             version, project, run_id, parent_run_id, fork_step = row
 
+            if version != DB_VERSION:
+                raise NeptuneLocalStorageInUnsupportedVersion()
+
             return Metadata(
                 version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
             )
+
+    def get_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
+        with self._get_connection() as conn:  # type: ignore
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT MIN(sequence_id), MAX(sequence_id)
+                FROM run_operations
+                """
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            min_seq_id, max_seq_id = row
+            if min_seq_id is None or max_seq_id is None:
+                return None
+            return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     def close(self) -> None:
         with self._lock:
