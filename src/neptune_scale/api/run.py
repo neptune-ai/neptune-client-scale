@@ -45,6 +45,7 @@ from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneConflictingDataInLocalStorage,
     NeptuneProjectNotProvided,
+    NeptuneSynchronizationStopped,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -304,9 +305,9 @@ class Run(AbstractContextManager):
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
             if not self._is_closing:
-                logger.error("Child process closed unexpectedly.")
-                self._is_closing = True
-                self.terminate()
+                logger.error("The background synchronization process has stopped unexpectedly.")
+                if self._errors_queue is not None:
+                    self._errors_queue.put(NeptuneSynchronizationStopped())
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
@@ -324,12 +325,11 @@ class Run(AbstractContextManager):
             self._sync_process.terminate()
             self._sync_process.join()
 
-            if self._process_link is not None:
-                self._process_link.stop()
+        if self._process_link is not None:
+            self._process_link.stop()
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
-            self._lag_tracker.wake_up()
             self._lag_tracker.join()
 
         if self._errors_monitor is not None:
@@ -366,9 +366,6 @@ class Run(AbstractContextManager):
             )
             ```
         """
-
-        if not self._is_closing:
-            logger.info("Terminating Run.")
 
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
@@ -645,8 +642,6 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
-                        if verbose and not self._is_closing:
-                            logger.warning("Sync process is not running")
                         return  # No need to wait if the sync process is not running
 
                     assert wait_seq is not None

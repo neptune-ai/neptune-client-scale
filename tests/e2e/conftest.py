@@ -1,11 +1,14 @@
 import logging
 import os
 import random
+import sys
+import tempfile
 import uuid
 from datetime import (
     datetime,
     timezone,
 )
+from pathlib import Path
 
 from neptune_fetcher import (
     ReadOnlyProject,
@@ -84,6 +87,18 @@ def run(project, run_init_kwargs):
 def ro_run(project, run, run_init_kwargs):
     """ReadOnlyRun pointing to the same run as the neptune_scale.Run"""
     return ReadOnlyRun(read_only_project=project, custom_id=run_init_kwargs["run_id"])
+
+
+@fixture
+def temp_dir():
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir).resolve()
+    except Exception:
+        # There are issues with windows workers: the temporary dir is being
+        # held busy which results in an error during cleanup. We ignore these for now.
+        if sys.platform != "win32":
+            raise
 
 
 def unique_path(prefix):

@@ -89,7 +89,14 @@ NeptuneBadRequestError({status_code}): {reason}
 
 
 class NeptuneSynchronizationStopped(NeptuneScaleError):
-    message = "Internal synchronization process was stopped."
+    message = """
+{h1}
+NeptuneSynchronizationStopped: The background synchronization process has stopped unexpectedly.
+{end}
+
+Your data is still being saved locally. You can manually synchronize it with the
+Neptune backend later by running `neptune sync`.
+"""
 
 
 class NeptuneUnableToLogData(NeptuneScaleError):
