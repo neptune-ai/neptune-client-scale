@@ -740,9 +740,10 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
 def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
     sanitized_project = re.sub(r"[\\/]", "_", project)
     sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
+    timestamp_ns = int(time.time() * 1e9)
     directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
-    return (directory / f"{sanitized_project}_{sanitized_run_id}.sqlite3").absolute()
+    return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
 
 
 def _validate_existing_db(
@@ -765,5 +766,5 @@ def _validate_existing_db(
         logger.warning("Run already exists in local storage with the same parent run and fork point. Resuming the run.")
         return
     else:
-        # Same run_id but different fork points
+        # Should never happen because we use timestamp_ns
         raise NeptuneConflictingDataInLocalStorage()
