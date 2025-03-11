@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pathlib
+
 __all__ = (
     "NeptuneScaleError",
     "NeptuneScaleWarning",
@@ -40,7 +42,7 @@ __all__ = (
     "NeptuneApiTokenNotProvided",
     "NeptuneTooManyRequestsResponseError",
     "NeptunePreviewStepNotAfterLastCommittedStep",
-    "NeptuneConflictingDataInLocalStorage",
+    "NeptuneDatabaseConflict",
     "NeptuneLocalStorageInUnsupportedVersion",
 )
 
@@ -518,5 +520,8 @@ class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
     Please either upgrade Neptune Scale to the latest version or create a new local storage database."""
 
 
-class NeptuneConflictingDataInLocalStorage(NeptuneScaleError):
-    message = """NeptuneConflictingDataInLocalStorage: Conflicting data found in local storage."""
+class NeptuneDatabaseConflict(NeptuneScaleError):
+    message = """NeptuneDatabaseConflict: Database with the same name `{name}` already exists."""
+
+    def __init__(self, path: pathlib.Path) -> None:
+        super().__init__(name=path.name)
