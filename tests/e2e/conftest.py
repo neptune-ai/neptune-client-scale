@@ -77,6 +77,7 @@ def run(project, run_init_kwargs):
 
     run = Run(**run_init_kwargs)
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})
+    run.wait_for_processing()
 
     yield run
 

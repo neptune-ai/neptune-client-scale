@@ -154,18 +154,21 @@ class OperationsRepository:
             )
             return SequenceId(cursor.lastrowid)  # type: ignore
 
-    def get_operations(self, up_to_bytes: int) -> list[Operation]:
+    def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
             raise RuntimeError(
                 f"up to bytes is too small: {up_to_bytes} bytes, minimum is {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
             )
+
+        if from_exclusive is None:
+            from_exclusive = SequenceId(-1)
 
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
             def find_last_sequence_id_up_to_bytes() -> Optional[SequenceId]:
                 limit = 50_000  # 2 * 8 bytes * 50_000 = 0.8MB
-                _last_sequence_id = None
+                _last_sequence_id = from_exclusive
                 total_operations_size_bytes = 0
 
                 while True:
@@ -177,7 +180,7 @@ class OperationsRepository:
                         ORDER BY sequence_id ASC
                         LIMIT ?
                     """,
-                        (_last_sequence_id or -1, limit),
+                        (_last_sequence_id, limit),
                     )
                     rows = cursor.fetchall()
                     if not rows:
@@ -199,15 +202,18 @@ class OperationsRepository:
                 """
                 SELECT sequence_id, timestamp, operation, operation_type, operation_size_bytes
                 FROM run_operations
-                WHERE sequence_id <= ?
+                WHERE sequence_id > ? AND sequence_id <= ?
                 ORDER BY sequence_id ASC
                 """,
-                (last_sequence_id,),
+                (
+                    from_exclusive,
+                    last_sequence_id,
+                ),
             )
 
             return [_deserialize_operation(row) for row in cursor.fetchall()]
 
-    def delete_operations(self, up_to_seq_id: int) -> int:
+    def delete_operations(self, up_to_seq_id: SequenceId) -> int:
         if up_to_seq_id <= 0:
             return 0
 

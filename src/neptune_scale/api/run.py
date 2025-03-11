@@ -293,14 +293,12 @@ class Run(AbstractContextManager):
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
         if mode != "disabled" and not resume:
-            # Create a new run
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
                 experiment_name=experiment_name,
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
-            self.wait_for_processing(verbose=False)
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:

@@ -94,6 +94,7 @@ def test_run_can_log_after_sync_process_dies():
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing):
     run = Run(run_id=str(uuid.uuid4()))
+    run.wait_for_processing()
 
     _kill_sync_process(run)
 
