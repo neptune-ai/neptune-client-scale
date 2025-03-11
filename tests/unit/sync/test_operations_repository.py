@@ -153,11 +153,16 @@ def test_get_operations_size_based_pagination_with_many_items(operations_repo):
 
     sizes = [i.ByteSize() for i in snapshots]
 
-    # When
+    # when
     operations = operations_repo.get_operations(up_to_bytes=sum(sizes))
+
+    # then
     assert len(operations) == operations_count
 
+    # when
     operations = operations_repo.get_operations(up_to_bytes=sum(sizes[:10_000]))
+
+    # then
     assert len(operations) == 10_000
 
 
@@ -172,15 +177,20 @@ def test_get_operations_size_based_pagination_from_seq_id(operations_repo, from_
 
     operations_repo.save_update_run_snapshots(snapshots)
     sizes = [i.ByteSize() for i in snapshots]
-
-    # When
     start_index = max(from_seq_id or 0, 0)
+
+    # when
     operations = operations_repo.get_operations(up_to_bytes=sum(sizes), from_exclusive=SequenceId(from_seq_id))
+
+    # then
     assert len(operations) == operations_count - start_index
 
+    # when
     operations = operations_repo.get_operations(
         up_to_bytes=sum(sizes[start_index:100_000]), from_exclusive=SequenceId(from_seq_id)
     )
+
+    # then
     assert len(operations) == 100_000 - start_index
 
 

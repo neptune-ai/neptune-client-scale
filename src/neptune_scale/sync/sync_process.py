@@ -467,23 +467,25 @@ class StatusTrackingThread(Daemon):
                     # Small give up, sleep before retry
                     break
 
-                operations_to_commit, processed_sequence_id, processed_timestamp, run_sync_error = 0, None, None, None
+                operations_to_commit, processed_sequence_id, processed_timestamp, fatal_sync_error = 0, None, None, None
                 for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
                     if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
                         logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
                         # Request status not ready yet, sleep and retry
                         break
 
-                    for code_status in request_status.code_by_count:
-                        if code_status.code != Code.OK:
-                            error = code_to_exception(code_status.detail)
-                            if isinstance(error, NeptuneProjectError) or isinstance(error, NeptuneRunError):
-                                run_sync_error = error
-                                break
-                            else:
-                                self._errors_queue.put(error)
-                    if run_sync_error is not None:
+                    errors = [
+                        code_to_exception(status.detail)
+                        for status in request_status.code_by_count
+                        if status.code != Code.OK
+                    ]
+
+                    fatal_sync_error = next(filter(self._is_fatal_error, errors), None)
+                    if fatal_sync_error is not None:
                         break
+
+                    for error in errors:
+                        self._errors_queue.put(error)
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
@@ -506,13 +508,20 @@ class StatusTrackingThread(Daemon):
                         with self._last_ack_timestamp:
                             self._last_ack_timestamp.value = processed_timestamp.timestamp()
                             self._last_ack_timestamp.notify_all()
-                if run_sync_error is not None:
-                    raise run_sync_error
+
+                if fatal_sync_error is not None:
+                    raise fatal_sync_error
+
                 if operations_to_commit == 0:
                     # Sleep before retry
                     break
+
         except Exception as e:
             self._errors_queue.put(e)
             self.interrupt()
             self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e
+
+    @staticmethod
+    def _is_fatal_error(ex: Exception) -> bool:
+        return isinstance(ex, NeptuneProjectError) or isinstance(ex, NeptuneRunError)
