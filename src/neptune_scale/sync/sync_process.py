@@ -482,6 +482,8 @@ class StatusTrackingThread(Daemon):
                                 break
                             else:
                                 self._errors_queue.put(error)
+                    if run_sync_error is not None:
+                        break
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp

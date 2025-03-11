@@ -161,6 +161,29 @@ def test_get_operations_size_based_pagination_with_many_items(operations_repo):
     assert len(operations) == 10_000
 
 
+@pytest.mark.parametrize("from_seq_id", [None, -1, 0, 1, 10_000, 50_000])
+def test_get_operations_size_based_pagination_from_seq_id(operations_repo, from_seq_id):
+    # Given
+    operations_count = 150_000
+    snapshots = []
+    for i in range(operations_count):
+        snapshot = UpdateRunSnapshot(assign={f"key_{i}": Value(string=f"{i}" * 50)})
+        snapshots.append(snapshot)
+
+    operations_repo.save_update_run_snapshots(snapshots)
+    sizes = [i.ByteSize() for i in snapshots]
+
+    # When
+    start_index = max(from_seq_id or 0, 0)
+    operations = operations_repo.get_operations(up_to_bytes=sum(sizes), from_exclusive=SequenceId(from_seq_id))
+    assert len(operations) == operations_count - start_index
+
+    operations = operations_repo.get_operations(
+        up_to_bytes=sum(sizes[start_index:100_000]), from_exclusive=SequenceId(from_seq_id)
+    )
+    assert len(operations) == 100_000 - start_index
+
+
 def test_get_operations_empty_db(operations_repo):
     # Given
     operations = operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
@@ -229,7 +252,7 @@ def test_delete_operations_invalid_id(operations_repo, temp_db_path):
     operations_repo.save_update_run_snapshots(snapshots)
 
     # When - try to delete with a non-positive sequence ID
-    deleted_count = operations_repo.delete_operations(up_to_seq_id=0)
+    deleted_count = operations_repo.delete_operations(up_to_seq_id=SequenceId(0))
 
     # Then
     assert deleted_count == 0
