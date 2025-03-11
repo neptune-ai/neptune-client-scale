@@ -48,11 +48,13 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
+    NeptuneProjectError,
     NeptuneProjectInvalidName,
     NeptuneProjectNotFound,
     NeptuneRetryableError,
     NeptuneRunConflicting,
     NeptuneRunDuplicate,
+    NeptuneRunError,
     NeptuneRunForkParentNotFound,
     NeptuneRunInvalidCreationParameters,
     NeptuneRunNotFound,
@@ -218,6 +220,7 @@ class SyncProcess(Process):
             StatusTrackingThread(
                 api_token=self._api_token,
                 project=self._project,
+                operations_repository=operations_repository,
                 errors_queue=self._errors_queue,
                 status_tracking_queue=status_tracking_queue,
                 last_ack_seq=self._last_ack_seq,
@@ -290,7 +293,11 @@ class SenderThread(Daemon):
                 - len(self._metadata.project)
                 - 200  # 200 bytes for RunOperation overhead,
             )
-            while operations := self._operations_repository.get_operations(up_to_bytes=max_operations_size):
+            with self._last_queued_seq:
+                sequence_id = SequenceId(self._last_queued_seq.value)
+            while operations := self._operations_repository.get_operations(
+                from_exclusive=sequence_id, up_to_bytes=max_operations_size
+            ):
                 partitioned_operations = _partition_by_type_and_size(
                     operations, self._metadata.run_id, self._metadata.project, max_operations_size
                 )
@@ -314,7 +321,6 @@ class SenderThread(Daemon):
                             )
                         )
 
-                        self._operations_repository.delete_operations(up_to_seq_id=sequence_id)
                         # Update Last PUT sequence id and notify threads in the main process
                         with self._last_queued_seq:
                             self._last_queued_seq.value = sequence_id
@@ -402,6 +408,7 @@ class StatusTrackingThread(Daemon):
         self,
         api_token: str,
         project: str,
+        operations_repository: OperationsRepository,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         last_ack_seq: SharedInt,
@@ -411,6 +418,7 @@ class StatusTrackingThread(Daemon):
 
         self._api_token: str = api_token
         self._project: str = project
+        self._operations_repository: OperationsRepository = operations_repository
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._last_ack_seq: SharedInt = last_ack_seq
@@ -459,7 +467,7 @@ class StatusTrackingThread(Daemon):
                     # Small give up, sleep before retry
                     break
 
-                operations_to_commit, processed_sequence_id, processed_timestamp = 0, None, None
+                operations_to_commit, processed_sequence_id, processed_timestamp, run_sync_error = 0, None, None, None
                 for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
                     if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
                         logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
@@ -469,7 +477,11 @@ class StatusTrackingThread(Daemon):
                     for code_status in request_status.code_by_count:
                         if code_status.code != Code.OK:
                             error = code_to_exception(code_status.detail)
-                            self._errors_queue.put(error)
+                            if isinstance(error, NeptuneProjectError) or isinstance(error, NeptuneRunError):
+                                run_sync_error = error
+                                break
+                            else:
+                                self._errors_queue.put(error)
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
@@ -481,6 +493,8 @@ class StatusTrackingThread(Daemon):
                     if processed_sequence_id is not None:
                         logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
 
+                        self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
+
                         with self._last_ack_seq:
                             self._last_ack_seq.value = processed_sequence_id
                             self._last_ack_seq.notify_all()
@@ -490,7 +504,9 @@ class StatusTrackingThread(Daemon):
                         with self._last_ack_timestamp:
                             self._last_ack_timestamp.value = processed_timestamp.timestamp()
                             self._last_ack_timestamp.notify_all()
-                else:
+                if run_sync_error is not None:
+                    raise run_sync_error
+                if operations_to_commit == 0:
                     # Sleep before retry
                     break
         except Exception as e:

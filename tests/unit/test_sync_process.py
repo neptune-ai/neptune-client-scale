@@ -28,7 +28,6 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
     SequenceId,
 )
-from neptune_scale.sync.parameters import MAX_REQUEST_SIZE_BYTES
 from neptune_scale.sync.sync_process import (
     PeekableQueue,
     SenderThread,
@@ -268,7 +267,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
     assert len(tracking) == 1
     assert tracking[0].sequence_id == last_sequence_id
 
-    assert operations_repo.get_operations(MAX_REQUEST_SIZE_BYTES) == []
     assert last_queue_seq.value == last_sequence_id
 
 
@@ -308,7 +306,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batches(op
     assert len(tracking) == 4
     assert tracking[-1].sequence_id == last_sequence_id
 
-    assert operations_repo.get_operations(MAX_REQUEST_SIZE_BYTES) == []
     assert last_queue_seq.value == last_sequence_id
 
 
@@ -344,7 +341,6 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     assert len(tracking) == 3
     assert tracking[-1].sequence_id == last_sequence_id
 
-    assert operations_repo.get_operations(MAX_REQUEST_SIZE_BYTES) == []
     assert last_queue_seq.value == last_sequence_id
 
 

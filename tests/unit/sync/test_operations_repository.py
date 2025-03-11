@@ -16,6 +16,7 @@ from neptune_scale.sync.operations_repository import (
     Metadata,
     OperationsRepository,
     OperationType,
+    SequenceId,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
@@ -419,7 +420,7 @@ def test_cleanup_repository_resume(temp_db_path):
 
     # when
     repo2 = OperationsRepository(db_path=Path(temp_db_path))
-    repo2.delete_operations(up_to_seq_id=1)
+    repo2.delete_operations(up_to_seq_id=SequenceId(1))
     repo2.close(cleanup_files=True)
 
     # then

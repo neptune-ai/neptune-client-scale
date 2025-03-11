@@ -250,7 +250,11 @@ Ensure that your API token is correct.
 """
 
 
-class NeptuneProjectNotFound(NeptuneScaleError):
+class NeptuneProjectError(NeptuneScaleError):
+    pass
+
+
+class NeptuneProjectNotFound(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectNotFound: Either the project hasn't been created yet or the name is incorrect.
@@ -259,7 +263,7 @@ For help, see https://docs-beta.neptune.ai/setup
 """
 
 
-class NeptuneProjectInvalidName(NeptuneScaleError):
+class NeptuneProjectInvalidName(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectInvalidName: Project name is either empty or too long.
@@ -267,7 +271,7 @@ NeptuneProjectInvalidName: Project name is either empty or too long.
 """
 
 
-class NeptuneProjectAlreadyExists(NeptuneScaleError):
+class NeptuneProjectAlreadyExists(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectAlreadyExists: A project with the provided name or project key already exists.
@@ -275,7 +279,11 @@ NeptuneProjectAlreadyExists: A project with the provided name or project key alr
 """
 
 
-class NeptuneRunNotFound(NeptuneScaleError):
+class NeptuneRunError(NeptuneScaleError):
+    pass
+
+
+class NeptuneRunNotFound(NeptuneRunError):
     message = """
 {h1}
 ----NeptuneRunNotFound: Run not found.
@@ -293,7 +301,7 @@ If you wanted to resume an existing run, include the argument `resume=True`.
 """
 
 
-class NeptuneRunConflicting(NeptuneScaleError):
+class NeptuneRunConflicting(NeptuneRunError):
     message = """
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
@@ -311,7 +319,7 @@ For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
-class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
+class NeptuneRunInvalidCreationParameters(NeptuneRunError):
     message = """
 {h1}
 NeptuneRunInvalidCreationParameters: Run creation parameters rejected by the server.
