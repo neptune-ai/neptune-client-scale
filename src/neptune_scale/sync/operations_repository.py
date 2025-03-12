@@ -54,11 +54,8 @@ class Operation:
 
 @dataclass(frozen=True)
 class Metadata:
-    version: str
     project: str
     run_id: str
-    parent_run_id: Optional[str] = None
-    fork_step: Optional[float] = None
 
 
 class OperationsRepository:
@@ -109,9 +106,7 @@ class OperationsRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     version TEXT NOT NULL,
                     project TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    parent_run_id TEXT,
-                    fork_step REAL
+                    run_id TEXT NOT NULL
                 )"""
             )
 
@@ -225,9 +220,7 @@ class OperationsRepository:
             # Return the number of rows affected
             return cursor.rowcount or 0
 
-    def save_metadata(
-        self, project: str, run_id: str, parent_run_id: Optional[str] = None, fork_step: Optional[float] = None
-    ) -> None:
+    def save_metadata(self, project: str, run_id: str) -> None:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
@@ -245,10 +238,10 @@ class OperationsRepository:
             # Insert new metadata
             cursor.execute(
                 """
-                INSERT INTO metadata (version, project, run_id, parent_run_id, fork_step)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO metadata (version, project, run_id)
+                VALUES (?, ?, ?)
                 """,
-                (DB_VERSION, project, run_id, parent_run_id, fork_step),
+                (DB_VERSION, project, run_id),
             )
 
     def get_metadata(self) -> Optional[Metadata]:
@@ -257,7 +250,7 @@ class OperationsRepository:
 
             cursor.execute(
                 """
-                SELECT version, project, run_id, parent_run_id, fork_step
+                SELECT version, project, run_id
                 FROM metadata
                 """
             )
@@ -266,14 +259,12 @@ class OperationsRepository:
             if not row:
                 return None
 
-            version, project, run_id, parent_run_id, fork_step = row
+            version, project, run_id = row
 
             if version != DB_VERSION:
                 raise NeptuneLocalStorageInUnsupportedVersion()
 
-            return Metadata(
-                version=version, project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
-            )
+            return Metadata(project=project, run_id=run_id)
 
     def get_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection() as conn:  # type: ignore

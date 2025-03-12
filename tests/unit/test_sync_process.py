@@ -50,7 +50,7 @@ from neptune_scale.util.shared_var import (
     SharedInt,
 )
 
-metadata = Metadata(project="project", run_id="run_id", version="v1")
+metadata = Metadata(project="project", run_id="run_id")
 
 
 def response(request_ids: list[str], status_code: int = 200):

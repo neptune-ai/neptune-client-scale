@@ -47,10 +47,12 @@ def main() -> None:
     help="API token for authentication. Overrides NEPTUNE_API_TOKEN environment variable",
 )
 def sync(
-    run_log_file: Path,
+    run_log_file: str,
     api_token: Optional[str],
 ) -> None:
     if api_token is None:
         raise NeptuneApiTokenNotProvided()
 
-    sync_all(run_log_file, api_token)
+    run_log_path = Path(run_log_file)
+
+    sync_all(run_log_path, api_token)

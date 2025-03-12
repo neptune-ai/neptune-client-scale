@@ -8,10 +8,7 @@ import re
 from pathlib import Path
 from types import TracebackType
 
-from neptune_scale.sync.operations_repository import (
-    Metadata,
-    OperationsRepository,
-)
+from neptune_scale.sync.operations_repository import OperationsRepository
 
 __all__ = ["Run"]
 
@@ -43,7 +40,7 @@ from neptune_scale.api.validation import (
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
-    NeptuneConflictingDataInLocalStorage,
+    NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
 )
@@ -213,13 +210,11 @@ class Run(AbstractContextManager):
                 db_path=operations_repository_path,
             )
             self._operations_repo.init_db()
-            existing_metadata = self._operations_repo.get_metadata()
 
-            # Save metadata if it doesn't exist
-            if existing_metadata is None:
-                self._operations_repo.save_metadata(self._project, self._run_id, fork_run_id, fork_step)
-            else:
-                _validate_existing_db(existing_metadata, resume, self._project, self._run_id, fork_run_id, fork_step)
+            existing_metadata = self._operations_repo.get_metadata()
+            if existing_metadata is not None:
+                raise NeptuneDatabaseConflict(path=operations_repository_path)
+            self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._attr_store: Optional[AttributeStore] = AttributeStore(
@@ -740,30 +735,7 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
 def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
     sanitized_project = re.sub(r"[\\/]", "_", project)
     sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
+    timestamp_ns = int(time.time() * 1e9)
     directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
-    return (directory / f"{sanitized_project}_{sanitized_run_id}.sqlite3").absolute()
-
-
-def _validate_existing_db(
-    existing_metadata: Metadata,
-    resume: bool,
-    project: str,
-    run_id: str,
-    fork_run_id: Optional[str],
-    fork_step: Optional[float],
-) -> None:
-    if existing_metadata.project != project or existing_metadata.run_id != run_id:
-        # should never happen because we use project and run_id to create the repository path
-        raise NeptuneConflictingDataInLocalStorage()
-
-    # Check for conflicts when not resuming, because we don't allow fork points in resumed runs
-    if resume:
-        return
-
-    if existing_metadata.parent_run_id == fork_run_id and existing_metadata.fork_step == fork_step:
-        logger.warning("Run already exists in local storage with the same parent run and fork point. Resuming the run.")
-        return
-    else:
-        # Same run_id but different fork points
-        raise NeptuneConflictingDataInLocalStorage()
+    return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()

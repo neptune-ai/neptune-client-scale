@@ -273,19 +273,15 @@ def test_save_and_get_metadata(operations_repo):
     # Given
     project = "test-project"
     run_id = "test-run-id"
-    parent_run_id = "parent-run-id"
-    fork_step = 1.5
 
     # When
-    operations_repo.save_metadata(project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step)
+    operations_repo.save_metadata(project=project, run_id=run_id)
 
     # Then
     metadata = operations_repo.get_metadata()
     assert metadata is not None
 
-    expected_metadata = Metadata(
-        version="v1", project=project, run_id=run_id, parent_run_id=parent_run_id, fork_step=fork_step
-    )
+    expected_metadata = Metadata(project=project, run_id=run_id)
     assert expected_metadata == metadata
 
 
@@ -309,10 +305,10 @@ def test_metadata_unsupported_version_error(temp_db_path, operations_repo):
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO metadata (version, project, run_id, parent_run_id, fork_step)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO metadata (version, project, run_id)
+        VALUES (?, ?, ?)
         """,
-        ("wrong", "test1", "test1", None, None),
+        ("wrong", "test1", "test1"),
     )
     conn.commit()
     conn.close()
