@@ -22,7 +22,11 @@ class Run(neptune_scale.api.run.Run):
     """
 
     def __getitem__(self, key: str) -> Attribute:
+        if self._attr_store is None:
+            return Attribute(store=None, path=key)
         return self._attr_store[key]
 
     def __setitem__(self, key: str, value: Any) -> None:
+        if self._attr_store is None:
+            return
         self._attr_store[key] = value

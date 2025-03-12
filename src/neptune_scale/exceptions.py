@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pathlib
+
 __all__ = (
     "NeptuneScaleError",
     "NeptuneScaleWarning",
@@ -40,6 +42,8 @@ __all__ = (
     "NeptuneApiTokenNotProvided",
     "NeptuneTooManyRequestsResponseError",
     "NeptunePreviewStepNotAfterLastCommittedStep",
+    "NeptuneDatabaseConflict",
+    "NeptuneLocalStorageInUnsupportedVersion",
 )
 
 from typing import Any
@@ -87,7 +91,14 @@ NeptuneBadRequestError({status_code}): {reason}
 
 
 class NeptuneSynchronizationStopped(NeptuneScaleError):
-    message = "Internal synchronization process was stopped."
+    message = """
+{h1}
+NeptuneSynchronizationStopped: The background synchronization process has stopped unexpectedly.
+{end}
+
+Your data is still being saved locally. You can manually synchronize it with the
+Neptune backend later by running `neptune sync`.
+"""
 
 
 class NeptuneUnableToLogData(NeptuneScaleError):
@@ -241,7 +252,11 @@ Ensure that your API token is correct.
 """
 
 
-class NeptuneProjectNotFound(NeptuneScaleError):
+class NeptuneProjectError(NeptuneScaleError):
+    pass
+
+
+class NeptuneProjectNotFound(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectNotFound: Either the project hasn't been created yet or the name is incorrect.
@@ -250,7 +265,7 @@ For help, see https://docs-beta.neptune.ai/setup
 """
 
 
-class NeptuneProjectInvalidName(NeptuneScaleError):
+class NeptuneProjectInvalidName(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectInvalidName: Project name is either empty or too long.
@@ -258,7 +273,7 @@ NeptuneProjectInvalidName: Project name is either empty or too long.
 """
 
 
-class NeptuneProjectAlreadyExists(NeptuneScaleError):
+class NeptuneProjectAlreadyExists(NeptuneProjectError):
     message = """
 {h1}
 NeptuneProjectAlreadyExists: A project with the provided name or project key already exists.
@@ -266,7 +281,11 @@ NeptuneProjectAlreadyExists: A project with the provided name or project key alr
 """
 
 
-class NeptuneRunNotFound(NeptuneScaleError):
+class NeptuneRunError(NeptuneScaleError):
+    pass
+
+
+class NeptuneRunNotFound(NeptuneRunError):
     message = """
 {h1}
 ----NeptuneRunNotFound: Run not found.
@@ -284,7 +303,7 @@ If you wanted to resume an existing run, include the argument `resume=True`.
 """
 
 
-class NeptuneRunConflicting(NeptuneScaleError):
+class NeptuneRunConflicting(NeptuneRunError):
     message = """
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
@@ -302,7 +321,7 @@ For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
 """
 
 
-class NeptuneRunInvalidCreationParameters(NeptuneScaleError):
+class NeptuneRunInvalidCreationParameters(NeptuneRunError):
     message = """
 {h1}
 NeptuneRunInvalidCreationParameters: Run creation parameters rejected by the server.
@@ -493,3 +512,16 @@ It looks like you tried to log a preview (incomplete) metric update for a step t
 the last fully committed (complete) update. Once a complete value is recorded, any preview updates
 must only be added for later steps. Please adjust the order of your updates and try again.
 """
+
+
+class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
+    message = """The local storage database is in an unsupported version.
+    This may happen when you try to use a database created with a newer version of Neptune Scale with an older version of the library.
+    Please either upgrade Neptune Scale to the latest version or create a new local storage database."""
+
+
+class NeptuneDatabaseConflict(NeptuneScaleError):
+    message = """NeptuneDatabaseConflict: Database with the same name `{name}` already exists."""
+
+    def __init__(self, path: pathlib.Path) -> None:
+        super().__init__(name=path.name)

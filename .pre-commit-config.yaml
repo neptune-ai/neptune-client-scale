@@ -21,6 +21,7 @@ repos:
     rev: v0.7.2
     hooks:
       - id: ruff
+        args: [ --fix ]
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
@@ -32,5 +33,6 @@ repos:
           - neptune-api==0.11.0
           - more-itertools
           - backoff
+          - types-click
 default_language_version:
   python: python3

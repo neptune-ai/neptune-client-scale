@@ -1,10 +1,14 @@
 import logging
 import os
+import random
+import sys
+import tempfile
 import uuid
 from datetime import (
     datetime,
     timezone,
 )
+from pathlib import Path
 
 from neptune_fetcher import (
     ReadOnlyProject,
@@ -46,17 +50,6 @@ def project(request):
     return ReadOnlyProject(project=project_name)
 
 
-class SyncRun(Run):
-    """A neptune_scale.Run instance that waits for processing to complete
-    after each logging method call. This is useful for e2e tests, where we
-    usually want to wait for the data to be available before fetching it."""
-
-    def _log(self, *args, **kwargs):
-        result = super()._log(*args, **kwargs)
-        self.wait_for_processing()
-        return result
-
-
 @fixture(scope="module")
 def run_init_kwargs(project):
     """Arguments to initialize a neptune_scale.Run instance"""
@@ -84,17 +77,43 @@ def run(project, run_init_kwargs):
 
     run = Run(**run_init_kwargs)
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})
+    run.wait_for_processing()
 
-    return run
+    yield run
 
-
-@fixture(scope="module")
-def sync_run(project, run, run_init_kwargs):
-    """Blocking run for logging data"""
-    return SyncRun(project=run_init_kwargs["project"], run_id=run_init_kwargs["run_id"], resume=True)
+    run.terminate()
 
 
 @fixture
 def ro_run(project, run, run_init_kwargs):
     """ReadOnlyRun pointing to the same run as the neptune_scale.Run"""
     return ReadOnlyRun(read_only_project=project, custom_id=run_init_kwargs["run_id"])
+
+
+@fixture
+def temp_dir():
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir).resolve()
+    except Exception:
+        # There are issues with windows workers: the temporary dir is being
+        # held busy which results in an error during cleanup. We ignore these for now.
+        if sys.platform != "win32":
+            raise
+
+
+def unique_path(prefix):
+    return f"{prefix}__{datetime.now(timezone.utc).isoformat('-', 'seconds')}__{str(uuid.uuid4())[-4:]}"
+
+
+def random_series(length=10, start_step=0):
+    """Return a 2-tuple of step and value lists, both of length `length`"""
+    assert length > 0
+    assert start_step >= 0
+
+    j = random.random()
+    # Round to 0 to avoid floating point errors
+    steps = [round((j + x) ** 2.0, 0) for x in range(start_step, length)]
+    values = [round((j + x) ** 3.0, 0) for x in range(len(steps))]
+
+    return steps, values

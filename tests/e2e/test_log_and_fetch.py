@@ -1,6 +1,6 @@
 import math
 import os
-import random
+import threading
 import time
 import uuid
 from datetime import (
@@ -12,11 +12,15 @@ import numpy as np
 from neptune_fetcher import ReadOnlyRun
 from pytest import mark
 
+from neptune_scale.api.run import Run
+
+from .conftest import (
+    random_series,
+    unique_path,
+)
+
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
-
-
-def unique_path(prefix):
-    return f"{prefix}__{datetime.now(timezone.utc).isoformat('-', 'seconds')}__{str(uuid.uuid4())[-4:]}"
+SYNC_TIMEOUT = 30
 
 
 def refresh(ro_run: ReadOnlyRun):
@@ -25,20 +29,7 @@ def refresh(ro_run: ReadOnlyRun):
     return ReadOnlyRun(read_only_project=ro_run.project, custom_id=ro_run["sys/custom_run_id"].fetch())
 
 
-def random_series(length=10, start_step=0):
-    """Return a 2-tuple of step and value lists, both of length `length`"""
-    assert length > 0
-    assert start_step >= 0
-
-    j = random.random()
-    # Round to 0 to avoid floating point errors
-    steps = [round((j + x) ** 2.0, 0) for x in range(start_step, length)]
-    values = [round((j + x) ** 3.0, 0) for x in range(len(steps))]
-
-    return steps, values
-
-
-def test_atoms(sync_run, ro_run):
+def test_atoms(run, ro_run):
     """Set atoms to a value, make sure it's equal when fetched"""
 
     now = time.time()
@@ -52,7 +43,8 @@ def test_atoms(sync_run, ro_run):
         "datetime-value": datetime.now(timezone.utc).replace(microsecond=0),
     }
 
-    sync_run.log_configs(data)
+    run.log_configs(data)
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     for key, value in data.items():
         assert ro_run[key].fetch() == value, f"Value for {key} does not match"
@@ -67,7 +59,8 @@ def test_atoms(sync_run, ro_run):
         "datetime-value": datetime.now(timezone.utc).replace(year=1999, microsecond=0),
     }
 
-    sync_run.log_configs(updated_data)
+    run.log_configs(updated_data)
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     # The data should stay the same, as we haven't purged the cache yet
     for key, value in data.items():
@@ -89,7 +82,7 @@ def test_series_no_prefetch(run, ro_run):
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing()
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     df = ro_run[path].fetch_values()
     assert df["step"].tolist() == steps
@@ -104,7 +97,7 @@ def test_single_series_with_prefetch(run, ro_run):
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing()
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     ro_run.prefetch_series_values([path], use_threads=True)
     df = ro_run[path].fetch_values()
@@ -118,7 +111,7 @@ def test_multiple_series_with_prefetch(run, ro_run):
     data = {f"{path_base}-{i}": i for i in range(20)}
 
     run.log_metrics(data, step=1)
-    run.wait_for_processing()
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     ro_run = refresh(ro_run)
     paths = [p for p in ro_run.field_names if p.startswith(path_base)]
@@ -141,7 +134,7 @@ def test_series_fetch_and_append(run, ro_run):
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing()
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     df = ro_run[path].fetch_values()
     assert df["step"].tolist() == steps
@@ -152,7 +145,7 @@ def test_series_fetch_and_append(run, ro_run):
     for step, value in zip(steps2, values2):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing()
+    run.wait_for_processing(SYNC_TIMEOUT)
 
     df = ro_run[path].fetch_values()
     assert df["step"].tolist() == steps + steps2
@@ -160,7 +153,36 @@ def test_series_fetch_and_append(run, ro_run):
 
 
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
-def test_single_non_finite_metric(value, sync_run, ro_run):
+def test_single_non_finite_metric(value, run, ro_run):
     path = unique_path("test_series/non_finite")
-    sync_run.log_metrics(data={path: value}, step=1)
+
+    run.log_metrics(data={path: value}, step=1)
+    run.wait_for_processing(SYNC_TIMEOUT)
     assert path not in refresh(ro_run).field_names
+
+
+def test_async_lag_callback():
+    event = threading.Event()
+    with Run(
+        project=NEPTUNE_PROJECT,
+        run_id=f"{uuid.uuid4()}",
+        async_lag_threshold=0.000001,
+        on_async_lag_callback=lambda: event.set(),
+    ) as run:
+        run.wait_for_processing(SYNC_TIMEOUT)
+
+        # First callback should be called after run creation
+        event.wait(timeout=60)
+        assert event.is_set()
+        event.clear()
+
+        run.log_configs(
+            data={
+                "parameters/learning_rate": 0.001,
+                "parameters/batch_size": 64,
+            },
+        )
+
+    # Second callback should be called after logging configs
+    event.wait(timeout=60)
+    assert event.is_set()

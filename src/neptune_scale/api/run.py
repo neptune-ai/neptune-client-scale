@@ -4,6 +4,12 @@ Python package
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+from types import TracebackType
+
+from neptune_scale.sync.operations_repository import OperationsRepository
+
 __all__ = ["Run"]
 
 import atexit
@@ -22,7 +28,6 @@ from typing import (
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.api.metrics import Metrics
@@ -35,7 +40,9 @@ from neptune_scale.api.validation import (
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
+    NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
+    NeptuneSynchronizationStopped,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
@@ -46,22 +53,19 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
-from neptune_scale.sync.operations_queue import OperationsQueue
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
-    MAX_QUEUE_SIZE,
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
+from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.sync.sync_process import SyncProcess
-from neptune_scale.util.abstract import (
-    Resource,
-    WithResources,
-)
+from neptune_scale.util import envs
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
+    MODE_ENV_NAME,
     PROJECT_ENV_NAME,
 )
 from neptune_scale.util.logger import get_logger
@@ -74,7 +78,7 @@ from neptune_scale.util.shared_var import (
 logger = get_logger()
 
 
-class Run(WithResources, AbstractContextManager):
+class Run(AbstractContextManager):
     """
     Representation of tracked metadata.
     """
@@ -86,12 +90,13 @@ class Run(WithResources, AbstractContextManager):
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
-        mode: Literal["async", "disabled"] = "async",
+        mode: Optional[Literal["async", "offline", "disabled"]] = None,
         experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
         fork_run_id: Optional[str] = None,
         fork_step: Optional[Union[int, float]] = None,
-        max_queue_size: int = MAX_QUEUE_SIZE,
+        log_directory: Optional[Union[str, Path]] = None,
+        max_queue_size: Optional[int] = None,
         async_lag_threshold: Optional[float] = None,
         on_async_lag_callback: Optional[Callable[[], None]] = None,
         on_queue_full_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
@@ -109,12 +114,15 @@ class Run(WithResources, AbstractContextManager):
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
             resume: Whether to resume an existing run.
-            mode: Mode of operation. If set to "disabled", the run doesn't log any metadata.
+            mode: Mode of operation. If set to "offline", metadata are stored locally. If set to "disabled", the run doesn't log any metadata.
             experiment_name: If creating a run as an experiment, name (ID) of the experiment to be associated with the run.
             creation_time: Custom creation time of the run.
             fork_run_id: If forking from an existing run, ID of the run to fork from.
             fork_step: If forking from an existing run, step number to fork from.
-            max_queue_size: Maximum number of operations in a queue.
+            log_directory: The base directory where the run's database will be stored. If the path is absolute,
+                it is used as provided. If the path is relative, it is treated as relative to the current
+                working directory. If set to None, the default is `.neptune` in the current working directory.
+            max_queue_size: Deprecated.
             async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
                 (in seconds). If the duration exceeds the threshold, the callback function is triggered.
             on_async_lag_callback: Callback function triggered when the duration between the queueing and synchronization
@@ -134,7 +142,7 @@ class Run(WithResources, AbstractContextManager):
         verify_type("creation_time", creation_time, (datetime, type(None)))
         verify_type("fork_run_id", fork_run_id, (str, type(None)))
         verify_type("fork_step", fork_step, (int, float, type(None)))
-        verify_type("max_queue_size", max_queue_size, int)
+        verify_type("log_directory", log_directory, (str, Path, type(None)))
         verify_type("async_lag_threshold", async_lag_threshold, (int, float, type(None)))
         verify_type("on_async_lag_callback", on_async_lag_callback, (Callable, type(None)))
         verify_type("on_queue_full_callback", on_queue_full_callback, (Callable, type(None)))
@@ -161,8 +169,8 @@ class Run(WithResources, AbstractContextManager):
         ):
             raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
 
-        if max_queue_size < 1:
-            raise ValueError("`max_queue_size` must be greater than 0.")
+        if max_queue_size is not None:
+            logger.warning("`max_queue_size` is deprecated and will be removed in a future version.")
 
         project = project or os.environ.get(PROJECT_ENV_NAME)
         if project:
@@ -172,11 +180,7 @@ class Run(WithResources, AbstractContextManager):
         assert project is not None  # mypy
         input_project: str = project
 
-        api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-        if api_token is None:
-            raise NeptuneApiTokenNotProvided()
-        assert api_token is not None  # mypy
-        input_api_token: str = api_token
+        mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
         verify_non_empty("run_id", run_id)
         if experiment_name is not None:
@@ -198,88 +202,105 @@ class Run(WithResources, AbstractContextManager):
         self._run_id: str = run_id
 
         self._lock = threading.RLock()
-        self._operations_queue: OperationsQueue = OperationsQueue(
-            lock=self._lock,
-            max_size=max_queue_size,
-        )
 
-        self._attr_store: AttributeStore = AttributeStore(self._project, self._run_id, self._operations_queue)
-
-        self._errors_queue: ErrorsQueue = ErrorsQueue()
-        self._errors_monitor = ErrorsMonitor(
-            errors_queue=self._errors_queue,
-            on_queue_full_callback=on_queue_full_callback,
-            on_network_error_callback=on_network_error_callback,
-            on_error_callback=on_error_callback,
-            on_warning_callback=on_warning_callback,
-        )
-
-        self._last_queued_seq = SharedInt(-1)
-        self._last_ack_seq = SharedInt(-1)
-        self._last_ack_timestamp = SharedFloat(-1)
-
-        self._process_link = ProcessLink()
-        self._sync_process = SyncProcess(
-            project=self._project,
-            family=self._run_id,
-            operations_queue=self._operations_queue.queue,
-            errors_queue=self._errors_queue,
-            process_link=self._process_link,
-            api_token=input_api_token,
-            last_queued_seq=self._last_queued_seq,
-            last_ack_seq=self._last_ack_seq,
-            last_ack_timestamp=self._last_ack_timestamp,
-            max_queue_size=max_queue_size,
-            mode=mode,
-        )
-        self._lag_tracker: Optional[LagTracker] = None
-        if async_lag_threshold is not None and on_async_lag_callback is not None:
-            self._lag_tracker = LagTracker(
-                errors_queue=self._errors_queue,
-                operations_queue=self._operations_queue,
-                last_ack_timestamp=self._last_ack_timestamp,
-                async_lag_threshold=async_lag_threshold,
-                on_async_lag_callback=on_async_lag_callback,
+        if mode in ("offline", "async"):
+            log_directory = log_directory or os.getenv(envs.LOG_DIRECTORY)
+            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, log_directory)
+            self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
+                db_path=operations_repository_path,
             )
-            self._lag_tracker.start()
+            self._operations_repo.init_db()
 
-        self._errors_monitor.start()
-        with self._lock:
-            self._sync_process.start()
-            self._process_link.start(on_link_closed=self._on_child_link_closed)
+            existing_metadata = self._operations_repo.get_metadata()
+            if existing_metadata is not None:
+                raise NeptuneDatabaseConflict(path=operations_repository_path)
+            self._operations_repo.save_metadata(self._project, self._run_id)
+
+            self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
+            self._attr_store: Optional[AttributeStore] = AttributeStore(
+                self._project, self._run_id, self._operations_repo, self._sequence_tracker
+            )
+        else:
+            self._operations_repo = None
+            self._sequence_tracker = None
+            self._attr_store = None
+
+        if mode == "async":
+            assert self._sequence_tracker is not None
+
+            api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
+            if api_token is None:
+                raise NeptuneApiTokenNotProvided()
+            assert api_token is not None  # mypy
+            input_api_token: str = api_token
+
+            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
+            self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
+                errors_queue=self._errors_queue,
+                on_queue_full_callback=on_queue_full_callback,
+                on_network_error_callback=on_network_error_callback,
+                on_error_callback=on_error_callback,
+                on_warning_callback=on_warning_callback,
+            )
+
+            self._last_queued_seq: Optional[SharedInt] = SharedInt(-1)
+            self._last_ack_seq: Optional[SharedInt] = SharedInt(-1)
+            self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(-1)
+
+            self._process_link: Optional[ProcessLink] = ProcessLink()
+            self._sync_process: Optional[SyncProcess] = SyncProcess(
+                project=self._project,
+                family=self._run_id,
+                operations_repository_path=operations_repository_path,
+                errors_queue=self._errors_queue,
+                process_link=self._process_link,
+                api_token=input_api_token,
+                last_queued_seq=self._last_queued_seq,
+                last_ack_seq=self._last_ack_seq,
+                last_ack_timestamp=self._last_ack_timestamp,
+            )
+
+            self._lag_tracker: Optional[LagTracker] = None
+            if async_lag_threshold is not None and on_async_lag_callback is not None:
+                self._lag_tracker = LagTracker(
+                    errors_queue=self._errors_queue,
+                    sequence_tracker=self._sequence_tracker,
+                    last_ack_timestamp=self._last_ack_timestamp,
+                    async_lag_threshold=async_lag_threshold,
+                    on_async_lag_callback=on_async_lag_callback,
+                )
+                self._lag_tracker.start()
+
+            self._errors_monitor.start()
+            with self._lock:
+                self._sync_process.start()
+                self._process_link.start(on_link_closed=self._on_child_link_closed)
+        else:
+            self._errors_queue = None
+            self._errors_monitor = None
+            self._last_queued_seq = None
+            self._last_ack_seq = None
+            self._last_ack_timestamp = None
+            self._process_link = None
+            self._sync_process = None
+            self._lag_tracker = None
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        if not resume:
+        if mode != "disabled" and not resume:
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
                 experiment_name=experiment_name,
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
-            self.wait_for_processing(verbose=False)
 
     def _on_child_link_closed(self, _: ProcessLink) -> None:
         with self._lock:
             if not self._is_closing:
-                logger.error("Child process closed unexpectedly.")
-                self._is_closing = True
-                self.terminate()
-
-    @property
-    def resources(self) -> tuple[Resource, ...]:
-        if self._lag_tracker is not None:
-            return (
-                self._errors_queue,
-                self._operations_queue,
-                self._lag_tracker,
-                self._errors_monitor,
-            )
-        return (
-            self._errors_queue,
-            self._operations_queue,
-            self._errors_monitor,
-        )
+                logger.error("The background synchronization process has stopped unexpectedly.")
+                if self._errors_queue is not None:
+                    self._errors_queue.put(NeptuneSynchronizationStopped())
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:
@@ -290,27 +311,33 @@ class Run(WithResources, AbstractContextManager):
 
             logger.debug(f"Run is closing, wait={wait}")
 
-        if self._sync_process.is_alive():
+        if self._sync_process is not None and self._sync_process.is_alive():
             if wait:
                 self.wait_for_processing()
 
             self._sync_process.terminate()
             self._sync_process.join()
+
+        if self._process_link is not None:
             self._process_link.stop()
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
-            self._lag_tracker.wake_up()
             self._lag_tracker.join()
 
-        self._errors_monitor.interrupt()
+        if self._errors_monitor is not None:
+            self._errors_monitor.interrupt()
 
-        # Don't call join() if being called from the error thread, as this will
-        # result in a "cannot join current thread" exception.
-        if threading.current_thread() != self._errors_monitor:
-            self._errors_monitor.join()
+            # Don't call join() if being called from the error thread, as this will
+            # result in a "cannot join current thread" exception.
+            if threading.current_thread() != self._errors_monitor:
+                self._errors_monitor.join()
 
-        super().close()
+        if self._operations_repo is not None:
+            self._operations_repo.close(cleanup_files=True)
+
+        if self._errors_queue is not None:
+            self._errors_queue.close()
 
     def terminate(self) -> None:
         """
@@ -332,9 +359,6 @@ class Run(WithResources, AbstractContextManager):
             )
             ```
         """
-
-        if not self._is_closing:
-            logger.info("Terminating Run.")
 
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
@@ -363,6 +387,14 @@ class Run(WithResources, AbstractContextManager):
             self._exit_func = None
         self._close(wait=True)
 
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        self.close()
+
     def _create_run(
         self,
         creation_time: datetime,
@@ -370,23 +402,25 @@ class Run(WithResources, AbstractContextManager):
         fork_run_id: Optional[str],
         fork_step: Optional[Union[int, float]],
     ) -> None:
+        if self._operations_repo is None or self._sequence_tracker is None:
+            logger.debug("Run is in mode that doesn't support creating runs.")
+            return
+
         fork_point: Optional[ForkPoint] = None
         if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
                 parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
             )
 
-        operation = RunOperation(
-            project=self._project,
-            run_id=self._run_id,
-            create=CreateRun(
-                family=self._run_id,
-                fork_point=fork_point,
-                experiment_id=experiment_name,
-                creation_time=None if creation_time is None else datetime_to_proto(creation_time),
-            ),
+        create_run = CreateRun(
+            family=self._run_id,
+            fork_point=fork_point,
+            experiment_id=experiment_name,
+            creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
-        self._operations_queue.enqueue(operation=operation)
+
+        sequence = self._operations_repo.save_create_run(create_run)
+        self._sequence_tracker.update_sequence_id(sequence)
 
     def log_metrics(
         self,
@@ -567,6 +601,10 @@ class Run(WithResources, AbstractContextManager):
         if self._is_closing:
             return
 
+        if self._attr_store is None:
+            logger.debug("Run is in mode that doesn't support logging.")
+            return
+
         self._attr_store.log(
             timestamp=timestamp,
             configs=configs,
@@ -579,7 +617,7 @@ class Run(WithResources, AbstractContextManager):
         self,
         phrase: str,
         sleep_time: float,
-        wait_seq: SharedInt,
+        wait_seq: Optional[SharedInt],
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
@@ -596,28 +634,28 @@ class Run(WithResources, AbstractContextManager):
         while True:
             try:
                 with self._lock:
-                    if not self._sync_process.is_alive():
-                        if verbose and not self._is_closing:
-                            # TODO: error out here?
-                            logger.warning("Sync process is not running")
+                    if self._sync_process is None or not self._sync_process.is_alive():
                         return  # No need to wait if the sync process is not running
+
+                    assert wait_seq is not None
+                    assert self._sequence_tracker is not None
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
-                    if wait_seq.value >= self._operations_queue.last_sequence_id:
+                    if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
 
-                last_queued_sequence_id = self._operations_queue.last_sequence_id
+                last_queued_sequence_id = self._sequence_tracker.last_sequence_id
 
                 if value == -1:
-                    if self._operations_queue.last_sequence_id != -1:
+                    if self._sequence_tracker.last_sequence_id != -1:
                         last_print_timestamp = print_message(
                             f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            self._operations_queue.last_sequence_id + 1,
+                            self._sequence_tracker.last_sequence_id + 1,
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
@@ -692,3 +730,12 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
         return current_time
 
     return last_print
+
+
+def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
+    sanitized_project = re.sub(r"[\\/]", "_", project)
+    sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
+    timestamp_ns = int(time.time() * 1e9)
+    directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
+
+    return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()

@@ -15,19 +15,14 @@
 #
 from __future__ import annotations
 
-__all__ = ("HostedApiClient", "MockedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
+__all__ = ("HostedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
 
 import abc
 import functools
 import os
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from http import HTTPStatus
-from typing import (
-    Any,
-    Literal,
-)
+from typing import Any
 
 import httpx
 from httpx import Timeout
@@ -53,8 +48,6 @@ from neptune_api.models import (
     ClientConfig,
     Error,
 )
-from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
@@ -62,7 +55,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
-from neptune_api.proto.neptune_pb.ingest.v1.pub.request_status_pb2 import RequestStatus
 from neptune_api.types import Response
 
 from neptune_scale.exceptions import (
@@ -71,7 +63,6 @@ from neptune_scale.exceptions import (
     NeptuneUnableToAuthenticateError,
 )
 from neptune_scale.sync.parameters import REQUEST_TIMEOUT
-from neptune_scale.util.abstract import Resource
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.util.logger import get_logger
 
@@ -122,12 +113,14 @@ def create_auth_api_client(
     )
 
 
-class ApiClient(Resource, abc.ABC):
+class ApiClient(abc.ABC):
     @abc.abstractmethod
     def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]: ...
 
     @abc.abstractmethod
     def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
+
+    def close(self) -> None: ...
 
 
 class HostedApiClient(ApiClient):
@@ -158,33 +151,7 @@ class HostedApiClient(ApiClient):
         self.backend.__exit__()
 
 
-class MockedApiClient(ApiClient):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
-        operation_count = len(operation.update_batch.snapshots) if operation.update_batch.snapshots else 1
-        request_ids = [str(uuid.uuid4()) for _ in range(operation_count)]
-        response = SubmitResponse(request_id=request_ids[-1], request_ids=request_ids)
-        return Response(content=b"", parsed=response, status_code=HTTPStatus.OK, headers={})
-
-    def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
-        response_body = BulkRequestStatus(
-            statuses=list(
-                map(
-                    lambda _: RequestStatus(
-                        code_by_count=[RequestStatus.CodeByCount(count=1, code=Code.OK, detail=IngestCode.OK)]
-                    ),
-                    request_ids,
-                )
-            )
-        )
-        return Response(content=b"", parsed=response_body, status_code=HTTPStatus.OK, headers={})
-
-
-def backend_factory(api_token: str, mode: Literal["async", "disabled"]) -> ApiClient:
-    if mode == "disabled":
-        return MockedApiClient()
+def backend_factory(api_token: str) -> ApiClient:
     return HostedApiClient(api_token=api_token)
 
 
