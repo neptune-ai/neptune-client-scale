@@ -1,3 +1,4 @@
+import time
 import uuid
 
 from neptune_scale import Run
@@ -20,6 +21,7 @@ def test_resume_false_with_matching_fork_point(api_token, caplog):
     ):
         pass
 
+    time.sleep(0.01)
     # Then try to create the same run again without resume
     with Run(
         project=project,
@@ -32,6 +34,7 @@ def test_resume_false_with_matching_fork_point(api_token, caplog):
     ):
         pass
 
+    time.sleep(0.01)
     # Then try to use the same run_id with a different project
     with Run(
         project=project + "2",
@@ -65,7 +68,7 @@ def test_resume_true(
         pass
 
     # Then resume the same run with matching fork point
-
+    time.sleep(0.01)
     with Run(
         project=project,
         api_token=api_token,
@@ -87,6 +90,7 @@ def test_resume_true_without_fork_point(
         pass
 
     # Then resume the run with a different fork point
+    time.sleep(0.01)
     with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="offline"):
         pass
 
