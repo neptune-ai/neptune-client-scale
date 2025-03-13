@@ -128,7 +128,7 @@ class OperationsRepository:
                     f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
                 )
 
-            with self._get_connection() as conn:
+            with self._get_connection() as conn:  # type: ignore
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
