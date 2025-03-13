@@ -140,7 +140,7 @@ class OperationsRepository:
     def _chunk_operations(self, updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
         """
         Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
-        Each item in a batch is a tuple of (serialized_operation, operation_size_bytes).
+        Returns serialized operations in a list of batches.
         """
         batches: list[list[bytes]] = []
         current_batch: list[bytes] = []
@@ -172,7 +172,7 @@ class OperationsRepository:
 
     def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> SequenceId:
         """
-        Inserts each operation into 'run_operations' under its own transaction context.
+        Inserts operations into 'run_operations' in a single transaction.
         """
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
