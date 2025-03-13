@@ -100,6 +100,16 @@ class OperationsRepository:
                 )
                 """
             )
+
+            # This index is necessary for the get_operations method to work efficiently
+            # It allows the initial query (retrieving sizes) to be done without reading the operations.
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_run_operations_sequence_size
+                    ON run_operations (sequence_id, operation_size_bytes);
+                """
+            )
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -212,6 +222,7 @@ class OperationsRepository:
         if from_exclusive is None:
             from_exclusive = SequenceId(-1)
 
+        rows = []
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
@@ -260,7 +271,9 @@ class OperationsRepository:
                 ),
             )
 
-            return [_deserialize_operation(row) for row in cursor.fetchall()]
+            rows = cursor.fetchall()
+
+        return [_deserialize_operation(row) for row in rows]
 
     def delete_operations(self, up_to_seq_id: SequenceId) -> int:
         if up_to_seq_id <= 0:
