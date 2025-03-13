@@ -13,7 +13,7 @@ from neptune_scale.util.styles import (
 class NeptuneWarning(Warning): ...
 
 
-LOG_FORMAT = "{blue}%(name)s{end}:{bold}%(levelname)s{end}: %(message)s"
+LOG_FORMAT = "%(asctime)s {blue}%(name)s{end}:{bold}%(levelname)s{end}: %(message)s"
 DEBUG_FORMAT = (
     "%(asctime)s:%(name)s:%(levelname)s:%(processName)s(%(process)d):%(threadName)s:%(filename)s:"
     "%(funcName)s():%(lineno)d: %(message)s"

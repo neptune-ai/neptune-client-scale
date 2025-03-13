@@ -111,29 +111,31 @@ class OperationsRepository:
             )
 
     def save_update_run_snapshots(self, ops: list[UpdateRunSnapshot]) -> SequenceId:
+        """
+        This method saves each operation from the list in a separate transaction.
+        The reason is so that a single large operations batch doesn't lock the database for indefinite time.
+        This was introduced after observing that the sync process timed-out on attempting to acquire a lock.
+        """
         current_time = int(time.time() * 1000)  # milliseconds timestamp
-        params = []
 
         for update in ops:
             serialized_operation = update.SerializeToString()
             operation_size_bytes = len(serialized_operation)
 
             if operation_size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
-                raise RuntimeError(f"Operation size is too large: {operation_size_bytes} bytes")
+                raise RuntimeError(
+                    f"Operation size ({operation_size_bytes}) exceeds operation "
+                    f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes")
 
-            params.append((current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes))
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes)
+                )
+                last_insert_rowid: int = cursor.lastrowid
 
-        with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
-
-            cursor.executemany(
-                "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                params,
-            )
-            cursor.execute("SELECT last_insert_rowid()")
-            last_insert_rowid: int = cursor.fetchone()[0]
-
-            return SequenceId(last_insert_rowid)
+        return SequenceId(last_insert_rowid)
 
     def save_create_run(self, run: CreateRun) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
