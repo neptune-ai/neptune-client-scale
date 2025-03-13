@@ -635,6 +635,7 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
                         return  # No need to wait if the sync process is not running
 
                     assert wait_seq is not None
