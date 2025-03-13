@@ -6,10 +6,7 @@ __all__ = ("MetadataSplitter",)
 
 import math
 import warnings
-from collections.abc import (
-    Callable,
-    Iterator,
-)
+from collections.abc import Iterator
 from datetime import datetime
 from typing import (
     Any,
@@ -23,7 +20,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     Preview,
     UpdateRunSnapshot,
-    Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
@@ -46,6 +42,9 @@ from neptune_scale.util import (
 logger = get_logger()
 
 T = TypeVar("T", bound=Any)
+
+
+SINGLE_FLOAT_VALUE_SIZE = make_value(1.0).ByteSize()
 
 
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
@@ -93,14 +92,14 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         update = self._make_empty_update_snapshot()
         size = update.ByteSize()
 
-        size = self.populate(
+        size = self.populate_assign(
+            update=update,
             assets=self._configs,
-            update_producer=lambda key, value: update.assign[key].MergeFrom(value),
             size=size,
         )
-        size = self.populate(
+        size = self.populate_append(
+            update=update,
             assets=self._metrics_data,
-            update_producer=lambda key, value: update.append[key].MergeFrom(value),
             size=size,
         )
         size = self.populate_tags(
@@ -122,10 +121,10 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         else:
             raise StopIteration
 
-    def populate(
+    def populate_assign(
         self,
-        assets: Optional[peekable[Any]],
-        update_producer: Callable[[str, Value], None],
+        update: UpdateRunSnapshot,
+        assets: Optional[peekable[tuple[str, Any]]],
         size: int,
     ) -> int:
         if not assets:
@@ -143,7 +142,31 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             if new_size > self._max_update_bytes_size:
                 break
 
-            update_producer(key, proto_value)
+            update.assign[key].MergeFrom(proto_value)
+            size, _ = new_size, next(assets)
+
+        return size
+
+    def populate_append(
+        self,
+        update: UpdateRunSnapshot,
+        assets: Optional[peekable[tuple[str, float]]],
+        size: int,
+    ) -> int:
+        if not assets:
+            return size
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, value = assets.peek()
+            except StopIteration:
+                break
+
+            new_size = size + pb_key_size(key) + SINGLE_FLOAT_VALUE_SIZE + 6
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.append[key].float64 = value
             size, _ = new_size, next(assets)
 
         return size
