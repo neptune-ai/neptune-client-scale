@@ -92,7 +92,7 @@ class OperationsRepository:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS run_operations (
-                    sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sequence_id INTEGER PRIMARY KEY,
                     timestamp INTEGER NOT NULL,
                     operation_type INTEGER NOT NULL,
                     operation BLOB NOT NULL,
@@ -103,7 +103,7 @@ class OperationsRepository:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id INTEGER PRIMARY KEY,
                     version TEXT NOT NULL,
                     project TEXT NOT NULL,
                     run_id TEXT NOT NULL
