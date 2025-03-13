@@ -208,39 +208,53 @@ class SyncProcess(Process):
 
         status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         operations_repository = OperationsRepository(db_path=self._operations_repository_path)
-        threads = [
-            SenderThread(
-                api_token=self._api_token,
-                operations_repository=operations_repository,
-                status_tracking_queue=status_tracking_queue,
-                errors_queue=self._errors_queue,
-                family=self._family,
-                last_queued_seq=self._last_queued_seq,
-            ),
-            StatusTrackingThread(
-                api_token=self._api_token,
-                project=self._project,
-                operations_repository=operations_repository,
-                errors_queue=self._errors_queue,
-                status_tracking_queue=status_tracking_queue,
-                last_ack_seq=self._last_ack_seq,
-                last_ack_timestamp=self._last_ack_timestamp,
-            ),
-        ]
+        sender_thread = SenderThread(
+            api_token=self._api_token,
+            operations_repository=operations_repository,
+            status_tracking_queue=status_tracking_queue,
+            errors_queue=self._errors_queue,
+            family=self._family,
+            last_queued_seq=self._last_queued_seq,
+        )
+        status_thread = StatusTrackingThread(
+            api_token=self._api_token,
+            project=self._project,
+            operations_repository=operations_repository,
+            errors_queue=self._errors_queue,
+            status_tracking_queue=status_tracking_queue,
+            last_ack_seq=self._last_ack_seq,
+            last_ack_timestamp=self._last_ack_timestamp,
+        )
+        threads = [sender_thread, status_thread]
+
         for thread in threads:
             thread.start()
 
         try:
+            sender_thread_error_logged = False
             while not self._stop_event.is_set():
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
+
+                if not sender_thread.is_alive():
+                    if status_tracking_queue.peek(max_size=1) is None:
+                        logger.error("SyncProcess: sender thread closed unexpectedly. Exiting")
+                        break
+                    elif not sender_thread_error_logged:
+                        logger.error(
+                            "SyncProcess: sender thread closed unexpectedly. Waiting for status tracking thread to finish"
+                        )
+                        sender_thread_error_logged = True
+
+                if not status_thread.is_alive():
+                    logger.error("SyncProcess: status tracking thread closed unexpectedly. Exiting")
+                    break
         except KeyboardInterrupt:
             logger.debug("Data synchronization interrupted by user")
         finally:
             logger.info("Data synchronization stopping")
             for thread in threads:
                 thread.interrupt()
-                thread.wake_up()
 
             for thread in threads:
                 thread.join(timeout=SHUTDOWN_TIMEOUT)
