@@ -125,13 +125,14 @@ class OperationsRepository:
             if operation_size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
                 raise RuntimeError(
                     f"Operation size ({operation_size_bytes}) exceeds operation "
-                    f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes")
+                    f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
+                )
 
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes)
+                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes),
                 )
                 last_insert_rowid: int = cursor.lastrowid
 
