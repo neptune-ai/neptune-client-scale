@@ -393,6 +393,7 @@ class OperationsRepository:
                 )
 
                 self._connection.execute("PRAGMA journal_mode = WAL")
+                self._connection.execute("PRAGMA synchronous = FULL")
 
                 logger.debug(f"Created new SQLite connection for {self._db_path}")
 
