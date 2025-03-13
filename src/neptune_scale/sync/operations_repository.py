@@ -112,12 +112,18 @@ class OperationsRepository:
 
     def save_update_run_snapshots(self, ops: list[UpdateRunSnapshot]) -> SequenceId:
         """
-        This method saves each operation from the list in a separate transaction.
-        The reason is so that a single large operations batch doesn't lock the database for indefinite time.
+        This method guarantees that:
+        - the order of operations saved to the DB is preserved within a single call,
+        - the timestamp is consistent for all operations in a single call,
+        - when called by multiple threads, the operations are not interleaved between threads,
+
+        It returns -1 when the list of operations is empty.
+
+        This method saves each operation from the list in a separate transaction,
+        so that a single large operations batch doesn't lock the database for indefinite time.
         This was introduced after observing that the sync process timed-out on attempting to acquire a lock.
         """
-        current_time = int(time.time() * 1000)  # milliseconds timestamp
-
+        rows = []
         for update in ops:
             serialized_operation = update.SerializeToString()
             operation_size_bytes = len(serialized_operation)
@@ -127,14 +133,26 @@ class OperationsRepository:
                     f"Operation size ({operation_size_bytes}) exceeds operation "
                     f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
                 )
+            rows.append((serialized_operation, operation_size_bytes))
 
-            with self._get_connection() as conn:  # type: ignore
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes),
-                )
-                last_insert_rowid: int = cursor.lastrowid
+        last_insert_rowid: int = -1
+        if not rows:
+            return SequenceId(last_insert_rowid)
+
+        with self._lock:
+            # Taking the lock before the loop to ensure that the operations are not interleaved with other threads.
+            # This also provides the invariant that timestamp is consistent for all operations in a single call,
+            # yet always non-decreasing.
+            current_time = int(time.time() * 1000)  # milliseconds timestamp
+            for row in rows:
+                serialized_operation, operation_size_bytes = row
+                with self._get_connection() as conn:  # type: ignore
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                        (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes),
+                    )
+                    last_insert_rowid = cursor.lastrowid
 
         return SequenceId(last_insert_rowid)
 

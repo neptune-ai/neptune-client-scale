@@ -91,10 +91,11 @@ def test_save_update_run_snapshots_empty_list(operations_repo, temp_db_path):
     snapshots = []
 
     # When
-    operations_repo.save_update_run_snapshots(snapshots)
+    sequence_id = operations_repo.save_update_run_snapshots(snapshots)
 
     # Then
     count = get_operation_count(temp_db_path)
+    assert sequence_id == -1
     assert count == 0
 
 
@@ -356,7 +357,7 @@ def test_get_operations_up_to_bytes_too_small(operations_repo):
 
 
 def test_save_update_run_snapshots_too_large(operations_repo):
-    with pytest.raises(RuntimeError, match="Operation size is too large: 2097172 bytes"):
+    with pytest.raises(RuntimeError, match="Operation size \(2097172\) exceeds operation size limit of 2097152 bytes"):
         operations_repo.save_update_run_snapshots(
             [UpdateRunSnapshot(assign={"key": Value(string="a" * 1024 * 1024 * 2)})]
         )
