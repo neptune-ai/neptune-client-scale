@@ -100,6 +100,16 @@ class OperationsRepository:
                 )
                 """
             )
+
+            # This index is necessary for the get_operations method to work efficiently
+            # It allows the initial query (retrieving sizes) to be done without reading the operations.
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_run_operations_sequence_size
+                    ON run_operations (sequence_id, operation_size_bytes);
+                """
+            )
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
