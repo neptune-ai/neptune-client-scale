@@ -215,48 +215,31 @@ class OperationsRepository:
         with self._get_connection() as conn:  # type: ignore
             cursor = conn.cursor()
 
-            def find_last_sequence_id_up_to_bytes() -> Optional[SequenceId]:
-                limit = 50_000  # 2 * 8 bytes * 50_000 = 0.8MB
-                _last_sequence_id = from_exclusive
-                total_operations_size_bytes = 0
-
-                while True:
-                    cursor.execute(
-                        """
-                        SELECT sequence_id, operation_size_bytes
-                        FROM run_operations
-                        WHERE sequence_id > ?
-                        ORDER BY sequence_id ASC
-                        LIMIT ?
-                    """,
-                        (_last_sequence_id, limit),
-                    )
-                    rows = cursor.fetchall()
-                    if not rows:
-                        return _last_sequence_id
-                    for sequence_id, operation_size_bytes in rows:
-                        if (total_operations_size_bytes + operation_size_bytes) > up_to_bytes:
-                            return _last_sequence_id
-                        _last_sequence_id = SequenceId(sequence_id)
-                        total_operations_size_bytes += operation_size_bytes
-
-                    # If we have less than limit rows, we can return the last sequence id
-                    if len(rows) < limit:
-                        return _last_sequence_id
-
-            last_sequence_id = find_last_sequence_id_up_to_bytes()
-            if last_sequence_id is None:
-                return []
             cursor.execute(
                 """
+                WITH running_size AS (
+                    SELECT
+                        sequence_id,
+                        SUM(operation_size_bytes) FILTER (WHERE sequence_id > ?) OVER (ORDER BY sequence_id ASC) AS cumulative_size
+                    FROM run_operations
+                    ORDER BY sequence_id ASC
+                )
                 SELECT sequence_id, timestamp, operation, operation_type, operation_size_bytes
                 FROM run_operations
-                WHERE sequence_id > ? AND sequence_id <= ?
+                WHERE sequence_id > ? AND sequence_id < IFNULL((
+                    SELECT sequence_id
+                    FROM running_size
+                    WHERE cumulative_size > ?
+                    LIMIT 1
+                ), (
+                    SELECT MAX(sequence_id) + 1 FROM run_operations
+                ))
                 ORDER BY sequence_id ASC
                 """,
                 (
                     from_exclusive,
-                    last_sequence_id,
+                    from_exclusive,
+                    up_to_bytes,
                 ),
             )
 
