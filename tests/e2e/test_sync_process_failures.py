@@ -118,6 +118,15 @@ def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_
     assert operations[2].operation.append["metric"].float64 == 6.0
 
 
+@pytest.mark.timeout(TEST_TIMEOUT)
+def test_sync_process_dies_after_sync_thread_dies():
+    run = Run(run_id=str(uuid.uuid4()), api_token="fake")
+
+    # fake token should cause SyncThread to die
+
+    run.wait_for_processing()  # assert that it ends
+
+
 class MockSyncProcess(multiprocessing.Process):
     """A SyncProcess mock that does nothing except:
 
