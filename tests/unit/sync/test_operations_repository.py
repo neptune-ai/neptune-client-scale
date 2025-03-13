@@ -357,7 +357,7 @@ def test_get_operations_up_to_bytes_too_small(operations_repo):
 
 
 def test_save_update_run_snapshots_too_large(operations_repo):
-    with pytest.raises(RuntimeError, match="Operation size \(2097172\) exceeds operation size limit of 2097152 bytes"):
+    with pytest.raises(RuntimeError, match=r"Operation size \(2097172\) exceeds the limit of 2097152 bytes"):
         operations_repo.save_update_run_snapshots(
             [UpdateRunSnapshot(assign={"key": Value(string="a" * 1024 * 1024 * 2)})]
         )

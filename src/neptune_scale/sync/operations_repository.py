@@ -110,51 +110,84 @@ class OperationsRepository:
                 )"""
             )
 
-    def save_update_run_snapshots(self, ops: list[UpdateRunSnapshot]) -> SequenceId:
+    def save_update_run_snapshots(self, updates: list[UpdateRunSnapshot]) -> SequenceId:
         """
-        This method guarantees that:
-        - the order of operations saved to the DB is preserved within a single call,
-        - the timestamp is consistent for all operations in a single call,
-        - when called by multiple threads, the operations are not interleaved between threads,
+        Guarantees:
+        - The order of operations saved to the DB is preserved within a single call.
+        - The timestamp is consistent for all operations in a single call.
+        - When called by multiple threads, operations are not interleaved between threads.
 
-        It returns -1 when the list of operations is empty.
+        Returns -1 when the list of operations is empty.
 
-        This method saves each operation from the list in a separate transaction,
-        so that a single large operations batch doesn't lock the database for indefinite time.
-        This was introduced after observing that the sync process timed-out on attempting to acquire a lock.
+        This method saves each chunk of operations in a separate transaction, so that
+        a single large batch doesn’t lock the database for an extended period of time.
         """
-        rows = []
-        for update in ops:
-            serialized_operation = update.SerializeToString()
-            operation_size_bytes = len(serialized_operation)
 
-            if operation_size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
-                raise RuntimeError(
-                    f"Operation size ({operation_size_bytes}) exceeds operation "
-                    f"size limit of {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
-                )
-            rows.append((serialized_operation, operation_size_bytes))
+        if not updates:
+            return SequenceId(-1)
 
-        last_insert_rowid: int = -1
-        if not rows:
-            return SequenceId(last_insert_rowid)
+        # Chunk the operations so that no batch exceeds MAX_SINGLE_OPERATION_SIZE_BYTES.
+        chunked_ops = self._chunk_operations(updates)
 
+        last_insert_rowid = -1
         with self._lock:
-            # Taking the lock before the loop to ensure that the operations are not interleaved with other threads.
-            # This also provides the invariant that timestamp is consistent for all operations in a single call,
-            # yet always non-decreasing.
-            current_time = int(time.time() * 1000)  # milliseconds timestamp
-            for row in rows:
-                serialized_operation, operation_size_bytes = row
-                with self._get_connection() as conn:  # type: ignore
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                        (current_time, OperationType.UPDATE_SNAPSHOT, serialized_operation, operation_size_bytes),
-                    )
-                    last_insert_rowid = cursor.lastrowid
+            current_time = int(time.time() * 1000)  # millisecond timestamp
+            for chunk in chunked_ops:
+                last_insert_rowid = self._insert_update_run_snapshots(chunk, current_time)
 
         return SequenceId(last_insert_rowid)
+
+    def _chunk_operations(self, updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
+        """
+        Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
+        Each item in a batch is a tuple of (serialized_operation, operation_size_bytes).
+        """
+        batches: list[list[bytes]] = []
+        current_batch: list[bytes] = []
+        current_batch_size = 0
+
+        for update in updates:
+            serialized = update.SerializeToString()
+            size_bytes = len(serialized)
+
+            if size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
+                raise RuntimeError(
+                    f"Operation size ({size_bytes}) exceeds the limit of " f"{MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
+                )
+
+            # If adding this operation would exceed the limit, start a new batch.
+            if current_batch_size + size_bytes > MAX_SINGLE_OPERATION_SIZE_BYTES:
+                batches.append(current_batch)
+                current_batch = []
+                current_batch_size = 0
+
+            current_batch.append(serialized)
+            current_batch_size += size_bytes
+
+        # Add the last batch if it's not empty
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
+    def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> SequenceId:
+        """
+        Inserts each operation into 'run_operations' under its own transaction context.
+        """
+        with self._get_connection() as conn:  # type: ignore
+            cursor = conn.cursor()
+            cursor.executemany(
+                """
+                INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))
+                    for serialized_op in ops
+                ],
+            )
+            cursor.execute("SELECT last_insert_rowid()")
+            return SequenceId(cursor.fetchone()[0])
 
     def save_create_run(self, run: CreateRun) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
