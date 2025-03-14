@@ -77,7 +77,7 @@ from neptune_scale.net.api_client import (
 )
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.parameters import (
-    MAX_REQUEST_RETRY_SECONDS,
+    HTTP_REQUEST_MAX_TIME_SECONDS,
     MAX_REQUEST_SIZE_BYTES,
     MAX_REQUESTS_STATUS_BATCH_SIZE,
     SHUTDOWN_TIMEOUT,
@@ -285,7 +285,7 @@ class SenderThread(Daemon):
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
 
-    @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=MAX_REQUEST_RETRY_SECONDS)
+    @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
@@ -450,7 +450,7 @@ class StatusTrackingThread(Daemon):
         except queue.Empty:
             return None
 
-    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=MAX_REQUEST_RETRY_SECONDS)
+    @backoff.on_exception(backoff.expo, NeptuneConnectionLostError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
     @with_api_errors_handling
     def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:

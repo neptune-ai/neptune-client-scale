@@ -62,7 +62,7 @@ from neptune_scale.exceptions import (
     NeptuneInvalidCredentialsError,
     NeptuneUnableToAuthenticateError,
 )
-from neptune_scale.sync.parameters import REQUEST_TIMEOUT
+from neptune_scale.sync.parameters import HTTP_CLIENT_NETWORKING_TIMEOUT
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
 from neptune_scale.util.logger import get_logger
 
@@ -88,7 +88,7 @@ def get_config_and_token_urls(
         base_url=credentials.base_url,
         follow_redirects=True,
         verify_ssl=verify_ssl,
-        timeout=Timeout(timeout=REQUEST_TIMEOUT),
+        timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     ) as client:
         config = get_client_config.sync(client=client)
         if config is None or isinstance(config, Error):
@@ -109,7 +109,7 @@ def create_auth_api_client(
         api_key_exchange_callback=exchange_api_key,
         follow_redirects=True,
         verify_ssl=verify_ssl,
-        timeout=Timeout(timeout=REQUEST_TIMEOUT),
+        timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     )
 
 
