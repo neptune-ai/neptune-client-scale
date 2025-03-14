@@ -655,7 +655,7 @@ class Run(AbstractContextManager):
                     if self._sequence_tracker.last_sequence_id != -1:
                         last_print_timestamp = print_message(
                             f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            self._sequence_tracker.last_sequence_id + 1,
+                            self._sequence_tracker.last_sequence_id,
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
@@ -668,7 +668,7 @@ class Run(AbstractContextManager):
                 elif value < last_queued_sequence_id:
                     last_print_timestamp = print_message(
                         f"Waiting for remaining %d operation(s) to be {phrase}",
-                        last_queued_sequence_id - value + 1,
+                        last_queued_sequence_id - value,
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )
