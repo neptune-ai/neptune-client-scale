@@ -455,3 +455,28 @@ def test_cleanup_repository_resume(temp_db_path):
 
     # then
     assert not os.path.exists(temp_db_path)
+
+
+def test_concurrent_delete_sqlite_busy(temp_db_path):
+    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=0.1)
+    operations_repo.init_db()
+
+    conn = sqlite3.connect(temp_db_path)
+    conn.execute("BEGIN")
+    cursor = conn.cursor()
+
+    op = UpdateRunSnapshot(assign={"key": Value(string="value")})
+    serialized_op = op.SerializeToString()
+    cursor.executemany(
+        """
+        INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
+        VALUES (?, ?, ?, ?)
+        """,
+        [(12345, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))],
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        operations_repo.delete_operations(up_to_seq_id=SequenceId(1))
+
+    conn.commit()
+    conn.close()
