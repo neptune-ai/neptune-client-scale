@@ -458,7 +458,7 @@ def test_cleanup_repository_resume(temp_db_path):
 
 
 def test_concurrent_delete_sqlite_busy(temp_db_path):
-    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=0.1)
+    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=1)
     operations_repo.init_db()
 
     conn = sqlite3.connect(temp_db_path)
@@ -480,3 +480,4 @@ def test_concurrent_delete_sqlite_busy(temp_db_path):
 
     conn.commit()
     conn.close()
+    operations_repo.close(cleanup_files=True)

@@ -77,8 +77,6 @@ class OperationsRepository:
       - version TEXT: Version identifier
       - project TEXT: Project identifier
       - run_id TEXT: Run identifier
-      - parent_run_id TEXT: Parent run identifier (optional)
-      - fork_step REAL: Fork step (optional)
     """
 
     def __init__(
