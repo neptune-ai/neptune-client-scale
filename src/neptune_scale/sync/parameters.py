@@ -10,8 +10,11 @@ SYNC_PROCESS_SLEEP_TIME = 1
 LAG_TRACKER_THREAD_SLEEP_TIME = 1
 
 # Networking
-REQUEST_TIMEOUT = 30
-MAX_REQUEST_RETRY_SECONDS = 60
+# This timeout is applied to each networking call individually: connect, write, and read. Thus, it is
+# not a timeout for an entire API call.
+HTTP_CLIENT_NETWORKING_TIMEOUT = 30
+# We allow this many seconds for a single HTTP request, including retries.
+HTTP_REQUEST_MAX_TIME_SECONDS = 360
 
 # User facing
 SHUTDOWN_TIMEOUT = 60  # 1 minute
