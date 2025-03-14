@@ -253,7 +253,9 @@ class OperationsRepository:
                 ),
             )
 
-            return [_deserialize_operation(row) for row in cursor.fetchall()]
+            rows = cursor.fetchall()
+
+        return [_deserialize_operation(row) for row in rows]
 
     def delete_operations(self, up_to_seq_id: SequenceId) -> int:
         if up_to_seq_id <= 0:
