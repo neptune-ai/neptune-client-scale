@@ -81,13 +81,18 @@ class OperationsRepository:
       - fork_step REAL: Fork step (optional)
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        timeout: Optional[int] = None,
+    ) -> None:
         if not db_path.is_absolute():
             raise RuntimeError("db_path must be an absolute path")
 
         self._db_path = db_path
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
+        self._timeout = timeout if timeout is not None else OPERATION_REPOSITORY_TIMEOUT
 
     def init_db(self) -> None:
         os.makedirs(self._db_path.parent, exist_ok=True)
@@ -374,7 +379,7 @@ class OperationsRepository:
             if self._connection is None:
                 self._connection = sqlite3.connect(
                     self._db_path,
-                    timeout=OPERATION_REPOSITORY_TIMEOUT,
+                    timeout=self._timeout,
                     check_same_thread=False,  # we use RLock to synchronize access
                 )
 
