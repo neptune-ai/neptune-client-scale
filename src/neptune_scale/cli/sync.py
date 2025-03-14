@@ -116,6 +116,10 @@ class SyncRunner:
         ) as progress_bar:
             while True:
                 try:
+                    if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        return
+
                     with self._last_ack_seq:
                         self._last_ack_seq.wait(timeout=wait_time)
                         last_ack_seq_id = self._last_ack_seq.value
