@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+from neptune_scale.sync.parameters import (
+    MAX_SINGLE_OPERATION_SIZE_BYTES,
+    OPERATION_REPOSITORY_TIMEOUT,
+)
 
 __all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
 
@@ -371,6 +374,7 @@ class OperationsRepository:
             if self._connection is None:
                 self._connection = sqlite3.connect(
                     self._db_path,
+                    timeout=OPERATION_REPOSITORY_TIMEOUT,
                     check_same_thread=False,  # we use RLock to synchronize access
                 )
 
