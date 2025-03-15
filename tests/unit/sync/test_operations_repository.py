@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sqlite3
 import tempfile
@@ -11,7 +12,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Value,
 )
 
-from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
+from neptune_scale.exceptions import (
+    NeptuneLocalStorageInUnsupportedVersion,
+    NeptuneUnableToLogData,
+)
 from neptune_scale.sync.operations_repository import (
     Metadata,
     OperationsRepository,
@@ -19,6 +23,7 @@ from neptune_scale.sync.operations_repository import (
     SequenceId,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+from neptune_scale.util import envs
 
 
 @pytest.fixture
@@ -457,14 +462,84 @@ def test_cleanup_repository_resume(temp_db_path):
     assert not os.path.exists(temp_db_path)
 
 
+@pytest.mark.parametrize("log_failure_action", [None, "raise", "drop"])
+def test_concurrent_save_update_run_snapshots(monkeypatch, temp_db_path, log_failure_action):
+    if log_failure_action:
+        monkeypatch.setenv(envs.LOG_FAILURE_ACTION, log_failure_action)
+    else:
+        monkeypatch.delenv(envs.LOG_FAILURE_ACTION, raising=False)
+
+    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=1)
+    operations_repo.init_db()
+
+    with _concurrent_transaction_cursor(temp_db_path) as cursor:
+        _write_run_operation(cursor)
+
+        if log_failure_action == "raise":
+            with pytest.raises(NeptuneUnableToLogData):
+                (operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})]),)
+        else:
+            (operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})]),)
+
+    operations_repo.close(cleanup_files=True)
+
+
+@pytest.mark.parametrize(
+    "save_operation",
+    [
+        lambda repo: repo.save_metadata(project="test", run_id="test"),
+        lambda repo: repo.save_create_run(CreateRun(family="test-run-id", experiment_id="Test Run")),
+    ],
+)
+def test_concurrent_saves_other(monkeypatch, temp_db_path, save_operation):
+    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=1)
+    operations_repo.init_db()
+
+    with _concurrent_transaction_cursor(temp_db_path) as cursor:
+        _write_run_operation(cursor)
+
+        with pytest.raises(NeptuneUnableToLogData):
+            save_operation(operations_repo)
+
+    operations_repo.close(cleanup_files=True)
+
+
+def test_concurrent_reads(temp_db_path):
+    operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=1)
+    operations_repo.init_db()
+
+    with _concurrent_transaction_cursor(temp_db_path) as cursor:
+        _write_run_operation(cursor)
+
+        operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
+        operations_repo.get_metadata()
+        operations_repo.get_sequence_id_range()
+    operations_repo.close(cleanup_files=True)
+
+
 def test_concurrent_delete_sqlite_busy(temp_db_path):
     operations_repo = OperationsRepository(db_path=Path(temp_db_path), timeout=1)
     operations_repo.init_db()
 
+    with _concurrent_transaction_cursor(temp_db_path) as cursor:
+        _write_run_operation(cursor)
+
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            operations_repo.delete_operations(up_to_seq_id=SequenceId(1))
+    operations_repo.close(cleanup_files=True)
+
+
+@contextlib.contextmanager
+def _concurrent_transaction_cursor(temp_db_path):
     conn = sqlite3.connect(temp_db_path)
     conn.execute("BEGIN")
     cursor = conn.cursor()
+    yield cursor
+    conn.commit()
+    conn.close()
 
+
+def _write_run_operation(cursor):
     op = UpdateRunSnapshot(assign={"key": Value(string="value")})
     serialized_op = op.SerializeToString()
     cursor.executemany(
@@ -474,10 +549,3 @@ def test_concurrent_delete_sqlite_busy(temp_db_path):
         """,
         [(12345, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))],
     )
-
-    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
-        operations_repo.delete_operations(up_to_seq_id=SequenceId(1))
-
-    conn.commit()
-    conn.close()
-    operations_repo.close(cleanup_files=True)

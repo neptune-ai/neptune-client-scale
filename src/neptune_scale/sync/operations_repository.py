@@ -20,6 +20,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import (
+    Literal,
     Optional,
     Union,
 )
@@ -27,8 +28,14 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
 
-from neptune_scale.exceptions import NeptuneLocalStorageInUnsupportedVersion
-from neptune_scale.util import get_logger
+from neptune_scale.exceptions import (
+    NeptuneLocalStorageInUnsupportedVersion,
+    NeptuneUnableToLogData,
+)
+from neptune_scale.util import (
+    envs,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -90,7 +97,15 @@ class OperationsRepository:
         self._db_path = db_path
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
+
         self._timeout = timeout if timeout is not None else OPERATION_REPOSITORY_TIMEOUT
+
+        log_failure_action = os.getenv(envs.LOG_FAILURE_ACTION, "drop")
+        if log_failure_action not in ("drop", "raise"):
+            raise ValueError(
+                f"Invalid value '{log_failure_action}' for {envs.LOG_FAILURE_ACTION}. Must be 'drop' or 'raise'."
+            )
+        self._log_failure_action: Literal["raise", "drop"] = log_failure_action  # type: ignore
 
     def init_db(self) -> None:
         os.makedirs(self._db_path.parent, exist_ok=True)
@@ -145,13 +160,15 @@ class OperationsRepository:
         # Chunk the operations so that no batch exceeds MAX_SINGLE_OPERATION_SIZE_BYTES.
         chunked_ops = self._chunk_operations(updates)
 
-        last_insert_rowid = -1
+        last_insert_rowid = SequenceId(-1)
         with self._lock:
             current_time = int(time.time() * 1000)  # millisecond timestamp
             for chunk in chunked_ops:
-                last_insert_rowid = self._insert_update_run_snapshots(chunk, current_time)
+                insert_rowid = self._insert_update_run_snapshots(chunk, current_time)
+                if insert_rowid is not None:
+                    last_insert_rowid = insert_rowid
 
-        return SequenceId(last_insert_rowid)
+        return last_insert_rowid
 
     def _chunk_operations(self, updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
         """
@@ -186,38 +203,49 @@ class OperationsRepository:
 
         return batches
 
-    def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> SequenceId:
+    def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> Optional[SequenceId]:
         """
         Inserts operations into 'run_operations' in a single transaction.
         """
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
-            cursor.executemany(
-                """
-                INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
-                VALUES (?, ?, ?, ?)
-                """,
-                [
-                    (current_time, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))
-                    for serialized_op in ops
-                ],
-            )
-            cursor.execute("SELECT last_insert_rowid()")
-            return SequenceId(cursor.fetchone()[0])
+            try:
+                cursor = conn.cursor()
+                cursor.executemany(
+                    """
+                    INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    [
+                        (current_time, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))
+                        for serialized_op in ops
+                    ],
+                )
+                cursor.execute("SELECT last_insert_rowid()")
+                return SequenceId(cursor.fetchone()[0])
+
+            except sqlite3.DatabaseError as e:
+                if self._log_failure_action == "raise":
+                    raise NeptuneUnableToLogData() from e
+                elif self._log_failure_action == "drop":
+                    logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
+                    return None
 
     def save_create_run(self, run: CreateRun) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            current_time = int(time.time() * 1000)  # milliseconds timestamp
-            serialized_operation = run.SerializeToString()
-            operation_size_bytes = len(serialized_operation)
+                current_time = int(time.time() * 1000)  # milliseconds timestamp
+                serialized_operation = run.SerializeToString()
+                operation_size_bytes = len(serialized_operation)
 
-            cursor.execute(
-                "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
-            )
-            return SequenceId(cursor.lastrowid)  # type: ignore
+                cursor.execute(
+                    "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                    (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
+                )
+                return SequenceId(cursor.lastrowid)  # type: ignore
+            except sqlite3.DatabaseError as e:
+                raise NeptuneUnableToLogData() from e
 
     def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
@@ -277,27 +305,30 @@ class OperationsRepository:
 
     def save_metadata(self, project: str, run_id: str) -> None:
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            try:
+                cursor = conn.cursor()
 
-            # Check if metadata already exists
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM metadata
-                """
-            )
+                # Check if metadata already exists
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM metadata
+                    """
+                )
 
-            count = cursor.fetchone()[0]
-            if count > 0:
-                raise RuntimeError("Metadata already exists")
+                count = cursor.fetchone()[0]
+                if count > 0:
+                    raise RuntimeError("Metadata already exists")
 
-            # Insert new metadata
-            cursor.execute(
-                """
-                INSERT INTO metadata (version, project, run_id)
-                VALUES (?, ?, ?)
-                """,
-                (DB_VERSION, project, run_id),
-            )
+                # Insert new metadata
+                cursor.execute(
+                    """
+                    INSERT INTO metadata (version, project, run_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    (DB_VERSION, project, run_id),
+                )
+            except sqlite3.DatabaseError as e:
+                raise NeptuneUnableToLogData() from e
 
     def get_metadata(self) -> Optional[Metadata]:
         with self._get_connection() as conn:  # type: ignore

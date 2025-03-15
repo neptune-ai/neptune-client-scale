@@ -106,14 +106,7 @@ class NeptuneUnableToLogData(NeptuneScaleError):
 {h1}
 NeptuneUnableToLogData: An error occurred, preventing Neptune from logging your data.
 {end}
-The following operation could not be logged successfully:
-{operation}
-
-Reason: {reason}
 """
-
-    def __init__(self, *args: Any, reason: str, operation: str, **kwargs: Any) -> None:
-        super().__init__(*args, reason=reason, operation=operation, **kwargs)
 
 
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneUnableToLogData):
