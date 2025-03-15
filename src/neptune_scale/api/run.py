@@ -419,8 +419,8 @@ class Run(AbstractContextManager):
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
 
-        sequence = self._operations_repo.save_create_run(create_run)
-        self._sequence_tracker.update_sequence_id(sequence)
+        sequence_id = self._operations_repo.save_create_run(create_run)
+        self._sequence_tracker.update_sequence_id(sequence_id)
 
     def log_metrics(
         self,
@@ -653,10 +653,10 @@ class Run(AbstractContextManager):
                 last_queued_sequence_id = self._sequence_tracker.last_sequence_id
 
                 if value == -1:
-                    if self._sequence_tracker.last_sequence_id != -1:
+                    if last_queued_sequence_id != -1:
                         last_print_timestamp = print_message(
                             f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            self._sequence_tracker.last_sequence_id + 1,
+                            last_queued_sequence_id + 1,
                             last_print=last_print_timestamp,
                             verbose=verbose,
                         )
