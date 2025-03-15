@@ -79,7 +79,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             - RunOperation(
                 project=self._project,
                 run_id=self._run_id,
-                update=self._make_empty_update_snapshot(),
             ).ByteSize()
         )
         self._has_returned = False
@@ -89,6 +88,15 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         return self
 
     def __next__(self) -> UpdateRunSnapshot:
+        if (
+            self._has_returned
+            and not self._configs
+            and not self._metrics_data
+            and not self._add_tags
+            and not self._remove_tags
+        ):
+            raise StopIteration
+
         update = self._make_empty_update_snapshot()
         size = update.ByteSize()
 
@@ -115,11 +123,8 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             size=size,
         )
 
-        if not self._has_returned or update.assign or update.append or update.modify_sets:
-            self._has_returned = True
-            return update
-        else:
-            raise StopIteration
+        self._has_returned = True
+        return update
 
     def populate_assign(
         self,
@@ -127,7 +132,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         assets: Optional[peekable[tuple[str, Any]]],
         size: int,
     ) -> int:
-        if not assets:
+        if assets is None:
             return size
 
         while size < self._max_update_bytes_size:
@@ -153,7 +158,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         assets: Optional[peekable[tuple[str, float]]],
         size: int,
     ) -> int:
-        if not assets:
+        if assets is None:
             return size
 
         while size < self._max_update_bytes_size:
@@ -174,7 +179,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def populate_tags(
         self, update: UpdateRunSnapshot, assets: Optional[peekable[Any]], operation: SET_OPERATION.ValueType, size: int
     ) -> int:
-        if not assets:
+        if assets is None:
             return size
 
         while size < self._max_update_bytes_size:
