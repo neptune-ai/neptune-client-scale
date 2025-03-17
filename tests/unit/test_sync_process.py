@@ -61,8 +61,8 @@ def response(request_ids: list[str], status_code: int = 200):
 
 def status_response(
     status_code: int = 200,
-    pb_code: Code.ValueType = Code.OK,
-    pb_detail: ingest_pb2.IngestCode.ValueType = ingest_pb2.IngestCode.OK,
+    pb_code: int = Code.OK,
+    pb_detail: int = ingest_pb2.IngestCode.OK,
 ):
     body = BulkRequestStatus(statuses=[{"code_by_count": [{"code": pb_code, "count": 1, "detail": pb_detail}]}])
     content = body.SerializeToString()
@@ -71,9 +71,7 @@ def status_response(
 
 def status_response_batch(
     status_code: int = 200,
-    statuses: list[tuple[Code.ValueType, ingest_pb2.IngestCode.ValueType, int]] = [
-        (Code.OK, ingest_pb2.IngestCode.OK, 1)
-    ],
+    statuses: list[tuple[int, int, int]] = [(Code.OK, ingest_pb2.IngestCode.OK, 1)],
 ):
     body = BulkRequestStatus(
         statuses=[
