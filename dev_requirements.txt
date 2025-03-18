@@ -7,4 +7,5 @@ pytest
 pytest-timeout
 pytest-xdist
 freezegun
-neptune-fetcher @ git+https://github.com/neptune-ai/neptune-fetcher.git@30f7668b0e5c42f60140118134c67094b566dc82
+# The commit below is https://github.com/neptune-ai/neptune-fetcher/pull/244
+neptune-fetcher @ git+https://github.com/neptune-ai/neptune-fetcher.git@566965a5f825835fcd4f1ee2d3348d1c5dd045a5
