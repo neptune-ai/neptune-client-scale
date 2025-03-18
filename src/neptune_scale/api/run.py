@@ -4,6 +4,9 @@ Python package
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import re
 from pathlib import Path
 from types import TracebackType
@@ -190,6 +193,7 @@ class Run(AbstractContextManager):
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
             verify_max_length("experiment_name", experiment_name, MAX_EXPERIMENT_NAME_LENGTH)
+
         if fork_run_id is not None:
             verify_non_empty("fork_run_id", fork_run_id)
             verify_max_length("fork_run_id", fork_run_id, MAX_RUN_ID_LENGTH)
@@ -204,6 +208,7 @@ class Run(AbstractContextManager):
 
         self._project: str = input_project
         self._run_id: str = run_id
+        self._experiment_name = experiment_name
 
         self._lock = threading.RLock()
 
@@ -229,14 +234,12 @@ class Run(AbstractContextManager):
             self._sequence_tracker = None
             self._attr_store = None
 
+        self._api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
+
         if mode == "async":
             assert self._sequence_tracker is not None
-
-            api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-            if api_token is None:
+            if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
-            assert api_token is not None  # mypy
-            input_api_token: str = api_token
 
             self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
@@ -258,7 +261,7 @@ class Run(AbstractContextManager):
                 operations_repository_path=operations_repository_path,
                 errors_queue=self._errors_queue,
                 process_link=self._process_link,
-                api_token=input_api_token,
+                api_token=self._api_token,
                 last_queued_seq=self._last_queued_seq,
                 last_ack_seq=self._last_ack_seq,
                 last_ack_timestamp=self._last_ack_timestamp,
@@ -735,6 +738,45 @@ class Run(AbstractContextManager):
             verbose=verbose,
         )
 
+    def run_url(self) -> str:
+        """
+        Returns a URL for viewing the Run in Neptune Web application. Requires the API token to be provided
+        during Run initialization (either through the constructor or the `NEPTUNE_API_TOKEN` environment variable).
+
+        Raises ValueError if the project name or API token provided are not formatted correctly.
+        """
+        if self._api_token is None:
+            raise ValueError(NeptuneApiTokenNotProvided())
+
+        # self._project is validated in __init__()
+        workspace, project = self._project.split("/", maxsplit=1)
+        base_url = _extract_api_url_from_token(self._api_token)
+
+        return f"{base_url}/{workspace}/{project}/-/run/?customId={self._run_id}"
+
+    def experiment_url(self) -> str:
+        """
+        Returns a URL for viewing the Experiment in Neptune Web application. Requires the API token to be provided
+        during Run initialization (either through the constructor or the `NEPTUNE_API_TOKEN` environment variable).
+
+        Raises ValueError if `experiment_name` was not provided, or the project name or API token provided are not
+        formatted correctly.
+        """
+        if self._api_token is None:
+            raise ValueError(NeptuneApiTokenNotProvided())
+
+        if self._experiment_name is None:
+            raise ValueError("`experiment_name` was not provided during Run initialization")
+
+        # self._project is validated in __init__()
+        workspace, project = self._project.split("/", maxsplit=1)
+        base_url = _extract_api_url_from_token(self._api_token)
+
+        return (
+            f"{base_url}/{workspace}/{project}/runs/details?runIdentificationKey"
+            f"={self._experiment_name}&type=experiment"
+        )
+
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
     current_time = time.time()
@@ -771,3 +813,11 @@ def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optio
     directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
     return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
+
+
+def _extract_api_url_from_token(api_token: str) -> str:
+    try:
+        json_data = json.loads(base64.b64decode(api_token))
+        return str(json_data["api_url"])
+    except (binascii.Error, json.JSONDecodeError, KeyError):
+        raise ValueError("Unable to extract Neptune URL from the provided API token")
