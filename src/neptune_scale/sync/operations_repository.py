@@ -307,8 +307,8 @@ class OperationsRepository:
                     # Check if metadata already exists
                     cursor.execute(
                         """
-                            SELECT COUNT(*) FROM metadata
-                            """
+                        SELECT COUNT(*) FROM metadata
+                        """
                     )
 
                     count = cursor.fetchone()[0]
@@ -318,9 +318,9 @@ class OperationsRepository:
                     # Insert new metadata
                     cursor.execute(
                         """
-                            INSERT INTO metadata (version, project, run_id)
-                            VALUES (?, ?, ?)
-                            """,
+                        INSERT INTO metadata (version, project, run_id)
+                        VALUES (?, ?, ?)
+                        """,
                         (DB_VERSION, project, run_id),
                     )
         except sqlite3.DatabaseError as e:
