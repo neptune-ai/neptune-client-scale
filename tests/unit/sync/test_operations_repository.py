@@ -477,9 +477,9 @@ def test_concurrent_save_update_run_snapshots(monkeypatch, temp_db_path, log_fai
 
         if log_failure_action == "raise":
             with pytest.raises(NeptuneUnableToLogData):
-                (operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})]),)
+                operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
         else:
-            (operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})]),)
+            operations_repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
 
     operations_repo.close(cleanup_files=True)
 
@@ -535,6 +535,7 @@ def _concurrent_transaction_cursor(temp_db_path):
     conn.execute("BEGIN")
     cursor = conn.cursor()
     yield cursor
+    cursor.close()
     conn.commit()
     conn.close()
 
