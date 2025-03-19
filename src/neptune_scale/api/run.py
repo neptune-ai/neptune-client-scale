@@ -738,7 +738,7 @@ class Run(AbstractContextManager):
             verbose=verbose,
         )
 
-    def run_url(self) -> str:
+    def get_run_url(self) -> str:
         """
         Returns a URL for viewing the run in the Neptune web app. Requires the API token to be provided
         during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
@@ -752,7 +752,7 @@ class Run(AbstractContextManager):
 
         return f"{base_url}/{workspace}/{project}/-/run/?customId={self._run_id}"
 
-    def experiment_url(self) -> str:
+    def get_experiment_url(self) -> str:
         """
         Returns a URL for viewing the experiment in the Neptune web app. Requires the API token to be provided
         during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
