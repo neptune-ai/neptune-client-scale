@@ -10,6 +10,7 @@ import json
 import re
 from pathlib import Path
 from types import TracebackType
+from urllib.parse import quote_plus
 
 from neptune_scale.sync.operations_repository import OperationsRepository
 
@@ -209,6 +210,7 @@ class Run(AbstractContextManager):
         self._project: str = input_project
         self._run_id: str = run_id
         self._experiment_name = experiment_name
+        self._api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
 
         self._lock = threading.RLock()
 
@@ -233,8 +235,6 @@ class Run(AbstractContextManager):
             self._operations_repo = None
             self._sequence_tracker = None
             self._attr_store = None
-
-        self._api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
 
         if mode == "async":
             assert self._sequence_tracker is not None
@@ -743,34 +743,18 @@ class Run(AbstractContextManager):
         Returns a URL for viewing the run in the Neptune web app. Requires the API token to be provided
         during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
         """
-        if self._api_token is None:
-            raise ValueError(NeptuneApiTokenNotProvided())
-
-        # self._project is validated in __init__()
-        workspace, project = self._project.split("/", maxsplit=1)
-        base_url = _extract_api_url_from_token(self._api_token)
-
-        return f"{base_url}/{workspace}/{project}/-/run/?customId={self._run_id}"
+        return _get_run_url(self._api_token, self._project, run_id=self._run_id)
 
     def get_experiment_url(self) -> str:
         """
         Returns a URL for viewing the experiment in the Neptune web app. Requires the API token to be provided
         during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
         """
-        if self._api_token is None:
-            raise ValueError(NeptuneApiTokenNotProvided())
 
         if self._experiment_name is None:
             raise ValueError("`experiment_name` was not provided during Run initialization")
 
-        # self._project is validated in __init__()
-        workspace, project = self._project.split("/", maxsplit=1)
-        base_url = _extract_api_url_from_token(self._api_token)
-
-        return (
-            f"{base_url}/{workspace}/{project}/runs/details?runIdentificationKey"
-            f"={self._experiment_name}&type=experiment"
-        )
+        return _get_run_url(self._api_token, self._project, experiment_name=self._experiment_name)
 
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
@@ -810,9 +794,33 @@ def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optio
     return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
 
 
+def _get_run_url(
+    api_token: Optional[str], project_name: str, run_id: Optional[str] = None, experiment_name: Optional[str] = None
+) -> str:
+    assert not (run_id and experiment_name)
+    if api_token is None:
+        raise NeptuneApiTokenNotProvided()
+
+    base_url = _extract_api_url_from_token(api_token)
+
+    # project_name is validated in Run.__init__(), so it has at least 2 parts
+    workspace, project = project_name.split("/", maxsplit=1)
+    workspace = quote_plus(workspace)
+    project = quote_plus(project)
+
+    if run_id:
+        return f"{base_url}/{workspace}/{project}/-/run/?customId={quote_plus(run_id)}"
+    else:
+        assert experiment_name  # mypy
+        return (
+            f"{base_url}/{workspace}/{project}/runs/details?runIdentificationKey"
+            f"={quote_plus(experiment_name)}&type=experiment"
+        )
+
+
 def _extract_api_url_from_token(api_token: str) -> str:
     try:
         json_data = json.loads(base64.b64decode(api_token))
-        return str(json_data["api_url"])
+        return json_data["api_url"].rstrip("/")  # type: ignore
     except (binascii.Error, json.JSONDecodeError, KeyError):
         raise ValueError("Unable to extract Neptune URL from the provided API token")
