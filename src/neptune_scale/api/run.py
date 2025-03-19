@@ -740,10 +740,8 @@ class Run(AbstractContextManager):
 
     def run_url(self) -> str:
         """
-        Returns a URL for viewing the Run in Neptune Web application. Requires the API token to be provided
-        during Run initialization (either through the constructor or the `NEPTUNE_API_TOKEN` environment variable).
-
-        Raises ValueError if the project name or API token provided are not formatted correctly.
+        Returns a URL for viewing the run in the Neptune web app. Requires the API token to be provided
+        during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
         """
         if self._api_token is None:
             raise ValueError(NeptuneApiTokenNotProvided())
@@ -756,11 +754,8 @@ class Run(AbstractContextManager):
 
     def experiment_url(self) -> str:
         """
-        Returns a URL for viewing the Experiment in Neptune Web application. Requires the API token to be provided
-        during Run initialization (either through the constructor or the `NEPTUNE_API_TOKEN` environment variable).
-
-        Raises ValueError if `experiment_name` was not provided, or the project name or API token provided are not
-        formatted correctly.
+        Returns a URL for viewing the experiment in the Neptune web app. Requires the API token to be provided
+        during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
         """
         if self._api_token is None:
             raise ValueError(NeptuneApiTokenNotProvided())
