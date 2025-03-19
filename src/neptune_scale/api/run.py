@@ -242,7 +242,7 @@ RUN_ID_NOUNS = [
 ]
 
 
-def generate_run_id():
+def generate_run_id() -> str:
     """
     Generates a unique, human-readable run ID if the run ID is not provided.
 
