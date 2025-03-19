@@ -4,7 +4,6 @@ Python package
 
 from __future__ import annotations
 
-import random
 import re
 from pathlib import Path
 from types import TracebackType
@@ -15,15 +14,11 @@ __all__ = ["Run"]
 
 import atexit
 import os
-import string
 import threading
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from datetime import (
-    datetime,
-    timezone,
-)
+from datetime import datetime
 from typing import (
     Any,
     Literal,
@@ -73,46 +68,15 @@ from neptune_scale.util.envs import (
     MODE_ENV_NAME,
     PROJECT_ENV_NAME,
 )
+from neptune_scale.util.generate_run_id import generate_run_id
 from neptune_scale.util.logger import get_logger
 from neptune_scale.util.process_link import ProcessLink
-from neptune_scale.util.run_id_constants import (
-    RUN_ID_ADJECTIVES,
-    RUN_ID_NOUNS,
-)
 from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
 )
 
 logger = get_logger()
-
-
-def generate_run_id() -> str:
-    """
-    Generates a unique, human-readable run ID if the run ID is not provided.
-
-    A total of 70x70x36^5=~300B unique run IDs are generated within each millisecond.
-
-    The ID combines:
-    - A randomly selected adjective from a curated list (e.g., "swift", "smart", "robust")
-    - A randomly selected noun from a curated list (e.g., "dolphin", "tensor", "nova")
-    - The current timestamp in milliseconds
-    - A 5-char random alphanumeric suffix (for additional uniqueness)
-
-    The generated ID follows the format: "{adjective}-{noun}-{timestamp}-{suffix}"
-
-    Returns:
-        str: A unique run ID in the format "adjective-noun-timestamp-suffix"
-            (e.g., "swift-dolphin-20250319124841544-y56es")
-    """
-    adjective = random.choice(RUN_ID_ADJECTIVES)
-    noun = random.choice(RUN_ID_NOUNS)
-
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:-3]
-    chars = string.ascii_lowercase + string.digits
-    suffix = "".join(random.choices(chars, k=5))
-
-    return f"{adjective}-{noun}-{ts}-{suffix}"
 
 
 class Run(AbstractContextManager):
