@@ -20,7 +20,10 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
 from typing import (
     Any,
     Literal,
@@ -72,6 +75,10 @@ from neptune_scale.util.envs import (
 )
 from neptune_scale.util.logger import get_logger
 from neptune_scale.util.process_link import ProcessLink
+from neptune_scale.util.run_id_constants import (
+    RUN_ID_ADJECTIVES,
+    RUN_ID_NOUNS,
+)
 from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
@@ -79,197 +86,33 @@ from neptune_scale.util.shared_var import (
 
 logger = get_logger()
 
-RUN_ID_ADJECTIVES = [
-    # Size/Scale related
-    "tiny",
-    "small",
-    "large",
-    "mega",
-    "micro",
-    "giant",
-    "nano",
-    "vast",
-    "colossal",
-    "atomic",
-    "massive",
-    # Speed related
-    "swift",
-    "rapid",
-    "fast",
-    "quick",
-    "agile",
-    "turbo",
-    "sonic",
-    "instant",
-    "nimble",
-    # Intelligence/Capability related
-    "smart",
-    "wise",
-    "clever",
-    "sharp",
-    "bright",
-    "neural",
-    "deep",
-    "learned",
-    "trained",
-    "evolved",
-    # Efficiency related
-    "optimal",
-    "efficient",
-    "lean",
-    "precise",
-    "exact",
-    "tuned",
-    "refined",
-    "balanced",
-    "scaled",
-    # Performance related
-    "robust",
-    "stable",
-    "dynamic",
-    "adaptive",
-    "flexible",
-    "parallel",
-    "resilient",
-    "reliable",
-    "smooth",
-    # Quality related
-    "fine",
-    "refined",
-    "premium",
-    "elite",
-    "prime",
-    "pure",
-    "ideal",
-    "perfect",
-    # Scientific related
-    "quantum",
-    "atomic",
-    "neural",
-    "cosmic",
-    "binary",
-    "digital",
-    "linear",
-    # Color-based
-    "blue",
-    "green",
-    "red",
-    "silver",
-    "golden",
-    "azure",
-    "crystal",
-]
-
-RUN_ID_NOUNS = [
-    # Animals known for intelligence
-    "dolphin",
-    "raven",
-    "octopus",
-    "elephant",
-    "owl",
-    "chimp",
-    "falcon",
-    "wolf",
-    # Scientific/Mathematical terms
-    "tensor",
-    "vector",
-    "matrix",
-    "graph",
-    "neuron",
-    "scalar",
-    "gradient",
-    "kernel",
-    "entropy",
-    "qubit",
-    "lattice",
-    "manifold",
-    # Cosmic objects
-    "nova",
-    "nebula",
-    "star",
-    "cosmos",
-    "aurora",
-    "quasar",
-    "pulsar",
-    "photon",
-    # Greek letters
-    "alpha",
-    "beta",
-    "gamma",
-    "delta",
-    "sigma",
-    "omega",
-    "lambda",
-    "epsilon",
-    # Elements and materials
-    "carbon",
-    "xenon",
-    "neon",
-    "titan",
-    "argon",
-    "silicon",
-    "quantum",
-    "plasma",
-    # Abstract concepts
-    "mind",
-    "logic",
-    "spark",
-    "core",
-    "apex",
-    "vision",
-    "wisdom",
-    "insight",
-    # Technology terms
-    "node",
-    "pixel",
-    "byte",
-    "flux",
-    "quantum",
-    "cache",
-    "thread",
-    "stream",
-    "cipher",
-    "neural",
-    # ML/AI specific
-    "epoch",
-    "batch",
-    "model",
-    "layer",
-    "agent",
-    "learner",
-    "encoder",
-    "decoder",
-]
-
 
 def generate_run_id() -> str:
     """
     Generates a unique, human-readable run ID if the run ID is not provided.
 
-    A total of 70x70x(1000x36x36)=~6.35B unique run IDs are possible.
+    A total of 70x70x36^5=~300B unique run IDs are generated within each millisecond.
 
     The ID combines:
     - A randomly selected adjective from a curated list (e.g., "swift", "smart", "robust")
     - A randomly selected noun from a curated list (e.g., "dolphin", "tensor", "nova")
-    - A 5-char suffix combining:
-        - Last 3 digits of current timestamp in milliseconds (for time-based uniqueness)
-        - 2 random alphanumeric chars (for additional uniqueness)
+    - The current timestamp in milliseconds
+    - A 5-char random alphanumeric suffix (for additional uniqueness)
 
-    The generated ID follows the format: "{adjective}-{noun}-{timestamp3}{random2}"
+    The generated ID follows the format: "{adjective}-{noun}-{timestamp}-{suffix}"
 
     Returns:
-        str: A unique run ID in the format "adjective-noun-suffix"
-            (e.g., "swift-dolphin-123ab")
+        str: A unique run ID in the format "adjective-noun-timestamp-suffix"
+            (e.g., "swift-dolphin-20250319124841544-y56es")
     """
     adjective = random.choice(RUN_ID_ADJECTIVES)
     noun = random.choice(RUN_ID_NOUNS)
 
-    ts = str(int(time.time() * 1000))[-3:]
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:-3]
     chars = string.ascii_lowercase + string.digits
-    rand = "".join(random.choices(chars, k=2))
-    suffix = f"{ts}{rand}"
+    suffix = "".join(random.choices(chars, k=5))
 
-    return f"{adjective}-{noun}-{suffix}"
+    return f"{adjective}-{noun}-{ts}-{suffix}"
 
 
 class Run(AbstractContextManager):
