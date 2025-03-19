@@ -207,45 +207,44 @@ class OperationsRepository:
         """
         Inserts operations into 'run_operations' in a single transaction.
         """
-        with self._get_connection() as conn:  # type: ignore
-            try:
-                cursor = conn.cursor()
-                cursor.executemany(
-                    """
-                    INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    [
-                        (current_time, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))
-                        for serialized_op in ops
-                    ],
-                )
-                cursor.execute("SELECT last_insert_rowid()")
-                return SequenceId(cursor.fetchone()[0])
+        try:
+            with self._get_connection() as conn:  # type: ignore
+                with contextlib.closing(conn.cursor()) as cursor:
+                    cursor.executemany(
+                        """
+                        INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        [
+                            (current_time, OperationType.UPDATE_SNAPSHOT, serialized_op, len(serialized_op))
+                            for serialized_op in ops
+                        ],
+                    )
+                    cursor.execute("SELECT last_insert_rowid()")
+                    return SequenceId(cursor.fetchone()[0])
 
-            except sqlite3.DatabaseError as e:
-                if self._log_failure_action == "raise":
-                    raise NeptuneUnableToLogData() from e
-                elif self._log_failure_action == "drop":
-                    logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
-                    return None
+        except sqlite3.DatabaseError as e:
+            if self._log_failure_action == "raise":
+                raise NeptuneUnableToLogData() from e
+            elif self._log_failure_action == "drop":
+                logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
+                return None
 
     def save_create_run(self, run: CreateRun) -> SequenceId:
-        with self._get_connection() as conn:  # type: ignore
-            try:
-                cursor = conn.cursor()
+        try:
+            with self._get_connection() as conn:  # type: ignore
+                with contextlib.closing(conn.cursor()) as cursor:
+                    current_time = int(time.time() * 1000)  # milliseconds timestamp
+                    serialized_operation = run.SerializeToString()
+                    operation_size_bytes = len(serialized_operation)
 
-                current_time = int(time.time() * 1000)  # milliseconds timestamp
-                serialized_operation = run.SerializeToString()
-                operation_size_bytes = len(serialized_operation)
-
-                cursor.execute(
-                    "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                    (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
-                )
-                return SequenceId(cursor.lastrowid)  # type: ignore
-            except sqlite3.DatabaseError as e:
-                raise NeptuneUnableToLogData() from e
+                    cursor.execute(
+                        "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                        (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
+                    )
+                    return SequenceId(cursor.lastrowid)  # type: ignore
+        except sqlite3.DatabaseError as e:
+            raise NeptuneUnableToLogData() from e
 
     def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
@@ -257,37 +256,36 @@ class OperationsRepository:
             from_exclusive = SequenceId(-1)
 
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
-
-            cursor.execute(
-                """
-                WITH running_size AS (
-                    SELECT
-                        sequence_id,
-                        SUM(operation_size_bytes) FILTER (WHERE sequence_id > ?) OVER (ORDER BY sequence_id ASC) AS cumulative_size
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    WITH running_size AS (
+                        SELECT
+                            sequence_id,
+                            SUM(operation_size_bytes) FILTER (WHERE sequence_id > ?) OVER (ORDER BY sequence_id ASC) AS cumulative_size
+                        FROM run_operations
+                        ORDER BY sequence_id ASC
+                    )
+                    SELECT sequence_id, timestamp, operation, operation_type, operation_size_bytes
                     FROM run_operations
+                    WHERE sequence_id > ? AND sequence_id < IFNULL((
+                        SELECT sequence_id
+                        FROM running_size
+                        WHERE cumulative_size > ?
+                        LIMIT 1
+                    ), (
+                        SELECT MAX(sequence_id) + 1 FROM run_operations
+                    ))
                     ORDER BY sequence_id ASC
+                    """,
+                    (
+                        from_exclusive,
+                        from_exclusive,
+                        up_to_bytes,
+                    ),
                 )
-                SELECT sequence_id, timestamp, operation, operation_type, operation_size_bytes
-                FROM run_operations
-                WHERE sequence_id > ? AND sequence_id < IFNULL((
-                    SELECT sequence_id
-                    FROM running_size
-                    WHERE cumulative_size > ?
-                    LIMIT 1
-                ), (
-                    SELECT MAX(sequence_id) + 1 FROM run_operations
-                ))
-                ORDER BY sequence_id ASC
-                """,
-                (
-                    from_exclusive,
-                    from_exclusive,
-                    up_to_bytes,
-                ),
-            )
 
-            rows = cursor.fetchall()
+                rows = cursor.fetchall()
 
         return [_deserialize_operation(row) for row in rows]
 
@@ -296,94 +294,89 @@ class OperationsRepository:
             return 0
 
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute("DELETE FROM run_operations WHERE sequence_id <= ?", (up_to_seq_id,))
 
-            cursor.execute("DELETE FROM run_operations WHERE sequence_id <= ?", (up_to_seq_id,))
-
-            # Return the number of rows affected
-            return cursor.rowcount or 0
+                # Return the number of rows affected
+                return cursor.rowcount or 0
 
     def save_metadata(self, project: str, run_id: str) -> None:
-        with self._get_connection() as conn:  # type: ignore
-            try:
-                cursor = conn.cursor()
+        try:
+            with self._get_connection() as conn:  # type: ignore
+                with contextlib.closing(conn.cursor()) as cursor:
+                    # Check if metadata already exists
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) FROM metadata
+                        """
+                    )
 
-                # Check if metadata already exists
-                cursor.execute(
-                    """
-                    SELECT COUNT(*) FROM metadata
-                    """
-                )
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        raise RuntimeError("Metadata already exists")
 
-                count = cursor.fetchone()[0]
-                if count > 0:
-                    raise RuntimeError("Metadata already exists")
-
-                # Insert new metadata
-                cursor.execute(
-                    """
-                    INSERT INTO metadata (version, project, run_id)
-                    VALUES (?, ?, ?)
-                    """,
-                    (DB_VERSION, project, run_id),
-                )
-            except sqlite3.DatabaseError as e:
-                raise NeptuneUnableToLogData() from e
+                    # Insert new metadata
+                    cursor.execute(
+                        """
+                        INSERT INTO metadata (version, project, run_id)
+                        VALUES (?, ?, ?)
+                        """,
+                        (DB_VERSION, project, run_id),
+                    )
+        except sqlite3.DatabaseError as e:
+            raise NeptuneUnableToLogData() from e
 
     def get_metadata(self) -> Optional[Metadata]:
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT version, project, run_id
+                    FROM metadata
+                    """
+                )
 
-            cursor.execute(
-                """
-                SELECT version, project, run_id
-                FROM metadata
-                """
-            )
+                row = cursor.fetchone()
+                if not row:
+                    return None
 
-            row = cursor.fetchone()
-            if not row:
-                return None
+                version, project, run_id = row
 
-            version, project, run_id = row
+                if version != DB_VERSION:
+                    raise NeptuneLocalStorageInUnsupportedVersion()
 
-            if version != DB_VERSION:
-                raise NeptuneLocalStorageInUnsupportedVersion()
-
-            return Metadata(project=project, run_id=run_id)
+                return Metadata(project=project, run_id=run_id)
 
     def get_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT MIN(sequence_id), MAX(sequence_id)
+                    FROM run_operations
+                    """
+                )
 
-            cursor.execute(
-                """
-                SELECT MIN(sequence_id), MAX(sequence_id)
-                FROM run_operations
-                """
-            )
+                row = cursor.fetchone()
+                if not row:
+                    return None
 
-            row = cursor.fetchone()
-            if not row:
-                return None
-
-            min_seq_id, max_seq_id = row
-            if min_seq_id is None or max_seq_id is None:
-                return None
-            return SequenceId(min_seq_id), SequenceId(max_seq_id)
+                min_seq_id, max_seq_id = row
+                if min_seq_id is None or max_seq_id is None:
+                    return None
+                return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     def _is_run_operations_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
-            cursor = conn.cursor()
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='run_operations'")
+                count: int = cursor.fetchone()[0]
+                if count == 0:
+                    return True
 
-            cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='run_operations'")
-            count: int = cursor.fetchone()[0]
-            if count == 0:
-                return True
-
-            cursor.execute("SELECT COUNT(*) FROM run_operations")
-            count = cursor.fetchone()[0]
-            return count == 0
+                cursor.execute("SELECT COUNT(*) FROM run_operations")
+                count = cursor.fetchone()[0]
+                return count == 0
 
     def close(self, cleanup_files: bool) -> None:
         with self._lock:
