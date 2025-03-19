@@ -4,6 +4,7 @@ Python package
 
 from __future__ import annotations
 
+import random
 import re
 from pathlib import Path
 from types import TracebackType
@@ -14,6 +15,7 @@ __all__ = ["Run"]
 
 import atexit
 import os
+import string
 import threading
 import time
 from collections.abc import Callable
@@ -77,6 +79,198 @@ from neptune_scale.util.shared_var import (
 
 logger = get_logger()
 
+RUN_ID_ADJECTIVES = [
+    # Size/Scale related
+    "tiny",
+    "small",
+    "large",
+    "mega",
+    "micro",
+    "giant",
+    "nano",
+    "vast",
+    "colossal",
+    "atomic",
+    "massive",
+    # Speed related
+    "swift",
+    "rapid",
+    "fast",
+    "quick",
+    "agile",
+    "turbo",
+    "sonic",
+    "instant",
+    "nimble",
+    # Intelligence/Capability related
+    "smart",
+    "wise",
+    "clever",
+    "sharp",
+    "bright",
+    "neural",
+    "deep",
+    "learned",
+    "trained",
+    "evolved",
+    # Efficiency related
+    "optimal",
+    "efficient",
+    "lean",
+    "precise",
+    "exact",
+    "tuned",
+    "refined",
+    "balanced",
+    "scaled",
+    # Performance related
+    "robust",
+    "stable",
+    "dynamic",
+    "adaptive",
+    "flexible",
+    "parallel",
+    "resilient",
+    "reliable",
+    "smooth",
+    # Quality related
+    "fine",
+    "refined",
+    "premium",
+    "elite",
+    "prime",
+    "pure",
+    "ideal",
+    "perfect",
+    # Scientific related
+    "quantum",
+    "atomic",
+    "neural",
+    "cosmic",
+    "binary",
+    "digital",
+    "linear",
+    # Color-based
+    "blue",
+    "green",
+    "red",
+    "silver",
+    "golden",
+    "azure",
+    "crystal",
+]
+
+RUN_ID_NOUNS = [
+    # Animals known for intelligence
+    "dolphin",
+    "raven",
+    "octopus",
+    "elephant",
+    "owl",
+    "chimp",
+    "falcon",
+    "wolf",
+    # Scientific/Mathematical terms
+    "tensor",
+    "vector",
+    "matrix",
+    "graph",
+    "neuron",
+    "scalar",
+    "gradient",
+    "kernel",
+    "entropy",
+    "qubit",
+    "lattice",
+    "manifold",
+    # Cosmic objects
+    "nova",
+    "nebula",
+    "star",
+    "cosmos",
+    "aurora",
+    "quasar",
+    "pulsar",
+    "photon",
+    # Greek letters
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "sigma",
+    "omega",
+    "lambda",
+    "epsilon",
+    # Elements and materials
+    "carbon",
+    "xenon",
+    "neon",
+    "titan",
+    "argon",
+    "silicon",
+    "quantum",
+    "plasma",
+    # Abstract concepts
+    "mind",
+    "logic",
+    "spark",
+    "core",
+    "apex",
+    "vision",
+    "wisdom",
+    "insight",
+    # Technology terms
+    "node",
+    "pixel",
+    "byte",
+    "flux",
+    "quantum",
+    "cache",
+    "thread",
+    "stream",
+    "cipher",
+    "neural",
+    # ML/AI specific
+    "epoch",
+    "batch",
+    "model",
+    "layer",
+    "agent",
+    "learner",
+    "encoder",
+    "decoder",
+]
+
+
+def generate_run_id():
+    """
+    Generates a unique, human-readable run ID if the run ID is not provided.
+
+    A total of 70x70x(1000x36x36)=~6.35B unique run IDs are possible.
+
+    The ID combines:
+    - A randomly selected adjective from a curated list (e.g., "swift", "smart", "robust")
+    - A randomly selected noun from a curated list (e.g., "dolphin", "tensor", "nova")
+    - A 5-char suffix combining:
+        - Last 3 digits of current timestamp in milliseconds (for time-based uniqueness)
+        - 2 random alphanumeric chars (for additional uniqueness)
+
+    The generated ID follows the format: "{adjective}-{noun}-{timestamp3}{random2}"
+
+    Returns:
+        str: A unique run ID in the format "adjective-noun-suffix"
+            (e.g., "swift-dolphin-123ab")
+    """
+    adjective = random.choice(RUN_ID_ADJECTIVES)
+    noun = random.choice(RUN_ID_NOUNS)
+
+    ts = str(int(time.time() * 1000))[-3:]
+    chars = string.ascii_lowercase + string.digits
+    rand = "".join(random.choices(chars, k=2))
+    suffix = f"{ts}{rand}"
+
+    return f"{adjective}-{noun}-{suffix}"
+
 
 class Run(AbstractContextManager):
     """
@@ -86,7 +280,7 @@ class Run(AbstractContextManager):
     def __init__(
         self,
         *,
-        run_id: str,
+        run_id: Optional[str] = None,
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
@@ -108,7 +302,7 @@ class Run(AbstractContextManager):
         Initializes a run that logs the model-building metadata to Neptune.
 
         Args:
-            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes.
+            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes. If not provided, a random, human-readable run ID is generated.
             project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
@@ -133,6 +327,9 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
         """
+
+        if run_id is None:
+            run_id = generate_run_id()
 
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -409,7 +606,9 @@ class Run(AbstractContextManager):
         fork_point: Optional[ForkPoint] = None
         if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
-                parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
+                parent_project=self._project,
+                parent_run_id=fork_run_id,
+                step=make_step(number=fork_step),
             )
 
         create_run = CreateRun(
@@ -483,7 +682,8 @@ class Run(AbstractContextManager):
         )
 
     def log_configs(
-        self, data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
+        self,
+        data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
@@ -575,7 +775,13 @@ class Run(AbstractContextManager):
         - remove_tags()
         """
         mtr = Metrics(step=step, data=metrics) if metrics is not None else None
-        self._log(timestamp=timestamp, configs=configs, metrics=mtr, tags_add=tags_add, tags_remove=tags_remove)
+        self._log(
+            timestamp=timestamp,
+            configs=configs,
+            metrics=mtr,
+            tags_add=tags_add,
+            tags_remove=tags_remove,
+        )
 
     def _log(
         self,
