@@ -415,3 +415,28 @@ def test_absolute_run_log_directory(
 
     mock_repo.assert_called_once()
     assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / expected_suffix)
+
+
+@pytest.mark.parametrize(
+    "project, run_id",
+    [
+        ("\t\nworkspace/\\project", "run\\-id\t\n12\x003"),
+        ("workspace/project", "/run/with/slashes"),
+        ("workspace/project", "\\run\\with\\backslashes"),
+        ("workspace/漢字", "漢字"),
+        ("w/" + "A" * 1000, "run-id"),
+        ("workspace/project", "A" * 128),
+        ("w/" + "A" * 1000, "A" * 128),
+    ],
+)
+def test_run_with_ids_problematic_for_filesystems(api_token, project, run_id):
+    """Test for potential problems with database files when using run ids that
+    could be problematic for file systems"""
+
+    with Run(
+        project=project,
+        api_token=api_token,
+        run_id=run_id,
+        mode="offline",
+    ):
+        ...
