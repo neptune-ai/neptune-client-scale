@@ -5,7 +5,6 @@ __all__ = ("LagTracker",)
 import time
 from collections.abc import Callable
 
-from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.parameters import (
     LAG_TRACKER_THREAD_SLEEP_TIME,
     LAG_TRACKER_TIMEOUT,
