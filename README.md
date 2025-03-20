@@ -1,7 +1,7 @@
 # Neptune Scale client
 
 > [!NOTE]
-> This package only works with the `3.0` version of neptune.ai called Neptune Scale, which is in beta.
+> This package only works with the `3.x` version of neptune.ai called Neptune Scale, which is in beta.
 >
 > You can't use the Scale client with the stable Neptune `2.x` versions currently available to SaaS and self-hosting customers. For the Python client corresponding to Neptune `2.x`, see https://github.com/neptune-ai/neptune-client.
 
@@ -66,10 +66,7 @@ Create an experiment:
 ```python
 from neptune_scale import Run
 
-run = Run(
-    experiment_name="ExperimentName",
-    run_id="SomeUniqueRunIdentifier",
-)
+run = Run(experiment_name="ExperimentName")
 ```
 
 Then, call logging methods on the run and pass the metadata as a dictionary.

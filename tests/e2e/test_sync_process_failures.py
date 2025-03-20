@@ -2,7 +2,6 @@ import multiprocessing
 import os
 import threading
 import time
-import uuid
 from unittest.mock import (
     Mock,
     patch,
@@ -58,7 +57,7 @@ def use_temp_db_dir(temp_dir, monkeypatch):
 
 def test_warning_callback_after_sync_process_dies():
     error_callback = Mock()
-    run = Run(run_id=str(uuid.uuid4()), on_error_callback=error_callback)
+    run = Run(on_error_callback=error_callback)
     _kill_sync_process(run)
 
     error_callback.assert_called_once()
@@ -67,7 +66,7 @@ def test_warning_callback_after_sync_process_dies():
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 def test_run_can_log_after_sync_process_dies():
-    run = Run(run_id=str(uuid.uuid4()))
+    run = Run()
     run.log_metrics({"metric": 2}, step=1)
     run.wait_for_processing()
 
@@ -93,7 +92,7 @@ def test_run_can_log_after_sync_process_dies():
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing):
-    run = Run(run_id=str(uuid.uuid4()))
+    run = Run()
     run.wait_for_processing()
 
     _kill_sync_process(run)
@@ -120,7 +119,7 @@ def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 def test_sync_process_dies_after_sync_thread_dies():
-    run = Run(run_id=str(uuid.uuid4()), api_token="fake")
+    run = Run(api_token="fake")
 
     # fake token should cause SyncThread to die
 
@@ -163,7 +162,7 @@ class MockSyncProcess(multiprocessing.Process):
 def test_run_wait_methods_after_sync_process_dies_during_wait(wait_for_submission, wait_for_processing):
     """Kill the child process during wait(), to make sure we're not blocked forever in this scenario."""
 
-    run = Run(run_id=str(uuid.uuid4()))
+    run = Run()
     thread = threading.Thread(target=_kill_sync_process, args=(run, 3.0))
     thread.start()
 
@@ -193,7 +192,7 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(wait_for_submissio
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 def test_run_terminate_after_sync_process_dies():
-    run = Run(run_id=str(uuid.uuid4()))
+    run = Run()
     _kill_sync_process(run)
 
     # Should return quickly, otherwise the timeout will trigger

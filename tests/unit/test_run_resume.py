@@ -1,12 +1,12 @@
 import time
-import uuid
 
 from neptune_scale import Run
+from neptune_scale.util.generate_run_id import generate_run_id
 
 
 def test_resume_false_with_matching_fork_point(api_token, caplog):
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
+    run_id = generate_run_id()
     fork_run_id = "parent-run"
     fork_step = 5
 
@@ -52,7 +52,7 @@ def test_resume_true(
     api_token,
 ):
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
+    run_id = generate_run_id()
     fork_run_id = "parent-run"
     fork_step = 5.0
 
@@ -83,7 +83,7 @@ def test_resume_true_without_fork_point(
     api_token,
 ):
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
+    run_id = generate_run_id()
 
     # First create a run with one fork point
     with Run(project=project, api_token=api_token, run_id=run_id, mode="offline"):
@@ -99,8 +99,7 @@ def test_resume_true_with_no_metadata(
     api_token,
 ):
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # Create a run with resume=True but no pre-existing metadata
-    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode="offline"):
+    with Run(project=project, api_token=api_token, resume=True, mode="offline"):
         pass

@@ -1,6 +1,5 @@
 import sys
 import tempfile
-import uuid
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -40,10 +39,9 @@ def short_timeouts():
 def test_context_manager(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
+    with Run(project=project, api_token=api_token, mode=mode):
         ...
 
     # then
@@ -54,10 +52,9 @@ def test_context_manager(api_token, mode):
 def test_close(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # and
-    run = Run(project=project, api_token=api_token, run_id=run_id, mode=mode)
+    run = Run(project=project, api_token=api_token, mode=mode)
 
     # when
     run.close()
@@ -86,14 +83,13 @@ def test_run_id_too_long(api_token, mode):
 @pytest.mark.parametrize("mode", ["disabled", "offline"])
 def test_invalid_project_name(api_token, mode):
     # given
-    run_id = str(uuid.uuid4())
 
     # and
     project = "just-project"
 
     # then
     with pytest.raises(ValueError):
-        with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
+        with Run(project=project, api_token=api_token, mode=mode):
             ...
 
     # and
@@ -104,10 +100,9 @@ def test_invalid_project_name(api_token, mode):
 def test_metadata(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.log(
             step=1,
             timestamp=datetime.now(),
@@ -138,10 +133,9 @@ def test_metadata(api_token, mode):
 def test_tags(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.add_tags(["tag1", "tag2"])
         run.add_tags(["tag3", "tag4"], group_tags=True)
         run.remove_tags(["tag1"])
@@ -163,10 +157,9 @@ def test_tags(api_token, mode):
 def test_log_without_step(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.log(
             timestamp=datetime.now(),
             configs={
@@ -182,10 +175,9 @@ def test_log_without_step(api_token, mode):
 def test_log_configs(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.log_configs({"int": 1})
         run.log_configs({"float": 3.14})
         run.log_configs({"bool": True})
@@ -201,10 +193,9 @@ def test_log_configs(api_token, mode):
 def test_log_step_float(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.log(
             step=3.14,
             timestamp=datetime.now(),
@@ -221,10 +212,9 @@ def test_log_step_float(api_token, mode):
 def test_log_no_timestamp(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # then
-    with Run(project=project, api_token=api_token, run_id=run_id, mode=mode) as run:
+    with Run(project=project, api_token=api_token, mode=mode) as run:
         run.log(
             step=3.14,
             configs={
@@ -240,10 +230,9 @@ def test_log_no_timestamp(api_token, mode):
 def test_resume(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
-    with Run(project=project, api_token=api_token, run_id=run_id, resume=True, mode=mode) as run:
+    with Run(project=project, api_token=api_token, resume=True, mode=mode) as run:
         run.log(
             step=3.14,
             configs={
@@ -260,13 +249,11 @@ def test_resume(api_token, mode):
 def test_creation_time(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        run_id=run_id,
         creation_time=datetime.now(),
         mode=mode,
     ):
@@ -280,13 +267,11 @@ def test_creation_time(api_token, mode):
 def test_assign_experiment(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        run_id=run_id,
         experiment_name="experiment_id",
         mode=mode,
     ):
@@ -300,13 +285,11 @@ def test_assign_experiment(api_token, mode):
 def test_forking(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        run_id=run_id,
         fork_run_id="parent-run-id",
         fork_step=3.14,
         mode=mode,
@@ -321,13 +304,11 @@ def test_forking(api_token, mode):
 def test_components_in_mode(api_token, mode):
     # given
     project = "workspace/project"
-    run_id = str(uuid.uuid4())
 
     # when
     with Run(
         project=project,
         api_token=api_token,
-        run_id=run_id,
         mode=mode,
     ) as run:
         # then
@@ -375,7 +356,13 @@ def mock_repo(monkeypatch, temp_dir):
     ],
 )
 def test_relative_run_log_directory(
-    monkeypatch, temp_dir, mock_repo, api_token, log_dir_env, log_dir_arg, expected_path_relative_to_tmp_dir
+    monkeypatch,
+    temp_dir,
+    mock_repo,
+    api_token,
+    log_dir_env,
+    log_dir_arg,
+    expected_path_relative_to_tmp_dir,
 ):
     monkeypatch.chdir(temp_dir)
 
@@ -388,7 +375,6 @@ def test_relative_run_log_directory(
         log_directory=log_dir_arg,
         project="workspace/project",
         api_token=api_token,
-        run_id=str(uuid.uuid4()),
         mode="offline",
     ):
         ...
@@ -406,7 +392,13 @@ def test_relative_run_log_directory(
     ],
 )
 def test_absolute_run_log_directory(
-    monkeypatch, temp_dir, mock_repo, api_token, abs_log_dir_suffix_env, abs_log_dir_suffix_arg, expected_suffix
+    monkeypatch,
+    temp_dir,
+    mock_repo,
+    api_token,
+    abs_log_dir_suffix_env,
+    abs_log_dir_suffix_arg,
+    expected_suffix,
 ):
     if abs_log_dir_suffix_env is None:
         monkeypatch.delenv(envs.LOG_DIRECTORY, raising=False)
@@ -417,7 +409,6 @@ def test_absolute_run_log_directory(
         log_directory=abs_log_dir_suffix_arg,
         project="workspace/project",
         api_token=api_token,
-        run_id=str(uuid.uuid4()),
         mode="offline",
     ):
         ...

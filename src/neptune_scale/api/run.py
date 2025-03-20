@@ -68,6 +68,7 @@ from neptune_scale.util.envs import (
     MODE_ENV_NAME,
     PROJECT_ENV_NAME,
 )
+from neptune_scale.util.generate_run_id import generate_run_id
 from neptune_scale.util.logger import get_logger
 from neptune_scale.util.process_link import ProcessLink
 from neptune_scale.util.shared_var import (
@@ -86,7 +87,7 @@ class Run(AbstractContextManager):
     def __init__(
         self,
         *,
-        run_id: str,
+        run_id: Optional[str] = None,
         project: Optional[str] = None,
         api_token: Optional[str] = None,
         resume: bool = False,
@@ -108,7 +109,7 @@ class Run(AbstractContextManager):
         Initializes a run that logs the model-building metadata to Neptune.
 
         Args:
-            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes.
+            run_id: Unique identifier of a run. Must be unique within the project. Max length: 128 bytes. If not provided, a random, human-readable run ID is generated.
             project: Name of the project where the metadata is logged, in the form `workspace-name/project-name`.
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
@@ -133,6 +134,9 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
         """
+
+        if run_id is None:
+            run_id = generate_run_id()
 
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -409,7 +413,9 @@ class Run(AbstractContextManager):
         fork_point: Optional[ForkPoint] = None
         if fork_run_id is not None and fork_step is not None:
             fork_point = ForkPoint(
-                parent_project=self._project, parent_run_id=fork_run_id, step=make_step(number=fork_step)
+                parent_project=self._project,
+                parent_run_id=fork_run_id,
+                step=make_step(number=fork_step),
             )
 
         create_run = CreateRun(
@@ -483,7 +489,8 @@ class Run(AbstractContextManager):
         )
 
     def log_configs(
-        self, data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None
+        self,
+        data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
@@ -575,7 +582,13 @@ class Run(AbstractContextManager):
         - remove_tags()
         """
         mtr = Metrics(step=step, data=metrics) if metrics is not None else None
-        self._log(timestamp=timestamp, configs=configs, metrics=mtr, tags_add=tags_add, tags_remove=tags_remove)
+        self._log(
+            timestamp=timestamp,
+            configs=configs,
+            metrics=mtr,
+            tags_add=tags_add,
+            tags_remove=tags_remove,
+        )
 
     def _log(
         self,

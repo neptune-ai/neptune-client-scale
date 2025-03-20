@@ -2,7 +2,6 @@ import math
 import os
 import threading
 import time
-import uuid
 from datetime import (
     datetime,
     timezone,
@@ -165,7 +164,6 @@ def test_async_lag_callback():
     event = threading.Event()
     with Run(
         project=NEPTUNE_PROJECT,
-        run_id=f"{uuid.uuid4()}",
         async_lag_threshold=0.000001,
         on_async_lag_callback=lambda: event.set(),
     ) as run:
