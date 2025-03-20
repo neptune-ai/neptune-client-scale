@@ -305,19 +305,20 @@ def test_raise_on_non_finite_float_metrics(value):
         step=10,
         data={"bad-metric": value},
     )
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs={},
+        metrics=metrics,
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=1024,
+    )
 
     # when
     with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
-        MetadataSplitter(
-            project="workspace/project",
-            run_id="run_id",
-            timestamp=datetime.now(),
-            configs={},
-            metrics=metrics,
-            add_tags={},
-            remove_tags={},
-            max_message_bytes_size=1024,
-        )
+        next(splitter)
 
     # then
     exc.match("metric `bad-metric`")
