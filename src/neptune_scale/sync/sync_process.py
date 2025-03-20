@@ -14,7 +14,8 @@ from neptune_scale.sync.operations_repository import (
 __all__ = ("SyncProcess",)
 
 import datetime
-import multiprocessing
+import functools as ft
+import os
 import queue
 import signal
 import threading
@@ -28,6 +29,7 @@ from typing import (
 )
 
 import backoff
+import psutil
 from neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
 from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
@@ -88,7 +90,6 @@ from neptune_scale.sync.parameters import (
 from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.util import (
     Daemon,
-    ProcessLink,
     SharedFloat,
     SharedInt,
     get_logger,
@@ -169,7 +170,6 @@ class SyncProcess(Process):
         self,
         operations_repository_path: Path,
         errors_queue: ErrorsQueue,
-        process_link: ProcessLink,
         api_token: str,
         project: str,
         family: str,
@@ -181,7 +181,6 @@ class SyncProcess(Process):
 
         self._operations_repository_path: Path = operations_repository_path
         self._errors_queue: ErrorsQueue = errors_queue
-        self._process_link: ProcessLink = process_link
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -189,22 +188,10 @@ class SyncProcess(Process):
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
 
-        # This flag is set when a termination signal is caught
-        self._stop_event = multiprocessing.Event()
-
-    def _handle_signal(self, signum: int, frame: Optional[FrameType]) -> None:
-        logger.debug(f"Received signal {safe_signal_name(signum)}")
-        self._stop_event.set()  # Trigger the stop event
-
-    def _on_parent_link_closed(self, _: ProcessLink) -> None:
-        logger.error("SyncProcess: main process closed unexpectedly. Exiting")
-        self._stop_event.set()
-
     def run(self) -> None:
         logger.info("Data synchronization started")
-
-        self._process_link.start(on_link_closed=self._on_parent_link_closed)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+        stop_event = threading.Event()
+        signal.signal(signal.SIGTERM, ft.partial(self._handle_stop_signal, stop_event))
 
         status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
         operations_repository = OperationsRepository(db_path=self._operations_repository_path)
@@ -226,15 +213,20 @@ class SyncProcess(Process):
             last_ack_timestamp=self._last_ack_timestamp,
         )
         threads = [sender_thread, status_thread]
+        parent_process = psutil.Process(os.getpid()).parent()
 
         for thread in threads:
             thread.start()
 
         try:
             sender_thread_error_logged = False
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
+
+                if not self._is_process_running(parent_process):
+                    logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
+                    break
 
                 if not sender_thread.is_alive():
                     if status_tracking_queue.peek(max_size=1) is None:
@@ -261,6 +253,19 @@ class SyncProcess(Process):
                 thread.close()  # type: ignore
             operations_repository.close(cleanup_files=False)
         logger.info("Data synchronization finished")
+
+    @staticmethod
+    def _is_process_running(process: Optional[psutil.Process]) -> bool:
+        try:
+            # Check if parent exists and is running
+            return process is not None and process.is_running()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    @staticmethod
+    def _handle_stop_signal(stop_event: threading.Event, signum: int, frame: Optional[FrameType]) -> None:
+        logger.debug(f"Received signal {safe_signal_name(signum)}")
+        stop_event.set()
 
 
 class SenderThread(Daemon):
