@@ -746,9 +746,27 @@ def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verb
     return last_print
 
 
+def _sanitize_path_component(component: str) -> str:
+    """Modify a path component to be safe for use in a filesystem:
+    - Replace ASCII control characters, and characters invalid/troublesome on some filesystems with an underscore
+    - Make sure there are no sequences of more than one underscore in the result
+    - Make sure the component is not longer than 64 characters
+
+    Assuming very long run ids and project names, this still leaves room for Windows paths
+    which are max 260 characters by default, and makes sure that the filename does not
+    exceed 255 characters, which is a common limit on many filesystems.
+    """
+
+    result = re.sub(r'[<>:" /\\|?*\x00-\x1F]', "_", component)
+    result = re.sub(r"_{2,}", "_", result)
+
+    return result[:64]
+
+
 def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
-    sanitized_project = re.sub(r"[\\/]", "_", project)
-    sanitized_run_id = re.sub(r"[\\/]", "_", run_id)
+    sanitized_project = _sanitize_path_component(project)
+    sanitized_run_id = _sanitize_path_component(run_id)
+
     timestamp_ns = int(time.time() * 1e9)
     directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
