@@ -295,7 +295,6 @@ class Run(AbstractContextManager):
     def _handle_sync_process_death(self) -> None:
         with self._lock:
             if not self._is_closing:
-                logger.error("The background synchronization process has stopped unexpectedly.")
                 if self._errors_queue is not None:
                     self._errors_queue.put(NeptuneSynchronizationStopped())
 
@@ -324,7 +323,7 @@ class Run(AbstractContextManager):
             self._lag_tracker.join()
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt()
+            self._errors_monitor.interrupt(work_final_time=wait)
 
             # Don't call join() if being called from the error thread, as this will
             # result in a "cannot join current thread" exception.

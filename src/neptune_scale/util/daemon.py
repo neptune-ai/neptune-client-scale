@@ -15,8 +15,9 @@ class Daemon(threading.Thread):
         WORKING = 2
         PAUSING = 3
         PAUSED = 4
-        INTERRUPTED = 5
-        STOPPED = 6
+        INTERRUPTING = 5
+        INTERRUPTED = 6
+        STOPPED = 7
 
     def __init__(self, sleep_time: float, name: str) -> None:
         super().__init__(daemon=True, name=name)
@@ -24,10 +25,24 @@ class Daemon(threading.Thread):
         self._state: Daemon.DaemonState = Daemon.DaemonState.INIT
         self._wait_condition = threading.Condition()
 
-    def interrupt(self) -> None:
+    def interrupt(self, work_final_time: bool = False) -> None:
+        """
+        Stop the thread.
+
+        If last_work is True, the thread will work one more time before stopping.
+        """
         logger.debug(f"Interrupting thread {self.name}")
         with self._wait_condition:
-            self._state = Daemon.DaemonState.INTERRUPTED
+            if work_final_time:
+                self._state = Daemon.DaemonState.INTERRUPTING
+            else:
+                self._state = Daemon.DaemonState.INTERRUPTED
+            self._wait_condition.notify_all()
+
+    def terminate(self) -> None:
+        logger.debug(f"Thread {self} will stop.")
+        with self._wait_condition:
+            self._state = Daemon.DaemonState.INTERRUPTING
             self._wait_condition.notify_all()
 
     def pause(self) -> None:
@@ -57,6 +72,7 @@ class Daemon(threading.Thread):
                 Daemon.DaemonState.WORKING,
                 Daemon.DaemonState.PAUSING,
                 Daemon.DaemonState.PAUSED,
+                Daemon.DaemonState.INTERRUPTING,
             )
 
     def _is_interrupted(self) -> bool:
@@ -75,9 +91,11 @@ class Daemon(threading.Thread):
                         self._wait_condition.notify_all()
                         self._wait_condition.wait_for(lambda: self._state != Daemon.DaemonState.PAUSED)
 
-                if self._state == Daemon.DaemonState.WORKING:
+                if self._state in (Daemon.DaemonState.WORKING, Daemon.DaemonState.INTERRUPTING):
                     self.work()
                     with self._wait_condition:
+                        if self._state == Daemon.DaemonState.INTERRUPTING:
+                            self._state = Daemon.DaemonState.INTERRUPTED
                         if self._sleep_time > 0 and self._state == Daemon.DaemonState.WORKING:
                             self._wait_condition.wait(timeout=self._sleep_time)
         finally:

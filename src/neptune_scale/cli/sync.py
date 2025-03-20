@@ -132,13 +132,13 @@ class SyncRunner:
                     return
 
     def stop(self) -> None:
-        if self._errors_monitor is not None:
-            self._errors_monitor.interrupt()
-            self._errors_monitor.join()
-
         if self._sync_process is not None:
             self._sync_process.terminate()
             self._sync_process.join()
+
+        if self._errors_monitor is not None:
+            self._errors_monitor.interrupt(work_final_time=True)
+            self._errors_monitor.join()
 
         self._operations_repository.close(cleanup_files=True)
         self._errors_queue.close()

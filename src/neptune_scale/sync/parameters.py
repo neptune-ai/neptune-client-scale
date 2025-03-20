@@ -8,6 +8,7 @@ STATUS_TRACKING_THREAD_SLEEP_TIME = 1
 ERRORS_MONITOR_THREAD_SLEEP_TIME = 0.1
 SYNC_PROCESS_SLEEP_TIME = 0.2
 LAG_TRACKER_THREAD_SLEEP_TIME = 1
+PROCESS_SUPERVISOR_THREAD_SLEEP_TIME = 0.5
 
 # Networking
 # This timeout is applied to each networking call individually: connect, write, and read. Thus, it is
