@@ -57,7 +57,6 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsQueue,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
-from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
@@ -66,6 +65,7 @@ from neptune_scale.sync.parameters import (
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sequence_tracker import SequenceTracker
+from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.sync_process import SyncProcess
 from neptune_scale.util import envs
 from neptune_scale.util.envs import (
@@ -254,12 +254,13 @@ class Run(AbstractContextManager):
                 last_ack_seq=self._last_ack_seq,
                 last_ack_timestamp=self._last_ack_timestamp,
             )
-            self._sync_process_supervisor: Optional[ProcessSupervisor] = ProcessSupervisor(self._sync_process, self._handle_sync_process_death)
+            self._sync_process_supervisor: Optional[ProcessSupervisor] = ProcessSupervisor(
+                self._sync_process, self._handle_sync_process_death
+            )
 
             self._lag_tracker: Optional[LagTracker] = None
             if async_lag_threshold is not None and on_async_lag_callback is not None:
                 self._lag_tracker = LagTracker(
-                    errors_queue=self._errors_queue,
                     sequence_tracker=self._sequence_tracker,
                     last_ack_timestamp=self._last_ack_timestamp,
                     async_lag_threshold=async_lag_threshold,

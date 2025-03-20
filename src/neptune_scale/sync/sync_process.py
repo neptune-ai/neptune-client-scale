@@ -14,12 +14,11 @@ from neptune_scale.sync.operations_repository import (
 __all__ = ("SyncProcess",)
 
 import datetime
-import multiprocessing
+import functools as ft
+import os
 import queue
 import signal
 import threading
-import os
-import functools as ft
 from multiprocessing import Process
 from types import FrameType
 from typing import (
@@ -225,7 +224,7 @@ class SyncProcess(Process):
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
 
-                if not self._is_parent_running(parent_process):
+                if not self._is_process_running(parent_process):
                     logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
                     break
 
@@ -256,10 +255,10 @@ class SyncProcess(Process):
         logger.info("Data synchronization finished")
 
     @staticmethod
-    def _is_process_running(process: Optional[Process]) -> bool:
+    def _is_process_running(process: Optional[psutil.Process]) -> bool:
         try:
             # Check if parent exists and is running
-            return parent_process is not None and parent_process.is_running()
+            return process is not None and process.is_running()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 

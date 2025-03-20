@@ -2,8 +2,8 @@ from __future__ import annotations
 
 __all__ = ("ProcessSupervisor",)
 
-from multiprocessing import Process
 from collections.abc import Callable
+from multiprocessing import Process
 
 from neptune_scale.util import (
     Daemon,
@@ -14,13 +14,9 @@ logger = get_logger()
 
 
 class ProcessSupervisor(Daemon):
-    def __init__(
-        self,
-        process: Process,
-        callback: Callable[[], None]
-    ) -> None:
+    def __init__(self, process: Process, callback: Callable[[], None]) -> None:
         super().__init__(name="ProcessSupervisor", sleep_time=0.5)
-        self._process: Process = sync_process
+        self._process: Process = process
         self._callback: Callable[[], None] = callback
 
     def work(self) -> None:
