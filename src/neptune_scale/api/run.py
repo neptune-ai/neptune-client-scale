@@ -159,38 +159,32 @@ class Run(AbstractContextManager):
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
-            raise ValueError("`resume` and `creation_time` cannot be used together.")
+            logger.warning("`creation_time` is ignored when used together with `resume`.")
         if resume and experiment_name is not None:
-            raise ValueError("`resume` and `experiment_name` cannot be used together.")
-        if (fork_run_id is not None and fork_step is None) or (fork_run_id is None and fork_step is not None):
-            raise ValueError("`fork_run_id` and `fork_step` must be used together.")
+            logger.warning("`experiment_name` is ignored when used together with `resume`.")
         if resume and fork_run_id is not None:
-            raise ValueError("`resume` and `fork_run_id` cannot be used together.")
+            logger.warning("`fork_run_id` is ignored when used together with `resume`.")
         if resume and fork_step is not None:
-            raise ValueError("`resume` and `fork_step` cannot be used together.")
-
-        if (
-            on_async_lag_callback is not None
-            and async_lag_threshold is None
-            or on_async_lag_callback is None
-            and async_lag_threshold is not None
-        ):
-            raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
+            logger.warning("`fork_step` is ignored when used together with `resume`.")
 
         if max_queue_size is not None:
             logger.warning("`max_queue_size` is deprecated and will be removed in a future version.")
 
+        if (fork_run_id is None) != (fork_step is None):
+            raise ValueError("`fork_run_id` and `fork_step` must be used together.")
+        if (on_async_lag_callback is None) != (async_lag_threshold is None):
+            raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
+
         project = project or os.environ.get(PROJECT_ENV_NAME)
-        if project:
-            project = project.strip('"').strip("'")
-        else:
+        if project is None:
             raise NeptuneProjectNotProvided()
-        assert project is not None  # mypy
-        input_project: str = project
+        verify_project_qualified_name("project", project)
 
         mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
         verify_non_empty("run_id", run_id)
+        verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
+
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
             verify_max_length("experiment_name", experiment_name, MAX_EXPERIMENT_NAME_LENGTH)
@@ -199,15 +193,11 @@ class Run(AbstractContextManager):
             verify_non_empty("fork_run_id", fork_run_id)
             verify_max_length("fork_run_id", fork_run_id, MAX_RUN_ID_LENGTH)
 
-        verify_project_qualified_name("project", project)
-
-        verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
-
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
         # new data should be logged.
         self._is_closing = False
 
-        self._project: str = input_project
+        self._project: str = project
         self._run_id: str = run_id
         self._experiment_name = experiment_name
         self._api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
