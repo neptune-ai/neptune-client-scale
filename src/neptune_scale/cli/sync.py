@@ -137,7 +137,7 @@ class SyncRunner:
             self._sync_process.join()
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(work_final_time=True)
+            self._errors_monitor.interrupt(remaining_iterations=1)
             self._errors_monitor.join()
 
         self._operations_repository.close(cleanup_files=True)

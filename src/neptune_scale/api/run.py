@@ -323,7 +323,7 @@ class Run(AbstractContextManager):
             self._lag_tracker.join()
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(work_final_time=wait)
+            self._errors_monitor.interrupt(remaining_iterations=1 if wait else 0)
 
             # Don't call join() if being called from the error thread, as this will
             # result in a "cannot join current thread" exception.

@@ -4,6 +4,7 @@ __all__ = ("ProcessSupervisor",)
 
 from collections.abc import Callable
 from multiprocessing import Process
+from typing import Optional
 
 from neptune_scale.sync.parameters import PROCESS_SUPERVISOR_THREAD_SLEEP_TIME
 from neptune_scale.util import (
@@ -19,8 +20,13 @@ class ProcessSupervisor(Daemon):
         super().__init__(name="ProcessSupervisor", sleep_time=PROCESS_SUPERVISOR_THREAD_SLEEP_TIME)
         self._process: Process = process
         self._callback: Callable[[], None] = callback
+        self._last_is_alive: Optional[bool] = None
 
     def work(self) -> None:
-        if not self._process.is_alive():
-            logger.error(f"{self._process.name} is not alive.")
+        is_alive = self._process.is_alive()
+
+        if self._last_is_alive and not is_alive:
+            logger.error(f"{self._process.name} died.")
             self._callback()
+
+        self._last_is_alive = is_alive

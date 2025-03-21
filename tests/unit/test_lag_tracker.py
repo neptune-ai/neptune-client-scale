@@ -38,9 +38,6 @@ def test__lag_tracker__callback_called():
     )
     lag_tracker.start()
 
-    # when
-    lag_tracker.wake_up()
-
     # then
     assert callback_called.wait(timeout=5), "Callback was not called within the timeout"
 
@@ -74,7 +71,7 @@ def test__lag_tracker__not_called():
     lag_tracker.start()
 
     # when
-    lag_tracker.wake_up()
+    time.sleep(2.0)
 
     # then
     callback.assert_not_called()

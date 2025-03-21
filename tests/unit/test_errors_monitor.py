@@ -52,7 +52,6 @@ def test_errors_monitor_callbacks_called(error, callback_name):
 
     # when
     errors_queue.put(error)
-    errors_monitor.wake_up()
 
     # then
     assert callback_called.wait(timeout=5), "Callback was not called within the timeout"
