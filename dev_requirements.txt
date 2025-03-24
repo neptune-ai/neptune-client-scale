@@ -9,3 +9,4 @@ pytest-xdist
 freezegun
 # The commit below is https://github.com/neptune-ai/neptune-fetcher/pull/244
 neptune-fetcher @ git+https://github.com/neptune-ai/neptune-fetcher.git@566965a5f825835fcd4f1ee2d3348d1c5dd045a5
+protobuf==3.20.3
