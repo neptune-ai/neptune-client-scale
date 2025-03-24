@@ -1,8 +1,8 @@
 __all__ = ("get_logger",)
 
 import logging
-import os
 
+from neptune_scale.util import envs
 from neptune_scale.util.envs import DEBUG_MODE
 from neptune_scale.util.styles import (
     STYLES,
@@ -14,10 +14,7 @@ class NeptuneWarning(Warning): ...
 
 
 LOG_FORMAT = "%(asctime)s {blue}%(name)s{end}:{bold}%(levelname)s{end}: %(message)s"
-DEBUG_FORMAT = (
-    "%(asctime)s:%(name)s:%(levelname)s:%(processName)s(%(process)d):%(threadName)s:%(filename)s:"
-    "%(funcName)s():%(lineno)d: %(message)s"
-)
+DEBUG_FORMAT = "%(asctime)s:%(name)s:%(levelname)s:%(processName)s/%(threadName)s/%(funcName)s: %(message)s"
 
 
 def get_logger() -> logging.Logger:
@@ -35,21 +32,15 @@ def get_logger() -> logging.Logger:
         # Clear handlers and proceed with initialization
         logger.handlers.clear()
 
-    logger.setLevel(logging.INFO)
     ensure_style_detected()
 
+    debug = envs.get_bool(DEBUG_MODE, False)
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+
     stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.INFO)
-    stream_handler.setFormatter(logging.Formatter(LOG_FORMAT.format(**STYLES)))
+    log_format = DEBUG_FORMAT if debug else LOG_FORMAT.format(**STYLES)
+    stream_handler.setFormatter(logging.Formatter(log_format))
     logger.addHandler(stream_handler)
-
-    if os.environ.get(DEBUG_MODE, "False").lower() in ("true", "1"):
-        logger.setLevel(logging.DEBUG)
-
-        file_handler = logging.FileHandler(f"neptune.{os.getpid()}.log")
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(logging.Formatter(DEBUG_FORMAT))
-        logger.addHandler(file_handler)
 
     logger.__neptune_scale = True  # type: ignore
 

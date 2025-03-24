@@ -25,7 +25,7 @@ class Daemon(threading.Thread):
         self._wait_condition = threading.Condition()
 
     def interrupt(self) -> None:
-        logger.debug(f"Thread {self} interrupted.")
+        logger.debug(f"Interrupting thread {self.name}")
         with self._wait_condition:
             self._state = Daemon.DaemonState.INTERRUPTED
             self._wait_condition.notify_all()
@@ -85,7 +85,7 @@ class Daemon(threading.Thread):
                 self._state = Daemon.DaemonState.STOPPED
                 self._wait_condition.notify_all()
 
-            logger.debug(f"Thread {self} is finished.")
+            logger.debug(f"Thread {self.name} is finished.")
 
     @abc.abstractmethod
     def work(self) -> None: ...

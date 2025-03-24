@@ -30,6 +30,7 @@ class ErrorsQueue:
         self._errors_queue: multiprocessing.Queue[BaseException] = multiprocessing.Queue()
 
     def put(self, error: BaseException) -> None:
+        logger.debug("Put error: %s", type(error))
         self._errors_queue.put(error)
 
     def get(self, block: bool = True, timeout: Optional[float] = None) -> BaseException:
