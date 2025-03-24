@@ -608,7 +608,6 @@ class Run(AbstractContextManager):
             return
 
         if self._attr_store is None:
-            logger.debug("Run is in mode that doesn't support logging.")
             return
 
         self._attr_store.log(

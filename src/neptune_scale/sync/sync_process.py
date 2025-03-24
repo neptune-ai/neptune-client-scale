@@ -250,7 +250,7 @@ class SyncProcess(Process):
                     logger.error("SyncProcess: status tracking thread closed unexpectedly. Exiting")
                     break
         except KeyboardInterrupt:
-            logger.debug("Data synchronization interrupted by user")
+            logger.debug("KeyboardInterrupt received")
         finally:
             logger.info("Data synchronization stopping")
             for thread in threads:
@@ -309,18 +309,22 @@ class SenderThread(Daemon):
             )
             with self._last_queued_seq:
                 sequence_id = SequenceId(self._last_queued_seq.value)
+
             while operations := self._operations_repository.get_operations(
                 from_exclusive=sequence_id, up_to_bytes=max_operations_size
             ):
                 partitioned_operations = _partition_by_type_and_size(
                     operations, self._metadata.run_id, self._metadata.project, max_operations_size
                 )
+
+                logger.debug(
+                    "Start: submit %d RunOperations. Last queued seq: #%d",
+                    len(partitioned_operations),
+                    sequence_id,
+                )
+
                 for run_operation, sequence_id, timestamp in partitioned_operations:
                     try:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                "Submitting operation #%d with size of %d bytes", sequence_id, run_operation.ByteSize()
-                            )
                         request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
                         if request_ids is None or not request_ids.request_ids:
@@ -328,7 +332,6 @@ class SenderThread(Daemon):
 
                         last_request_id = request_ids.request_ids[-1]
 
-                        logger.debug("Operation #%d submitted as %s", sequence_id, last_request_id)
                         self._status_tracking_queue.put(
                             StatusTrackingElement(
                                 sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp
@@ -343,6 +346,14 @@ class SenderThread(Daemon):
                         self._errors_queue.put(e)
                         # Sleep before retry
                         return
+
+                if logger.isEnabledFor(logging.DEBUG):
+                    # Don't access multiprocessing.Value if not in debug mode
+                    logger.debug(
+                        "Done: submit %d RunOperations. Last queued seq: #%d",
+                        len(partitioned_operations),
+                        self._last_queued_seq.value,
+                    )
 
         except Exception as e:
             self._errors_queue.put(e)
