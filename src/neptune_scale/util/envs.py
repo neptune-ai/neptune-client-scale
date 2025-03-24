@@ -7,7 +7,11 @@ API_TOKEN_ENV_NAME = "NEPTUNE_API_TOKEN"
 
 DISABLE_COLORS = "NEPTUNE_DISABLE_COLORS"
 
+# Deprecated in favour of NEPTUNE_LOGGER_LEVEL
 DEBUG_MODE = "NEPTUNE_DEBUG_MODE"
+
+# Logging level for the neptune logger. Valid values: "debug", "info", "warning", "error", "critical", "none".
+LOGGER_LEVEL = "NEPTUNE_LOGGER_LEVEL"
 
 SUBPROCESS_KILL_TIMEOUT = "NEPTUNE_SUBPROCESS_KILL_TIMEOUT"
 
