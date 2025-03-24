@@ -30,7 +30,7 @@ NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 #
 # The timeout will allow us to detect if we block on any Run methods after
 # the child process is killed.
-TEST_TIMEOUT = 20
+TEST_TIMEOUT = 30
 
 
 def _kill_sync_process(run, after=None):

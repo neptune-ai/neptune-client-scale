@@ -180,7 +180,6 @@ def test_async_lag_callback():
                 "parameters/batch_size": 64,
             },
         )
-
-    # Second callback should be called after logging configs
-    event.wait(timeout=60)
-    assert event.is_set()
+        # Second callback should be called after logging configs
+        event.wait(timeout=60)
+        assert event.is_set()
