@@ -4,9 +4,13 @@ Python package
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import re
 from pathlib import Path
 from types import TracebackType
+from urllib.parse import quote_plus
 
 from neptune_scale.sync.operations_repository import OperationsRepository
 
@@ -155,55 +159,48 @@ class Run(AbstractContextManager):
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
 
         if resume and creation_time is not None:
-            raise ValueError("`resume` and `creation_time` cannot be used together.")
+            logger.warning("`creation_time` is ignored when used together with `resume`.")
         if resume and experiment_name is not None:
-            raise ValueError("`resume` and `experiment_name` cannot be used together.")
-        if (fork_run_id is not None and fork_step is None) or (fork_run_id is None and fork_step is not None):
-            raise ValueError("`fork_run_id` and `fork_step` must be used together.")
+            logger.warning("`experiment_name` is ignored when used together with `resume`.")
         if resume and fork_run_id is not None:
-            raise ValueError("`resume` and `fork_run_id` cannot be used together.")
+            logger.warning("`fork_run_id` is ignored when used together with `resume`.")
         if resume and fork_step is not None:
-            raise ValueError("`resume` and `fork_step` cannot be used together.")
-
-        if (
-            on_async_lag_callback is not None
-            and async_lag_threshold is None
-            or on_async_lag_callback is None
-            and async_lag_threshold is not None
-        ):
-            raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
+            logger.warning("`fork_step` is ignored when used together with `resume`.")
 
         if max_queue_size is not None:
             logger.warning("`max_queue_size` is deprecated and will be removed in a future version.")
 
+        if (fork_run_id is None) != (fork_step is None):
+            raise ValueError("`fork_run_id` and `fork_step` must be used together.")
+        if (on_async_lag_callback is None) != (async_lag_threshold is None):
+            raise ValueError("`on_async_lag_callback` must be used with `async_lag_threshold`.")
+
         project = project or os.environ.get(PROJECT_ENV_NAME)
-        if project:
-            project = project.strip('"').strip("'")
-        else:
+        if project is None:
             raise NeptuneProjectNotProvided()
-        assert project is not None  # mypy
-        input_project: str = project
+        verify_project_qualified_name("project", project)
 
         mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
         verify_non_empty("run_id", run_id)
+        verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
+
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
             verify_max_length("experiment_name", experiment_name, MAX_EXPERIMENT_NAME_LENGTH)
+
         if fork_run_id is not None:
             verify_non_empty("fork_run_id", fork_run_id)
             verify_max_length("fork_run_id", fork_run_id, MAX_RUN_ID_LENGTH)
-
-        verify_project_qualified_name("project", project)
-
-        verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
 
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
         # new data should be logged.
         self._is_closing = False
 
-        self._project: str = input_project
+        self._project: str = project
         self._run_id: str = run_id
+        self._experiment_name = experiment_name
+        self._api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
 
         self._lock = threading.RLock()
 
@@ -231,12 +228,8 @@ class Run(AbstractContextManager):
 
         if mode == "async":
             assert self._sequence_tracker is not None
-
-            api_token = api_token or os.environ.get(API_TOKEN_ENV_NAME)
-            if api_token is None:
+            if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
-            assert api_token is not None  # mypy
-            input_api_token: str = api_token
 
             self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
@@ -258,7 +251,7 @@ class Run(AbstractContextManager):
                 operations_repository_path=operations_repository_path,
                 errors_queue=self._errors_queue,
                 process_link=self._process_link,
-                api_token=input_api_token,
+                api_token=self._api_token,
                 last_queued_seq=self._last_queued_seq,
                 last_ack_seq=self._last_ack_seq,
                 last_ack_timestamp=self._last_ack_timestamp,
@@ -735,6 +728,24 @@ class Run(AbstractContextManager):
             verbose=verbose,
         )
 
+    def get_run_url(self) -> str:
+        """
+        Returns a URL for viewing the run in the Neptune web app. Requires the API token to be provided
+        during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
+        """
+        return _get_run_url(self._api_token, self._project, run_id=self._run_id)
+
+    def get_experiment_url(self) -> str:
+        """
+        Returns a URL for viewing the experiment in the Neptune web app. Requires the API token to be provided
+        during run initialization, either through the constructor or the `NEPTUNE_API_TOKEN` environment variable.
+        """
+
+        if self._experiment_name is None:
+            raise ValueError("`experiment_name` was not provided during Run initialization")
+
+        return _get_run_url(self._api_token, self._project, experiment_name=self._experiment_name)
+
 
 def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
     current_time = time.time()
@@ -771,3 +782,35 @@ def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optio
     directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
     return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
+
+
+def _get_run_url(
+    api_token: Optional[str], project_name: str, run_id: Optional[str] = None, experiment_name: Optional[str] = None
+) -> str:
+    assert not (run_id and experiment_name)
+    if api_token is None:
+        raise NeptuneApiTokenNotProvided()
+
+    base_url = _extract_api_url_from_token(api_token)
+
+    # project_name is validated in Run.__init__(), so it has at least 2 parts
+    workspace, project = project_name.split("/", maxsplit=1)
+    workspace = quote_plus(workspace)
+    project = quote_plus(project)
+
+    if run_id:
+        return f"{base_url}/{workspace}/{project}/-/run/?customId={quote_plus(run_id)}"
+    else:
+        assert experiment_name  # mypy
+        return (
+            f"{base_url}/{workspace}/{project}/runs/details?runIdentificationKey"
+            f"={quote_plus(experiment_name)}&type=experiment"
+        )
+
+
+def _extract_api_url_from_token(api_token: str) -> str:
+    try:
+        json_data = json.loads(base64.b64decode(api_token))
+        return json_data["api_url"].rstrip("/")  # type: ignore
+    except (binascii.Error, json.JSONDecodeError, KeyError):
+        raise ValueError("Unable to extract Neptune URL from the provided API token")
