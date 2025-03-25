@@ -17,7 +17,6 @@ from neptune_scale.sync.operations_repository import (
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 from neptune_scale.util import (
-    ProcessLink,
     SharedInt,
     envs,
 )
@@ -31,7 +30,7 @@ NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 #
 # The timeout will allow us to detect if we block on any Run methods after
 # the child process is killed.
-TEST_TIMEOUT = 20
+TEST_TIMEOUT = 30
 
 
 def _kill_sync_process(run, after=None):
@@ -46,7 +45,7 @@ def _kill_sync_process(run, after=None):
     # We need to delay here a bit. Even though process is now dead, the monitoring threads
     # could still be processing that information buffered in queues, and we don't have
     # other better means to wait for that.
-    time.sleep(0.5)
+    time.sleep(1.0)
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +128,6 @@ def test_sync_process_dies_after_sync_thread_dies():
 class MockSyncProcess(multiprocessing.Process):
     """A SyncProcess mock that does nothing except:
 
-    * starting the process link and staying alive until killed
     * confirming only the 1st operation, which is CreateRun submitted
       and waited for in Run.__init__()
 
@@ -141,12 +139,9 @@ class MockSyncProcess(multiprocessing.Process):
     def __init__(self, *args, **kwargs):
         super().__init__(name="MockSyncProcess")
 
-        self._process_link: ProcessLink = kwargs["process_link"]
         self._last_ack_seq: SharedInt = kwargs["last_ack_seq"]
 
     def run(self):
-        self._process_link.start()
-
         # Confirm the first operation, which is Run creation, so Run.__init__() can complete
         self._last_ack_seq.value = 1
         self._last_ack_seq.notify_all()

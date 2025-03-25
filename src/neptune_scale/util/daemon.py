@@ -2,7 +2,7 @@ __all__ = ["Daemon"]
 
 import abc
 import threading
-from enum import Enum
+from typing import Optional
 
 from neptune_scale.util.logger import get_logger
 
@@ -10,81 +10,44 @@ logger = get_logger()
 
 
 class Daemon(threading.Thread):
-    class DaemonState(Enum):
-        INIT = 1
-        WORKING = 2
-        PAUSING = 3
-        PAUSED = 4
-        INTERRUPTED = 5
-        STOPPED = 6
-
     def __init__(self, sleep_time: float, name: str) -> None:
         super().__init__(daemon=True, name=name)
         self._sleep_time = sleep_time
-        self._state: Daemon.DaemonState = Daemon.DaemonState.INIT
         self._wait_condition = threading.Condition()
+        self._remaining_iterations: Optional[int] = None
 
-    def interrupt(self) -> None:
+    def interrupt(self, remaining_iterations: int = 0) -> None:
+        """
+        Stop the thread.
+
+        If remaining_iterations is not 0, the thread will work remaining_iterations times before stopping.
+        """
+        if remaining_iterations < 0:
+            raise RuntimeError("Remaining iterations must be a non-negative integer.")
+
         logger.debug(f"Interrupting thread {self.name}")
+
         with self._wait_condition:
-            self._state = Daemon.DaemonState.INTERRUPTED
+            self._remaining_iterations = remaining_iterations
             self._wait_condition.notify_all()
-
-    def pause(self) -> None:
-        with self._wait_condition:
-            if self._state != Daemon.DaemonState.PAUSED:
-                if not self._is_interrupted():
-                    self._state = Daemon.DaemonState.PAUSING
-                self._wait_condition.notify_all()
-                self._wait_condition.wait_for(lambda: self._state != Daemon.DaemonState.PAUSING)
-
-    def resume(self) -> None:
-        with self._wait_condition:
-            if not self._is_interrupted():
-                self._state = Daemon.DaemonState.WORKING
-            self._wait_condition.notify_all()
-
-    def wake_up(self) -> None:
-        with self._wait_condition:
-            self._wait_condition.notify_all()
-
-    def disable_sleep(self) -> None:
-        self._sleep_time = 0
-
-    def is_running(self) -> bool:
-        with self._wait_condition:
-            return self._state in (
-                Daemon.DaemonState.WORKING,
-                Daemon.DaemonState.PAUSING,
-                Daemon.DaemonState.PAUSED,
-            )
-
-    def _is_interrupted(self) -> bool:
-        with self._wait_condition:
-            return self._state in (Daemon.DaemonState.INTERRUPTED, Daemon.DaemonState.STOPPED)
 
     def run(self) -> None:
-        with self._wait_condition:
-            if not self._is_interrupted():
-                self._state = Daemon.DaemonState.WORKING
         try:
-            while not self._is_interrupted():
+            while True:
                 with self._wait_condition:
-                    if self._state == Daemon.DaemonState.PAUSING:
-                        self._state = Daemon.DaemonState.PAUSED
-                        self._wait_condition.notify_all()
-                        self._wait_condition.wait_for(lambda: self._state != Daemon.DaemonState.PAUSED)
+                    do_work = self._remaining_iterations is None or self._remaining_iterations > 0
+                    if self._remaining_iterations is not None:
+                        self._remaining_iterations -= 1
 
-                if self._state == Daemon.DaemonState.WORKING:
+                if do_work:
                     self.work()
-                    with self._wait_condition:
-                        if self._sleep_time > 0 and self._state == Daemon.DaemonState.WORKING:
-                            self._wait_condition.wait(timeout=self._sleep_time)
-        finally:
-            with self._wait_condition:
-                self._state = Daemon.DaemonState.STOPPED
-                self._wait_condition.notify_all()
 
+                    with self._wait_condition:
+                        if self._remaining_iterations is None or self._remaining_iterations > 0:
+                            self._wait_condition.wait(timeout=self._sleep_time)
+                else:
+                    break
+        finally:
             logger.debug(f"Thread {self.name} is finished.")
 
     @abc.abstractmethod

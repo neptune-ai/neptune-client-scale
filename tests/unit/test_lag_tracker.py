@@ -16,7 +16,6 @@ def test__lag_tracker__callback_called():
     async_lag_threshold = 1.0
 
     # and
-    errors_queue = Mock()
     sequence_tracker = SequenceTracker()
     sequence_tracker.update_sequence_id(1)  # This will set last_timestamp
     last_ack_timestamp = SharedFloat(time.time() - lag)
@@ -32,16 +31,12 @@ def test__lag_tracker__callback_called():
 
     # and
     lag_tracker = LagTracker(
-        errors_queue=errors_queue,
         sequence_tracker=sequence_tracker,
         last_ack_timestamp=last_ack_timestamp,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback_with_event,
     )
     lag_tracker.start()
-
-    # when
-    lag_tracker.wake_up()
 
     # then
     assert callback_called.wait(timeout=5), "Callback was not called within the timeout"
@@ -61,7 +56,6 @@ def test__lag_tracker__not_called():
     async_lag_threshold = 10.0
 
     # and
-    errors_queue = Mock()
     sequence_tracker = SequenceTracker()
     sequence_tracker.update_sequence_id(1)  # This will set last_timestamp to current time
     last_ack_timestamp = SharedFloat(time.time() - lag)
@@ -69,7 +63,6 @@ def test__lag_tracker__not_called():
 
     # and
     lag_tracker = LagTracker(
-        errors_queue=errors_queue,
         sequence_tracker=sequence_tracker,
         last_ack_timestamp=last_ack_timestamp,
         async_lag_threshold=async_lag_threshold,
@@ -78,7 +71,7 @@ def test__lag_tracker__not_called():
     lag_tracker.start()
 
     # when
-    lag_tracker.wake_up()
+    time.sleep(2.0)
 
     # then
     callback.assert_not_called()

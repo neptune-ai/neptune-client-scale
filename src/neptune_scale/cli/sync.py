@@ -66,7 +66,6 @@ class SyncRunner:
         self._api_token: str = api_token
         self._run_log_file: Path = run_log_file
         self._operations_repository: OperationsRepository = OperationsRepository(db_path=run_log_file)
-        self._process_link = sync_process.ProcessLink()
         self._errors_queue: ErrorsQueue = ErrorsQueue()
         self._last_queued_seq = SharedInt(-1)
         self._last_ack_seq = SharedInt(-1)
@@ -91,7 +90,6 @@ class SyncRunner:
         self._sync_process = sync_process.SyncProcess(
             operations_repository_path=self._run_log_file,
             errors_queue=self._errors_queue,
-            process_link=self._process_link,
             api_token=self._api_token,
             project=metadata.project,
             family=metadata.run_id,
@@ -102,7 +100,6 @@ class SyncRunner:
         self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
 
         self._sync_process.start()
-        self._process_link.start()
 
         self._errors_monitor.start()
 
@@ -135,14 +132,13 @@ class SyncRunner:
                     return
 
     def stop(self) -> None:
-        if self._errors_monitor is not None:
-            self._errors_monitor.interrupt()
-            self._errors_monitor.join()
-
         if self._sync_process is not None:
             self._sync_process.terminate()
             self._sync_process.join()
-            self._process_link.stop()
+
+        if self._errors_monitor is not None:
+            self._errors_monitor.interrupt(remaining_iterations=1)
+            self._errors_monitor.join()
 
         self._operations_repository.close(cleanup_files=True)
         self._errors_queue.close()
