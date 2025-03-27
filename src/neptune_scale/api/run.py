@@ -40,7 +40,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
-    verify_dict_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
@@ -594,10 +593,6 @@ class Run(AbstractContextManager):
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
-        verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
-        verify_dict_type("tags_add", tags_add, (list, set, tuple))
-        verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
-
         if metrics is not None:
             verify_type("metrics", metrics, Metrics)
             verify_type("metrics", metrics.data, dict)
@@ -605,7 +600,6 @@ class Run(AbstractContextManager):
             verify_type("preview", metrics.preview, bool)
             verify_type("preview_completion", metrics.preview_completion, (float, type(None)))
 
-            verify_dict_type("metrics", metrics.data, (float, int))
             if not metrics.preview:
                 if metrics.preview_completion not in (None, 1.0):
                     raise ValueError("preview_completion can only be specified for metric previews")

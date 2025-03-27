@@ -4,14 +4,12 @@ __all__ = (
     "verify_type",
     "verify_non_empty",
     "verify_max_length",
-    "verify_dict_type",
     "verify_value_between",
     "verify_project_qualified_name",
 )
 
 from typing import (
     Any,
-    Optional,
     Union,
 )
 
@@ -48,26 +46,6 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
     project_parts = var.split("/")
     if len(project_parts) != 2:
         raise ValueError(f"{var_name} is not in expected format, should be 'workspace-name/project-name")
-
-
-def verify_dict_type(
-    var_name: str, var: Optional[dict[Any, Any]], expected_type: Union[type, tuple], allow_none: bool = True
-) -> None:
-    if var is None:
-        if allow_none:
-            return
-        raise ValueError(f"{var_name} must not be None")
-    verify_type(var_name, var, dict)
-
-    _is_instance = isinstance  # local binding, faster in tight loops
-    for key, value in var.items():
-        if not _is_instance(key, str):
-            raise TypeError(f"Keys of dictionary '{var_name}' must be strings (got `{key}`)")
-
-        if not _is_instance(value, expected_type):
-            raise TypeError(
-                f"Values of dictionary '{var_name}' must be {get_type_name(expected_type)} (got `{key}`:`{value}`)"
-            )
 
 
 def verify_value_between(
