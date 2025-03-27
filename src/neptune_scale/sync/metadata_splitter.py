@@ -11,15 +11,18 @@ from datetime import datetime
 from typing import (
     Any,
     Optional,
-    TypeVar,
     Union,
 )
 
+from google.protobuf.timestamp_pb2 import Timestamp
 from more_itertools import peekable
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     Preview,
+    Step,
+    StringSet,
     UpdateRunSnapshot,
+    Value,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
@@ -28,12 +31,6 @@ from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
 )
-from neptune_scale.net.serialization import (
-    datetime_to_proto,
-    make_step,
-    make_value,
-    pb_key_size,
-)
 from neptune_scale.util import (
     envs,
     get_logger,
@@ -41,10 +38,8 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-T = TypeVar("T", bound=Any)
 
-
-SINGLE_FLOAT_VALUE_SIZE = make_value(1.0).ByteSize()
+SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 
 
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
@@ -251,3 +246,59 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         if self._metrics_preview_completion is not None:
             return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
         return Preview(is_preview=True)
+
+
+def make_value(value: Union[Value, float, str, int, bool, datetime, list[str], set[str]]) -> Value:
+    if isinstance(value, Value):
+        return value
+    if isinstance(value, float):
+        return Value(float64=value)
+    elif isinstance(value, bool):
+        return Value(bool=value)
+    elif isinstance(value, int):
+        return Value(int64=value)
+    elif isinstance(value, str):
+        return Value(string=value)
+    elif isinstance(value, datetime):
+        return Value(timestamp=datetime_to_proto(value))
+    elif isinstance(value, (list, set, tuple)):
+        return Value(string_set=StringSet(values=value))
+    else:
+        raise ValueError(f"Unsupported value type: {type(value)}")
+
+
+def datetime_to_proto(dt: datetime) -> Timestamp:
+    dt_ts = dt.timestamp()
+    return Timestamp(seconds=int(dt_ts), nanos=int((dt_ts % 1) * 1e9))
+
+
+def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = False) -> Step:
+    """
+    Converts a number to protobuf Step value. Example:
+    >>> assert make_step(7.654321, True) == Step(whole=7, micro=654321)
+
+    Args:
+        number: step expressed as number
+        raise_on_step_precision_loss: inform converter whether it should silently drop precision and
+            round down to 6 decimal places or raise an error.
+
+    Returns: Step protobuf used in Neptune API.
+    """
+    m = int(1e6)
+    micro: int = int(number * m)
+    if raise_on_step_precision_loss and number * m - micro != 0:
+        raise ValueError(f"step must not use more than 6-decimal points, got: {number}")
+
+    whole = micro // m
+    micro = micro % m
+
+    return Step(whole=whole, micro=micro)
+
+
+def pb_key_size(key: str) -> int:
+    """
+    Calculates the size of the string in the protobuf message including an overhead of the length prefix (varint)
+        with an assumption of maximal string length.
+    """
+    key_bin = bytes(key, "utf-8")
+    return len(key_bin) + 2 + (1 if len(key_bin) > 127 else 0)

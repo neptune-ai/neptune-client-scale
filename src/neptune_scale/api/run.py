@@ -12,7 +12,11 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
-from neptune_scale.sync.metadata_splitter import MetadataSplitter
+from neptune_scale.sync.metadata_splitter import (
+    MetadataSplitter,
+    datetime_to_proto,
+    make_step,
+)
 from neptune_scale.sync.operations_repository import OperationsRepository
 
 __all__ = ["Run"]
@@ -41,16 +45,13 @@ from neptune_scale.api.validation import (
     verify_non_empty,
     verify_project_qualified_name,
     verify_type,
+    verify_value_between,
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
-)
-from neptune_scale.net.serialization import (
-    datetime_to_proto,
-    make_step,
 )
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
@@ -590,13 +591,30 @@ class Run(AbstractContextManager):
     ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
-        verify_type("metrics", metrics, (Metrics, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
         verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
         verify_dict_type("tags_add", tags_add, (list, set, tuple))
         verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
+
+        if metrics is not None:
+            verify_type("metrics", metrics, Metrics)
+            verify_type("metrics", metrics.data, dict)
+            verify_type("step", metrics.step, (float, int, type(None)))
+            verify_type("preview", metrics.preview, bool)
+            verify_type("preview_completion", metrics.preview_completion, (float, type(None)))
+
+            verify_dict_type("metrics", metrics.data, (float, int))
+            if not metrics.preview:
+                if metrics.preview_completion not in (None, 1.0):
+                    raise ValueError("preview_completion can only be specified for metric previews")
+                # we don't send info about preview if preview=False
+                # and dropping 1.0 (even if it's technically a correct value)
+                # reduces chance of errors down the line
+                metrics.preview_completion = None
+            if metrics.preview_completion is not None:
+                verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
