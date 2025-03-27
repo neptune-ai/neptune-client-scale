@@ -6,7 +6,6 @@ __all__ = (
     "NeptuneScaleError",
     "NeptuneScaleWarning",
     "NeptuneUnableToLogData",
-    "NeptuneOperationsQueueMaxSizeExceeded",
     "NeptuneUnauthorizedError",
     "NeptuneInvalidCredentialsError",
     "NeptuneUnexpectedError",
@@ -107,26 +106,6 @@ class NeptuneUnableToLogData(NeptuneScaleError):
 NeptuneUnableToLogData: An error occurred, preventing Neptune from logging your data.
 {end}
 """
-
-
-class NeptuneOperationsQueueMaxSizeExceeded(NeptuneUnableToLogData):
-    message = """
-{h1}
-NeptuneOperationsQueueMaxSizeExceeded: The amount of data being logged is higher than processing capacity.
-{end}
-
-The synchronization is paused until the queue size drops below the maximum.
-
-To resolve this issue, consider the following:
-    - Throttle the rate of operations
-    - Cautiously increase the queue size through the `max_queue_size` argument.
-        Note: To ensure that memory usage remains within acceptable limits,
-        closely monitor your system's memory consumption.
-"""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # reason and operation don't matter, as we override the message string anyway
-        super().__init__(*args, reason="", operation="", **kwargs)
 
 
 class NeptuneUnauthorizedError(NeptuneScaleError):

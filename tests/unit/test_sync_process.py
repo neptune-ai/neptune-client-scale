@@ -29,7 +29,10 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
 )
-from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.errors_tracking import (
+    ErrorsQueue,
+    RemoteErrorsHandler,
+)
 from neptune_scale.sync.operations_repository import (
     Metadata,
     Operation,
@@ -112,7 +115,7 @@ def operations_repo():
 def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock):
     # given
     status_tracking_queue = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -120,7 +123,7 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
         family="",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -139,7 +142,7 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
     # given
 
     status_tracking_queue = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -147,7 +150,7 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
         family="",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -170,7 +173,7 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
 def test_sender_thread_processes_element_on_single_retryable_error(operations_repository_mock):
     # given
     status_tracking_queue = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -178,7 +181,7 @@ def test_sender_thread_processes_element_on_single_retryable_error(operations_re
         family="",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -206,7 +209,7 @@ def test_sender_thread_fails_on_regular_error():
     operations_repository_mock = Mock()
     operations_repository_mock.get_metadata.side_effect = [metadata]
     status_tracking_queue = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -214,7 +217,7 @@ def test_sender_thread_fails_on_regular_error():
         family="",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -235,13 +238,13 @@ def test_sender_thread_fails_on_regular_error():
     assert "Server response is empty" in str(e.value.__cause__)
 
     # then should throw NeptuneInternalServerError
-    errors_queue.put.assert_called_once()
+    errors_handler.handle.assert_called_once()
 
 
 def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations_repository_mock):
     # given
     status_tracking_queue = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -249,7 +252,7 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
         family="",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -275,7 +278,7 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
 
 def test_sender_thread_processes_elements_with_multiple_operations_in_batch(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
+    errors_handler = ErrorsQueue()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -283,7 +286,7 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
         family="test-family",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -311,7 +314,7 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
 
 def test_sender_thread_processes_elements_with_multiple_operations_in_batches(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
+    errors_handler = ErrorsQueue()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -319,7 +322,7 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batches(op
         family="test-family",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -351,7 +354,7 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batches(op
 
 def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
+    errors_handler = RemoteErrorsHandler()
     last_queue_seq = SharedInt(initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
@@ -359,7 +362,7 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
         family="test-family",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
@@ -388,7 +391,7 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
 def test_status_thread_processes_element():
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     status_tracking_queue = Mock()
     last_ack_seq = SharedInt(initial_value=-1)
     last_ack_timestamp = SharedFloat(initial_value=-1)
@@ -397,7 +400,7 @@ def test_status_thread_processes_element():
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         status_tracking_queue=status_tracking_queue,
         last_ack_seq=last_ack_seq,
         last_ack_timestamp=last_ack_timestamp,
@@ -420,7 +423,7 @@ def test_status_thread_processes_element():
 
     # then
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=SequenceId(0))
-    errors_queue.put.assert_not_called()
+    errors_handler.handle.assert_not_called()
     status_tracking_queue.commit.assert_called_once_with(1)
     assert last_ack_seq.value == status_element.sequence_id
     assert last_ack_timestamp.value == status_element.timestamp.timestamp()
@@ -440,7 +443,7 @@ def test_status_thread_processes_element():
 def test_status_thread_processes_element_with_standard_error_code(detail):
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     status_tracking_queue = Mock()
     last_ack_seq = SharedInt(initial_value=-1)
     last_ack_timestamp = SharedFloat(initial_value=-1)
@@ -449,7 +452,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         status_tracking_queue=status_tracking_queue,
         last_ack_seq=last_ack_seq,
         last_ack_timestamp=last_ack_timestamp,
@@ -471,7 +474,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     status_thread.work()
 
     # then
-    errors_queue.put.assert_called_once()
+    errors_handler.handle.assert_called_once()
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
     status_tracking_queue.commit.assert_called_once_with(1)
     assert last_ack_seq.value == status_element.sequence_id
@@ -491,7 +494,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
 def test_status_thread_processes_element_with_run_creation_error_code(detail):
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     status_tracking_queue = Mock()
     last_ack_seq = SharedInt(initial_value=-1)
     last_ack_timestamp = SharedFloat(initial_value=-1)
@@ -500,7 +503,7 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         status_tracking_queue=status_tracking_queue,
         last_ack_seq=last_ack_seq,
         last_ack_timestamp=last_ack_timestamp,
@@ -523,7 +526,7 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
         status_thread.work()
 
     # then
-    errors_queue.put.assert_called_once()
+    errors_handler.handle.assert_called_once()
     operations_repository.delete_operations.assert_not_called()
     status_tracking_queue.commit.assert_not_called()
     assert last_ack_seq.value == -1
@@ -533,7 +536,7 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
 def test_status_thread_processes_element_sequence():
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
+    errors_handler = Mock()
     status_tracking_queue = Mock()
     last_ack_seq = SharedInt(initial_value=-1)
     last_ack_timestamp = SharedFloat(initial_value=-1)
@@ -542,7 +545,7 @@ def test_status_thread_processes_element_sequence():
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
+        errors_handler=errors_handler,
         status_tracking_queue=status_tracking_queue,
         last_ack_seq=last_ack_seq,
         last_ack_timestamp=last_ack_timestamp,
@@ -592,7 +595,7 @@ def test_status_thread_processes_element_sequence():
             call.method(up_to_seq_id=SequenceId(4)),
         ]
     )
-    assert errors_queue.put.call_count == 2
+    assert errors_handler.handle.call_count == 2
     status_tracking_queue.commit.assert_has_calls(
         [
             call.method(2),

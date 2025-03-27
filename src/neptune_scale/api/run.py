@@ -46,15 +46,18 @@ from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
-    NeptuneSynchronizationStopped,
 )
 from neptune_scale.net.serialization import (
     datetime_to_proto,
     make_step,
 )
 from neptune_scale.sync.errors_tracking import (
+    CustomErrorsHandler,
+    ErrorsHandler,
     ErrorsMonitor,
     ErrorsQueue,
+    RemoteErrorsHandler,
+    RemoteErrorsHandlerAction,
 )
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.parameters import (
@@ -131,8 +134,7 @@ class Run(AbstractContextManager):
             async_lag_threshold: Threshold for the duration between the queueing and synchronization of an operation
                 (in seconds). If the duration exceeds the threshold, the callback function is triggered.
             on_async_lag_callback: Callback function triggered when the duration between the queueing and synchronization
-            on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
-                that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
+            on_queue_full_callback: Deprecated.
             on_network_error_callback: Callback function triggered when a network error occurs.
             on_error_callback: The default callback function triggered when error occurs. It applies if an error
                 wasn't caught by other callbacks.
@@ -153,7 +155,6 @@ class Run(AbstractContextManager):
         verify_type("log_directory", log_directory, (str, Path, type(None)))
         verify_type("async_lag_threshold", async_lag_threshold, (int, float, type(None)))
         verify_type("on_async_lag_callback", on_async_lag_callback, (Callable, type(None)))
-        verify_type("on_queue_full_callback", on_queue_full_callback, (Callable, type(None)))
         verify_type("on_network_error_callback", on_network_error_callback, (Callable, type(None)))
         verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
@@ -231,14 +232,52 @@ class Run(AbstractContextManager):
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
 
-            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
-            self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
-                errors_queue=self._errors_queue,
-                on_queue_full_callback=on_queue_full_callback,
-                on_network_error_callback=on_network_error_callback,
-                on_error_callback=on_error_callback,
-                on_warning_callback=on_warning_callback,
-            )
+            if any(
+                callback is not None
+                for callback in (
+                    on_network_error_callback,
+                    on_async_lag_callback,
+                    on_error_callback,
+                    on_warning_callback,
+                )
+            ):
+                self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
+                local_errors_handler: ErrorsHandler = CustomErrorsHandler(
+                    on_network_error_callback=on_network_error_callback,
+                    on_async_lag_callback=on_async_lag_callback,
+                    on_error_callback=on_error_callback,
+                    on_warning_callback=on_warning_callback,
+                )
+                remote_errors_handler: ErrorsHandler = RemoteErrorsHandler(
+                    errors_queue=self._errors_queue,
+                    on_error_action=(
+                        RemoteErrorsHandlerAction.SEND
+                        if on_error_callback is not None
+                        else RemoteErrorsHandlerAction.HANDLE
+                    ),
+                    on_network_error_action=(
+                        RemoteErrorsHandlerAction.SEND
+                        if on_network_error_callback is not None
+                        else RemoteErrorsHandlerAction.HANDLE
+                    ),
+                    on_async_lag_action=(
+                        RemoteErrorsHandlerAction.SEND
+                        if on_async_lag_callback is not None
+                        else RemoteErrorsHandlerAction.HANDLE
+                    ),
+                    on_warning_action=(
+                        RemoteErrorsHandlerAction.SEND
+                        if on_warning_callback is not None
+                        else RemoteErrorsHandlerAction.HANDLE
+                    ),
+                )
+                self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
+                    errors_queue=self._errors_queue, errors_handler=local_errors_handler
+                )
+            else:
+                self._errors_queue = None
+                self._errors_monitor = None
+                remote_errors_handler = RemoteErrorsHandler()
 
             self._last_queued_seq: Optional[SharedInt] = SharedInt(-1)
             self._last_ack_seq: Optional[SharedInt] = SharedInt(-1)
@@ -248,7 +287,7 @@ class Run(AbstractContextManager):
                 project=self._project,
                 family=self._run_id,
                 operations_repository_path=operations_repository_path,
-                errors_queue=self._errors_queue,
+                errors_handler=remote_errors_handler,
                 api_token=self._api_token,
                 last_queued_seq=self._last_queued_seq,
                 last_ack_seq=self._last_ack_seq,
@@ -268,7 +307,9 @@ class Run(AbstractContextManager):
                 )
                 self._lag_tracker.start()
 
-            self._errors_monitor.start()
+            if self._errors_monitor is not None:
+                self._errors_monitor.start()
+
             with self._lock:
                 self._sync_process.start()
                 self._sync_process_supervisor.start()
@@ -295,8 +336,7 @@ class Run(AbstractContextManager):
     def _handle_sync_process_death(self) -> None:
         with self._lock:
             if not self._is_closing:
-                if self._errors_queue is not None:
-                    self._errors_queue.put(NeptuneSynchronizationStopped())
+                logger.error("The sync process has stopped unexpectedly")
 
     def _close(self, *, wait: bool = True) -> None:
         with self._lock:

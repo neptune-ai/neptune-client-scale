@@ -77,7 +77,7 @@ from neptune_scale.net.api_client import (
     backend_factory,
     with_api_errors_handling,
 )
-from neptune_scale.sync.errors_tracking import ErrorsQueue
+from neptune_scale.sync.errors_tracking import ErrorsHandler
 from neptune_scale.sync.parameters import (
     HTTP_REQUEST_MAX_TIME_SECONDS,
     MAX_REQUEST_SIZE_BYTES,
@@ -169,7 +169,7 @@ class SyncProcess(Process):
     def __init__(
         self,
         operations_repository_path: Path,
-        errors_queue: ErrorsQueue,
+        errors_handler: ErrorsHandler,
         api_token: str,
         project: str,
         family: str,
@@ -180,7 +180,7 @@ class SyncProcess(Process):
         super().__init__(name="SyncProcess")
 
         self._operations_repository_path: Path = operations_repository_path
-        self._errors_queue: ErrorsQueue = errors_queue
+        self._errors_handler: ErrorsHandler = errors_handler
         self._api_token: str = api_token
         self._project: str = project
         self._family: str = family
@@ -199,7 +199,7 @@ class SyncProcess(Process):
             api_token=self._api_token,
             operations_repository=operations_repository,
             status_tracking_queue=status_tracking_queue,
-            errors_queue=self._errors_queue,
+            errors_handler=self._errors_handler,
             family=self._family,
             last_queued_seq=self._last_queued_seq,
         )
@@ -207,7 +207,7 @@ class SyncProcess(Process):
             api_token=self._api_token,
             project=self._project,
             operations_repository=operations_repository,
-            errors_queue=self._errors_queue,
+            errors_handler=self._errors_handler,
             status_tracking_queue=status_tracking_queue,
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
@@ -275,7 +275,7 @@ class SenderThread(Daemon):
         family: str,
         operations_repository: OperationsRepository,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
-        errors_queue: ErrorsQueue,
+        errors_handler: ErrorsHandler,
         last_queued_seq: SharedInt,
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
@@ -284,7 +284,7 @@ class SenderThread(Daemon):
         self._family: str = family
         self._operations_repository: OperationsRepository = operations_repository
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
-        self._errors_queue: ErrorsQueue = errors_queue
+        self._errors_handler: ErrorsHandler = errors_handler
         self._last_queued_seq: SharedInt = last_queued_seq
 
         self._backend: Optional[ApiClient] = None
@@ -348,7 +348,7 @@ class SenderThread(Daemon):
                             self._last_queued_seq.value = sequence_id
                             self._last_queued_seq.notify_all()
                     except NeptuneRetryableError as e:
-                        self._errors_queue.put(e)
+                        self._errors_handler.handle(e)
                         # Sleep before retry
                         return
 
@@ -361,7 +361,7 @@ class SenderThread(Daemon):
                     )
 
         except Exception as e:
-            self._errors_queue.put(e)
+            self._errors_handler.handle(e)
             with self._last_queued_seq:
                 self._last_queued_seq.notify_all()
             self.interrupt()
@@ -439,7 +439,7 @@ class StatusTrackingThread(Daemon):
         api_token: str,
         project: str,
         operations_repository: OperationsRepository,
-        errors_queue: ErrorsQueue,
+        errors_handler: ErrorsHandler,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         last_ack_seq: SharedInt,
         last_ack_timestamp: SharedFloat,
@@ -449,7 +449,7 @@ class StatusTrackingThread(Daemon):
         self._api_token: str = api_token
         self._project: str = project
         self._operations_repository: OperationsRepository = operations_repository
-        self._errors_queue: ErrorsQueue = errors_queue
+        self._errors_handler: ErrorsHandler = errors_handler
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._last_ack_seq: SharedInt = last_ack_seq
         self._last_ack_timestamp: SharedFloat = last_ack_timestamp
@@ -493,7 +493,7 @@ class StatusTrackingThread(Daemon):
                     if response is None:
                         raise NeptuneUnexpectedError("Server response is empty")
                 except NeptuneRetryableError as e:
-                    self._errors_queue.put(e)
+                    self._errors_handler.handle(e)
                     # Small give up, sleep before retry
                     break
 
@@ -515,7 +515,8 @@ class StatusTrackingThread(Daemon):
                         break
 
                     for error in errors:
-                        self._errors_queue.put(error)
+                        # TODO: put into queue
+                        self._errors_handler.handle(error)
 
                     operations_to_commit += 1
                     processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
@@ -547,7 +548,7 @@ class StatusTrackingThread(Daemon):
                     break
 
         except Exception as e:
-            self._errors_queue.put(e)
+            self._errors_handler.handle(e)
             self.interrupt()
             self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e

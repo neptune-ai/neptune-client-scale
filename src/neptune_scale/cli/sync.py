@@ -23,8 +23,8 @@ from tqdm import tqdm
 
 from neptune_scale.sync import sync_process
 from neptune_scale.sync.errors_tracking import (
-    ErrorsMonitor,
     ErrorsQueue,
+    RemoteErrorsHandler,
 )
 from neptune_scale.sync.operations_repository import (
     OperationsRepository,
@@ -72,7 +72,6 @@ class SyncRunner:
         self._last_ack_timestamp = SharedFloat(-1)
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._sync_process: Optional[SyncProcess] = None
-        self._errors_monitor: Optional[ErrorsMonitor] = None
 
     def start(
         self,
@@ -87,9 +86,10 @@ class SyncRunner:
             logger.error("No run metadata found in log")
             return
 
+        errors_handler = RemoteErrorsHandler()
         self._sync_process = sync_process.SyncProcess(
             operations_repository_path=self._run_log_file,
-            errors_queue=self._errors_queue,
+            errors_handler=errors_handler,
             api_token=self._api_token,
             project=metadata.project,
             family=metadata.run_id,
@@ -97,11 +97,8 @@ class SyncRunner:
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
         )
-        self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
 
         self._sync_process.start()
-
-        self._errors_monitor.start()
 
     def wait(self, progress_bar_enabled: bool = True, wait_time: float = 0.1) -> None:
         if self._log_seq_id_range is None:
@@ -135,10 +132,6 @@ class SyncRunner:
         if self._sync_process is not None:
             self._sync_process.terminate()
             self._sync_process.join()
-
-        if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(remaining_iterations=1)
-            self._errors_monitor.join()
 
         self._operations_repository.close(cleanup_files=True)
         self._errors_queue.close()
