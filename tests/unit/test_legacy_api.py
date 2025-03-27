@@ -14,9 +14,11 @@ from pytest import (
     mark,
 )
 
-from neptune_scale.api.attribute import cleanup_path
 from neptune_scale.api.metrics import Metrics
-from neptune_scale.legacy import Run
+from neptune_scale.legacy import (
+    Run,
+    cleanup_path,
+)
 
 
 @fixture
