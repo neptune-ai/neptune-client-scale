@@ -96,13 +96,15 @@ class Attribute:
     def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        self._run.add_tags(tags=values)
+        # TODO: check if it even works
+        self._run._log(tags_add={self._path: values})
 
     @warn_unsupported_params
     def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        self._run.remove_tags(values)
+        # TODO: check if it even works
+        self._run._log(tags_remove={self._path: values})
 
     @warn_unsupported_params
     def extend(
@@ -116,7 +118,6 @@ class Attribute:
         wait: bool = False,
         **kwargs: Any,
     ) -> None:
-        # TODO: make this compatible with the old client
         self._validate_lists_length_equal(values, steps, "steps")
         self._validate_lists_length_equal(values, timestamps, "timestamps")
         self._validate_lists_length_equal(values, previews, "preview")
