@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
-__all__ = ("MetadataSplitter",)
+__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
 
 import math
 import warnings
@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import (
     Any,
     Optional,
+    TypeVar,
     Union,
 )
 
@@ -38,6 +39,7 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
+T = TypeVar("T")
 
 SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 
@@ -56,18 +58,20 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
         self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
-        self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
+        self._skip_invalid_values = envs.get_bool(envs.SKIP_INVALID_VALUES, True)
+
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
-        self._configs = peekable(configs.items()) if configs else None
-        self._metrics_data = (
-            peekable(self._skip_non_finite(metrics.step, metrics.data)) if metrics is not None else None
-        )
+
+        self._metrics = peekable(self._stream_metrics(metrics.step, metrics.data)) if metrics is not None else None
+        self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
         self._metrics_preview = metrics.preview if metrics is not None else False
         self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
-        self._add_tags = peekable(add_tags.items()) if add_tags else None
-        self._remove_tags = peekable(remove_tags.items()) if remove_tags else None
+
+        self._configs = peekable(self._stream_configs(configs)) if configs else None
+        self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
+        self._remove_tags = peekable(self._stream_tags(remove_tags)) if remove_tags else None
 
         self._max_update_bytes_size = (
             max_message_bytes_size
@@ -86,7 +90,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         if (
             self._has_returned
             and not self._configs
-            and not self._metrics_data
+            and not self._metrics
             and not self._add_tags
             and not self._remove_tags
         ):
@@ -102,7 +106,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         )
         size = self.populate_append(
             update=update,
-            assets=self._metrics_data,
+            assets=self._metrics,
             size=size,
         )
         size = self.populate_tags(
@@ -124,7 +128,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def populate_assign(
         self,
         update: UpdateRunSnapshot,
-        assets: Optional[peekable[tuple[str, Any]]],
+        assets: Optional[peekable[tuple[str, Value]]],
         size: int,
     ) -> int:
         if assets is None:
@@ -136,13 +140,11 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             except StopIteration:
                 break
 
-            proto_value = make_value(value)
-            new_size = size + pb_key_size(key) + proto_value.ByteSize() + 6
-
+            new_size = size + proto_string_size(key) + value.ByteSize() + 6
             if new_size > self._max_update_bytes_size:
                 break
 
-            update.assign[key].MergeFrom(proto_value)
+            update.assign[key].MergeFrom(value)
             size, _ = new_size, next(assets)
 
         return size
@@ -162,7 +164,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             except StopIteration:
                 break
 
-            new_size = size + pb_key_size(key) + SINGLE_FLOAT_VALUE_SIZE + 6
+            new_size = size + proto_string_size(key) + SINGLE_FLOAT_VALUE_SIZE + 6
             if new_size > self._max_update_bytes_size:
                 break
 
@@ -187,9 +189,9 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 values = peekable(values)
 
             is_full = False
-            new_size = size + pb_key_size(key) + 6
+            new_size = size + proto_string_size(key) + 6
             for value in values:
-                tag_size = pb_key_size(value) + 6
+                tag_size = proto_string_size(value) + 6
                 if new_size + tag_size > self._max_update_bytes_size:
                     values.prepend(value)
                     is_full = True
@@ -206,13 +208,27 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
         return size
 
-    def _skip_non_finite(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
-        """Yields (metric, value) pairs, skipping non-finite values depending on the env setting."""
+    def _validate_paths(self, fields: dict[str, T]) -> Iterator[tuple[str, T]]:
+        _is_instance = isinstance  # local binding, faster in tight loops
+        for key, value in fields.items():
+            if not _is_instance(key, str):
+                if self._skip_invalid_values:
+                    continue
+                else:
+                    raise TypeError(f"Field paths must be strings (got `{key}`)")
+            yield key, value
 
-        for k, v in metrics.items():
-            v = float(v)
+    def _stream_metrics(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
+        for key, value in self._validate_paths(metrics):
+            try:
+                value = float(value)
+            except (ValueError, TypeError, OverflowError) as e:
+                if self._skip_invalid_values:
+                    continue
+                else:
+                    raise TypeError(f"Metrics' values must be float or int (got `{key}`:`{value}`)") from e
 
-            if not math.isfinite(v):
+            if not math.isfinite(value):
                 if self._should_skip_non_finite_metrics:
                     warnings.warn(
                         f"Neptune is skipping non-finite metric values. You can turn this warning into an error by "
@@ -221,15 +237,57 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                         stacklevel=7,
                     )
 
-                    logger.warning(f"Skipping a non-finite value `{v}` of metric `{k}` at step `{step}`. ")
+                    logger.warning(f"Skipping a non-finite value `{value}` of metric `{key}` at step `{step}`. ")
                     continue
                 else:
-                    raise NeptuneFloatValueNanInfUnsupported(metric=k, step=step, value=v)
+                    raise NeptuneFloatValueNanInfUnsupported(metric=key, step=step, value=value)
 
-            yield k, v
+            yield key, value
+
+    def _stream_configs(
+        self, configs: dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]
+    ) -> Iterator[tuple[str, Value]]:
+        _is_instance = isinstance  # local binding, faster in tight loops
+        for key, value in self._validate_paths(configs):
+            if _is_instance(value, float):
+                yield key, Value(float64=value)  # type: ignore
+            elif _is_instance(value, bool):
+                yield key, Value(bool=value)  # type: ignore
+            elif _is_instance(value, int):
+                yield key, Value(int64=value)  # type: ignore
+            elif _is_instance(value, str):
+                yield key, Value(string=value)  # type: ignore
+            elif _is_instance(value, datetime):
+                yield key, Value(timestamp=datetime_to_proto(value))  # type: ignore
+            elif _is_instance(value, (list, set, tuple)):
+                yield key, Value(string_set=StringSet(values=value))  # type: ignore
+            else:
+                if self._skip_invalid_values:
+                    continue
+                else:
+                    raise TypeError(
+                        f"Config values must be float, bool, int, str, datetime, list, set or tuple "
+                        f"(got `{key}`:`{value}`)"
+                    )
+
+    def _stream_tags(
+        self, tags: dict[str, Union[list[str], set[str], tuple[str]]]
+    ) -> Iterator[tuple[str, Union[list[str], set[str], tuple[str]]]]:
+        accepted_tag_collection_types = (list, set, tuple)
+        _is_instance = isinstance  # local binding, faster in tight loops
+        for key, values in self._validate_paths(tags):
+            if not _is_instance(values, accepted_tag_collection_types) or any(
+                not _is_instance(tag, str) for tag in values
+            ):
+                if self._skip_invalid_values:
+                    continue
+                else:
+                    raise TypeError(f"Tags must be a list, set or tuple of strings (got `{key}`:`{values}`)")
+
+            yield key, values
 
     def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
-        include_preview = self._metrics_data and self._metrics_preview
+        include_preview = self._metrics and self._metrics_preview
         return UpdateRunSnapshot(
             step=self._step,
             preview=(self._make_preview() if include_preview else None),
@@ -246,25 +304,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         if self._metrics_preview_completion is not None:
             return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
         return Preview(is_preview=True)
-
-
-def make_value(value: Union[Value, float, str, int, bool, datetime, list[str], set[str]]) -> Value:
-    if isinstance(value, Value):
-        return value
-    if isinstance(value, float):
-        return Value(float64=value)
-    elif isinstance(value, bool):
-        return Value(bool=value)
-    elif isinstance(value, int):
-        return Value(int64=value)
-    elif isinstance(value, str):
-        return Value(string=value)
-    elif isinstance(value, datetime):
-        return Value(timestamp=datetime_to_proto(value))
-    elif isinstance(value, (list, set, tuple)):
-        return Value(string_set=StringSet(values=value))
-    else:
-        raise ValueError(f"Unsupported value type: {type(value)}")
 
 
 def datetime_to_proto(dt: datetime) -> Timestamp:
@@ -295,7 +334,7 @@ def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = Fa
     return Step(whole=whole, micro=micro)
 
 
-def pb_key_size(key: str) -> int:
+def proto_string_size(key: str) -> int:
     """
     Calculates the size of the string in the protobuf message including an overhead of the length prefix (varint)
         with an assumption of maximal string length.
