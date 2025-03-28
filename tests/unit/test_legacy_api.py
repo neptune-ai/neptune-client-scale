@@ -14,28 +14,30 @@ from pytest import (
     mark,
 )
 
-from neptune_scale.api.attribute import cleanup_path
 from neptune_scale.api.metrics import Metrics
-from neptune_scale.legacy import Run
+from neptune_scale.legacy import (
+    Run,
+    cleanup_path,
+)
 
 
 @fixture
 def run(api_token):
     run = Run(project="dummy/project", mode="offline", api_token=api_token)
-    run._attr_store.log = Mock()
+    run._log = Mock()
     with run:
         yield run
 
 
 @fixture
-def store(run):
-    return run._attr_store
+def log_method(run):
+    return run._log
 
 
 @mark.parametrize("value", (1, 1.23, "string", True, False, datetime.now()))
-def test_assign_config_atom(run, store, value):
+def test_assign_config_atom(run, log_method, value):
     run["path"] = value
-    store.log.assert_called_once_with(configs={"path": value})
+    log_method.assert_called_once_with(configs={"path": value})
 
 
 @mark.parametrize(
@@ -46,10 +48,10 @@ def test_assign_config_atom(run, store, value):
         ({"foo": {"bar": {"baz": 1}, "qux": 2}}, {"base/foo/bar/baz": 1, "base/foo/qux": 2}),
     ),
 )
-def test_assign_config_dict(run, store, value, expected):
+def test_assign_config_dict(run, log_method, value, expected):
     run["base"] = value
-    assert store.log.call_count == 1
-    assert store.log.call_args.kwargs == {"configs": expected}
+    assert log_method.call_count == 1
+    assert log_method.call_args.kwargs == {"configs": expected}
 
 
 @mark.parametrize("value", ({}, {"foo": {}}, {"foo": 1, "bar": {"baz": {}}}))
@@ -60,43 +62,43 @@ def test_assign_config_empty_dict(run, value):
     exc.match("cannot be empty")
 
 
-def test_tags(run, store):
+def test_tags(run, log_method):
     run["sys/tags"].add("tag1")
-    store.log.assert_called_with(tags_add={"sys/tags": ("tag1",)})
+    log_method.assert_called_with(tags_add={"sys/tags": ("tag1",)})
 
     run["sys/tags"].add(("tag2", "tag3"))
-    store.log.assert_called_with(tags_add={"sys/tags": ("tag2", "tag3")})
+    log_method.assert_called_with(tags_add={"sys/tags": ("tag2", "tag3")})
 
     run["sys/tags"].remove("tag3")
-    store.log.assert_called_with(tags_remove={"sys/tags": ("tag3",)})
+    log_method.assert_called_with(tags_remove={"sys/tags": ("tag3",)})
 
     run["sys/tags"].remove(("tag1", "tag2"))
-    store.log.assert_called_with(tags_remove={"sys/tags": ("tag1", "tag2")})
+    log_method.assert_called_with(tags_remove={"sys/tags": ("tag1", "tag2")})
 
 
-def test_append(run, store):
+def test_append(run, log_method):
     run["sys/series"].append(3, step=1, timestamp=10)
-    store.log.assert_called_with(metrics=Metrics(data={"sys/series": 3}, step=1), timestamp=10)
+    log_method.assert_called_with(metrics=Metrics(data={"sys/series": 3}, step=1), timestamp=10)
 
     run["sys/series"].append({"foo": 1, "bar": 2}, step=2)
-    store.log.assert_called_with(
+    log_method.assert_called_with(
         metrics=Metrics(data={"sys/series/foo": 1, "sys/series/bar": 2}, step=2), timestamp=None
     )
 
     run["my/series"].append({"foo": 1, "bar": 2}, step=3, preview=True, preview_completion=0.3)
-    store.log.assert_called_with(
+    log_method.assert_called_with(
         metrics=Metrics(data={"my/series/foo": 1, "my/series/bar": 2}, step=3, preview=True, preview_completion=0.3),
         timestamp=None,
     )
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
-def test_extend(run, store):
+def test_extend(run, log_method):
     now = datetime.now()
     before = now - timedelta(seconds=1)
 
     run["my/series"].extend([7, 38], steps=[1, 2], timestamps=[before, now])
-    store.log.assert_has_calls(
+    log_method.assert_has_calls(
         [
             call(metrics=Metrics(data={"my/series": 7}, step=1), timestamp=before),
             call(metrics=Metrics(data={"my/series": 38}, step=2), timestamp=now),
@@ -105,7 +107,7 @@ def test_extend(run, store):
 
     # timestamp defaulting
     run["my/series"].extend([7, 38], steps=[3, 4])
-    store.log.assert_has_calls(
+    log_method.assert_has_calls(
         [
             call(metrics=Metrics(data={"my/series": 7}, step=3), timestamp=now),
             call(metrics=Metrics(data={"my/series": 38}, step=4), timestamp=now),
@@ -116,9 +118,9 @@ def test_extend(run, store):
     run["my/series"].extend(
         [7, 38], steps=[5, 6], previews=[False, True], preview_completions=[1.0, 0.5], timestamps=[now, now]
     )
-    store.log.assert_has_calls(
+    log_method.assert_has_calls(
         [
-            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=None), timestamp=now),
+            call(metrics=Metrics(data={"my/series": 7}, step=5, preview=False, preview_completion=1.0), timestamp=now),
             call(metrics=Metrics(data={"my/series": 38}, step=6, preview=True, preview_completion=0.5), timestamp=now),
         ]
     )

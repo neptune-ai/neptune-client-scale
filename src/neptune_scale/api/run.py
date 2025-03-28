@@ -12,6 +12,11 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.sync.metadata_splitter import (
+    MetadataSplitter,
+    datetime_to_proto,
+    make_step,
+)
 from neptune_scale.sync.operations_repository import OperationsRepository
 
 __all__ = ["Run"]
@@ -33,24 +38,19 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
-from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
-    verify_dict_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
     verify_type,
+    verify_value_between,
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
-)
-from neptune_scale.net.serialization import (
-    datetime_to_proto,
-    make_step,
 )
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
@@ -218,13 +218,11 @@ class Run(AbstractContextManager):
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
-            self._attr_store: Optional[AttributeStore] = AttributeStore(
-                self._project, self._run_id, self._operations_repo, self._sequence_tracker
-            )
+            self._logging_enabled = True
         else:
             self._operations_repo = None
             self._sequence_tracker = None
-            self._attr_store = None
+            self._logging_enabled = False
 
         if mode == "async":
             assert self._sequence_tracker is not None
@@ -574,11 +572,10 @@ class Run(AbstractContextManager):
         - add_tags()
         - remove_tags()
         """
-        mtr = Metrics(step=step, data=metrics) if metrics is not None else None
         self._log(
             timestamp=timestamp,
             configs=configs,
-            metrics=mtr,
+            metrics=Metrics(step=step, data=metrics) if metrics is not None else None,
             tags_add=tags_add,
             tags_remove=tags_remove,
         )
@@ -593,13 +590,25 @@ class Run(AbstractContextManager):
     ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
-        verify_type("metrics", metrics, (Metrics, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
-        verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
-        verify_dict_type("tags_add", tags_add, (list, set, tuple))
-        verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
+        if metrics is not None:
+            verify_type("metrics", metrics, Metrics)
+            verify_type("metrics", metrics.data, dict)
+            verify_type("step", metrics.step, (float, int, type(None)))
+            verify_type("preview", metrics.preview, bool)
+            verify_type("preview_completion", metrics.preview_completion, (float, type(None)))
+
+            if not metrics.preview:
+                if metrics.preview_completion not in (None, 1.0):
+                    raise ValueError("preview_completion can only be specified for metric previews")
+                # we don't send info about preview if preview=False
+                # and dropping 1.0 (even if it's technically a correct value)
+                # reduces chance of errors down the line
+                metrics.preview_completion = None
+            if metrics.preview_completion is not None:
+                verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -607,16 +616,31 @@ class Run(AbstractContextManager):
         if self._is_closing:
             return
 
-        if self._attr_store is None:
+        if not self._logging_enabled:
             return
 
-        self._attr_store.log(
+        assert self._operations_repo is not None
+        assert self._sequence_tracker is not None
+
+        if timestamp is None:
+            timestamp = datetime.now()
+        elif isinstance(timestamp, float):
+            timestamp = datetime.fromtimestamp(timestamp)
+
+        splitter: MetadataSplitter = MetadataSplitter(
+            project=self._project,
+            run_id=self._run_id,
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
-            tags_add=tags_add,
-            tags_remove=tags_remove,
+            add_tags=tags_add,
+            remove_tags=tags_remove,
         )
+
+        operations = list(splitter)
+        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
+
+        self._sequence_tracker.update_sequence_id(sequence_id)
 
     def _wait(
         self,
