@@ -17,6 +17,8 @@ import neptune_scale.api.run
 
 __all__ = ("Run",)
 
+from neptune_scale.api.metrics import Metrics
+
 
 def warn_unsupported_params(fn: Callable) -> Callable:
     # Perform some simple heuristics to detect if a method is called with parameters
@@ -61,13 +63,17 @@ class Attribute:
         run['bar'].append(1, step=10)
     """
 
-    def __init__(self, run: "Run", path: str) -> None:
-        self._run = run
+    def __init__(
+        self,
+        run: "Run",
+        path: str,
+    ) -> None:
+        self._log = run._log
         self._path = path
 
     @warn_unsupported_params
     def assign(self, value: Any, *, wait: bool = False) -> None:
-        self._run.log_configs(data=accumulate_dict_values(value, self._path))
+        self._log(configs=accumulate_dict_values(value, self._path))
 
     @warn_unsupported_params
     def append(
@@ -84,27 +90,27 @@ class Attribute:
         if isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
-        self._run.log_metrics(
-            data=accumulate_dict_values(value, self._path),
-            step=step,
+        self._log(
             timestamp=timestamp,
-            preview=preview,
-            preview_completion=preview_completion,
+            metrics=Metrics(
+                data=accumulate_dict_values(value, self._path),
+                step=step,
+                preview=preview,
+                preview_completion=preview_completion,
+            ),
         )
 
     @warn_unsupported_params
     def add(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        # TODO: check if it even works
-        self._run._log(tags_add={self._path: values})
+        self._log(tags_add={self._path: values})
 
     @warn_unsupported_params
     def remove(self, values: Union[str, Union[list[str], set[str], tuple[str]]], *, wait: bool = False) -> None:
         if isinstance(values, str):
             values = (values,)
-        # TODO: check if it even works
-        self._run._log(tags_remove={self._path: values})
+        self._log(tags_remove={self._path: values})
 
     @warn_unsupported_params
     def extend(
@@ -155,8 +161,8 @@ class Run(neptune_scale.api.run.Run):
         run.close()
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore
+        super().__init__(*args, **kwargs)
         self._attributes: dict[str, Attribute] = {}
 
     def __getitem__(self, path: str) -> "Attribute":
