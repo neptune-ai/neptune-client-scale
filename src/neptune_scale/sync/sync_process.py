@@ -422,15 +422,15 @@ def _partition_by_type_and_size(
     def to_run_operation(ops: list[Operation]) -> tuple[RunOperation, SequenceId, datetime.datetime]:
         if ops[0].operation_type == OperationType.CREATE_RUN:
             return (
-                RunOperation(project=project, run_id=run_id, create=ops[0].operation),  # type: ignore
+                RunOperation(project=project, run_id=run_id, create=ops[0].operation),
                 ops[-1].sequence_id,
                 ops[-1].ts,
             )
         else:
-            snapshots = UpdateRunSnapshots(snapshots=[_op.operation for _op in ops])  # type: ignore
+            snapshots = UpdateRunSnapshots(snapshots=[_op.operation for _op in ops])
             return RunOperation(project=project, run_id=run_id, update_batch=snapshots), ops[-1].sequence_id, ops[-1].ts
 
-    return [(to_run_operation(ops)) for ops in grouped]  # type: ignore
+    return [(to_run_operation(ops)) for ops in grouped]
 
 
 class StatusTrackingThread(Daemon):
