@@ -38,6 +38,7 @@ from neptune_api.api.data_ingestion import (
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.errors import (
+    ApiKeyRejectedError,
     InvalidApiTokenException,
     UnableToDeserializeApiKeyError,
     UnableToExchangeApiKeyError,
@@ -162,7 +163,7 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             return func(*args, **kwargs)
         except (InvalidApiTokenException, UnableToDeserializeApiKeyError):
             raise NeptuneInvalidCredentialsError()
-        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus):
+        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus, ApiKeyRejectedError):
             raise NeptuneUnableToAuthenticateError()
         except httpx.RequestError:
             raise NeptuneConnectionLostError()
