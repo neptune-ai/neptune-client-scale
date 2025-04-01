@@ -242,7 +242,7 @@ class OperationsRepository:
                         "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
                         (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
                     )
-                    return SequenceId(cursor.lastrowid)  # type: ignore
+                    return SequenceId(cursor.lastrowid)
         except sqlite3.DatabaseError as e:
             raise NeptuneUnableToLogData() from e
 
