@@ -258,17 +258,17 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         _is_instance = isinstance  # local binding, faster in tight loops
         for key, value in self._validate_paths(configs):
             if _is_instance(value, float):
-                yield key, Value(float64=value)  # type: ignore
+                yield key, Value(float64=value)
             elif _is_instance(value, bool):
-                yield key, Value(bool=value)  # type: ignore
+                yield key, Value(bool=value)
             elif _is_instance(value, int):
-                yield key, Value(int64=value)  # type: ignore
+                yield key, Value(int64=value)
             elif _is_instance(value, str):
-                yield key, Value(string=value)  # type: ignore
+                yield key, Value(string=value)
             elif _is_instance(value, datetime):
                 yield key, Value(timestamp=datetime_to_proto(value))  # type: ignore
             elif _is_instance(value, (list, set, tuple)):
-                yield key, Value(string_set=StringSet(values=value))  # type: ignore
+                yield key, Value(string_set=StringSet(values=value))
             else:
                 _warn_or_raise_on_invalid_value(
                     f"Config values must be float, bool, int, str, datetime, list, set or tuple "
