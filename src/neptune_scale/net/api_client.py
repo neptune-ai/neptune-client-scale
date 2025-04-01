@@ -43,7 +43,6 @@ from neptune_api.errors import (
     UnableToDeserializeApiKeyError,
     UnableToExchangeApiKeyError,
     UnableToRefreshTokenError,
-    UnexpectedStatus,
 )
 from neptune_api.models import (
     ClientConfig,
@@ -161,9 +160,12 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
-        except (InvalidApiTokenException, UnableToDeserializeApiKeyError):
+        except (InvalidApiTokenException, UnableToDeserializeApiKeyError, ApiKeyRejectedError):
             raise NeptuneInvalidCredentialsError()
-        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError, UnexpectedStatus, ApiKeyRejectedError):
+        except (UnableToRefreshTokenError, UnableToExchangeApiKeyError):
+            # The errors above are raised by neptune-api when API token retrieval/refresh fails for
+            # reasons other than the token being explicitly rejected by the server: network errors,
+            # HTTP status != 200 etc. We should retry on these.
             raise NeptuneUnableToAuthenticateError()
         except httpx.RequestError:
             raise NeptuneConnectionLostError()
