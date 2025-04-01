@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
@@ -42,6 +44,17 @@ logger = get_logger()
 T = TypeVar("T")
 
 SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
+
+
+def _invalid_value_action_from_env() -> str:
+    action = os.getenv(envs.INVALID_VALUE_ACTION, "raise")
+    if action not in ("drop", "raise"):
+        raise ValueError(f"Invalid value '{action}' for {envs.INVALID_VALUE_ACTION}. Must be 'drop' or 'raise'.")
+
+    return action
+
+
+INVALID_VALUE_ACTION = _invalid_value_action_from_env()
 SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
@@ -58,8 +71,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
-        self._skip_invalid_values = envs.get_bool(envs.SKIP_INVALID_VALUES, True)
-
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
@@ -212,21 +223,18 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         _is_instance = isinstance  # local binding, faster in tight loops
         for key, value in fields.items():
             if not _is_instance(key, str):
-                if self._skip_invalid_values:
-                    continue
-                else:
-                    raise TypeError(f"Field paths must be strings (got `{key}`)")
+                _warn_or_raise_on_invalid_value(f"Field paths must be strings (got `{key}`)")
+                continue
+
             yield key, value
 
     def _stream_metrics(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
         for key, value in self._validate_paths(metrics):
             try:
                 value = float(value)
-            except (ValueError, TypeError, OverflowError) as e:
-                if self._skip_invalid_values:
-                    continue
-                else:
-                    raise TypeError(f"Metrics' values must be float or int (got `{key}`:`{value}`)") from e
+            except (ValueError, TypeError, OverflowError):
+                _warn_or_raise_on_invalid_value(f"Metrics' values must be float or int (got `{key}`:`{value}`)")
+                continue
 
             if not math.isfinite(value):
                 if SHOULD_SKIP_NON_FINITE_METRICS:
@@ -262,13 +270,11 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             elif _is_instance(value, (list, set, tuple)):
                 yield key, Value(string_set=StringSet(values=value))  # type: ignore
             else:
-                if self._skip_invalid_values:
-                    continue
-                else:
-                    raise TypeError(
-                        f"Config values must be float, bool, int, str, datetime, list, set or tuple "
-                        f"(got `{key}`:`{value}`)"
-                    )
+                _warn_or_raise_on_invalid_value(
+                    f"Config values must be float, bool, int, str, datetime, list, set or tuple "
+                    f"(got `{key}`:`{value}`)"
+                )
+                continue
 
     def _stream_tags(
         self, tags: dict[str, Union[list[str], set[str], tuple[str]]]
@@ -279,10 +285,10 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             if not _is_instance(values, accepted_tag_collection_types) or any(
                 not _is_instance(tag, str) for tag in values
             ):
-                if self._skip_invalid_values:
-                    continue
-                else:
-                    raise TypeError(f"Tags must be a list, set or tuple of strings (got `{key}`:`{values}`)")
+                _warn_or_raise_on_invalid_value(
+                    f"Tags must be a list, set or tuple of strings (got `{key}`:`{values}`)"
+                )
+                continue
 
             yield key, values
 
@@ -341,3 +347,10 @@ def proto_string_size(key: str) -> int:
     """
     key_bin = bytes(key, "utf-8")
     return len(key_bin) + 2 + (1 if len(key_bin) > 127 else 0)
+
+
+def _warn_or_raise_on_invalid_value(message: str) -> None:
+    if INVALID_VALUE_ACTION == "raise":
+        raise TypeError(message)
+    else:
+        logger.warning(f"Dropping value. {message}.")

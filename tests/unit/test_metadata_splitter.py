@@ -355,3 +355,118 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
         assert "Skipping a non-finite value" in caplog.text
         assert "bad-metric" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
+@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics"))
+def test_invalid_path_types(caplog, action, invalid_path, param_name):
+    data = {invalid_path: object()}
+
+    kwargs = {name: None for name in ("configs", "metrics", "add_tags", "remove_tags")}
+    kwargs[param_name] = data if param_name != "metrics" else Metrics(step=1, data=data)
+
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        **kwargs,
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(TypeError, match="paths must be"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                next(splitter)
+            assert "paths must be" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("invalid_value", (None, "abc", {"nested": 1}, object(), [], set, tuple(), datetime.now()))
+def test_invalid_metrics_values(caplog, action, invalid_value):
+    # Always have one valid value under the key "ok-value" so we can check that the
+    # "drop" action does not drop valid values.
+    metrics = {"bad": invalid_value, "ok": 42}
+
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=None,
+        metrics=Metrics(step=1, data=metrics),
+        add_tags={},
+        remove_tags={},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(TypeError, match="values must be"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].append) == 1
+            assert "ok" in result[0].append
+            assert "values must be" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("invalid_value", (None, {"nested": 1}, object()))
+def test_invalid_configs_values(caplog, action, invalid_value):
+    # Always have one valid value under the key "ok-value" so we can check that the
+    # "drop" action does not drop valid values.
+    configs = {"bad": invalid_value, "ok": 42}
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=configs,
+        metrics=None,
+        add_tags={},
+        remove_tags={},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(TypeError, match="values must be"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].assign) == 1
+            assert "ok" in result[0].assign
+            assert "values must be" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("operation", ("add", "remove"))
+@pytest.mark.parametrize("invalid_value", (None, {"nested": 1}, object(), "abc", 1, 1.0, True, datetime.now()))
+def test_invalid_tags_values(caplog, action, operation, invalid_value):
+    # Always have one valid value under the key "ok-value" so we can check that the
+    # "drop" action does not drop valid values.
+    tags = {"bad": invalid_value, "ok": ["tag"]}
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=None,
+        metrics=None,
+        add_tags=tags if operation == "add" else {},
+        remove_tags=tags if operation == "remove" else {},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(TypeError, match="Tags must be a"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].modify_sets) == 1
+            assert "ok" in result[0].modify_sets
+            assert "Tags must be a" in caplog.text
