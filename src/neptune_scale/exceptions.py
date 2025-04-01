@@ -236,7 +236,7 @@ This is a temporary problem. If the problem persists, please contact us at suppo
 """
 
 
-class NeptuneUnableToAuthenticateError(NeptuneScaleError):
+class NeptuneUnableToAuthenticateError(NeptuneRetryableError):
     message = """
 {h1}
 ----NeptuneUnableToAuthenticateError: The client was unable to authenticate with the Neptune server.
