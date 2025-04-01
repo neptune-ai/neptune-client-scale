@@ -1,5 +1,4 @@
 import math
-import os
 from datetime import datetime
 from unittest.mock import patch
 
@@ -297,7 +296,7 @@ def test_split_large_tags():
     ]
 
 
-@patch.dict(os.environ, {"NEPTUNE_SKIP_NON_FINITE_METRICS": "False"})
+@patch("neptune_scale.sync.metadata_splitter.SHOULD_SKIP_NON_FINITE_METRICS", False)
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_raise_on_non_finite_float_metrics(value):
     # given

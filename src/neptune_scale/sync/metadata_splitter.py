@@ -42,6 +42,7 @@ logger = get_logger()
 T = TypeVar("T")
 
 SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
+SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
@@ -57,7 +58,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
-        self._should_skip_non_finite_metrics = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
         self._skip_invalid_values = envs.get_bool(envs.SKIP_INVALID_VALUES, True)
 
         self._timestamp = datetime_to_proto(timestamp)
@@ -229,7 +229,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                     raise TypeError(f"Metrics' values must be float or int (got `{key}`:`{value}`)") from e
 
             if not math.isfinite(value):
-                if self._should_skip_non_finite_metrics:
+                if SHOULD_SKIP_NON_FINITE_METRICS:
                     warnings.warn(
                         f"Neptune is skipping non-finite metric values. You can turn this warning into an error by "
                         f"setting the `{envs.SKIP_NON_FINITE_METRICS}` environment variable to `False`.",
