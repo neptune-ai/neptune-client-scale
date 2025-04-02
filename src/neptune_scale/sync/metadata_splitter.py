@@ -47,7 +47,7 @@ SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 
 
 def _invalid_value_action_from_env() -> str:
-    action = os.getenv(envs.INVALID_VALUE_ACTION, "raise")
+    action = os.getenv(envs.INVALID_VALUE_ACTION, "drop")
     if action not in ("drop", "raise"):
         raise ValueError(f"Invalid value '{action}' for {envs.INVALID_VALUE_ACTION}. Must be 'drop' or 'raise'.")
 
@@ -350,7 +350,7 @@ def proto_string_size(key: str) -> int:
 
 
 def _warn_or_raise_on_invalid_value(message: str) -> None:
-    if INVALID_VALUE_ACTION == "raise":
-        raise TypeError(message)
-    else:
+    if INVALID_VALUE_ACTION == "drop":
         logger.warning(f"Dropping value. {message}.")
+    else:
+        raise TypeError(message)
