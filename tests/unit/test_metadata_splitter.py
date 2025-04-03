@@ -19,7 +19,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 from pytest import mark
 
 from neptune_scale.api.metrics import Metrics
-from neptune_scale.exceptions import NeptuneFloatValueNanInfUnsupported
+from neptune_scale.exceptions import (
+    NeptuneFloatValueNanInfUnsupported,
+    NeptuneUnableToLogData,
+)
 from neptune_scale.sync.metadata_splitter import MetadataSplitter
 
 
@@ -375,7 +378,7 @@ def test_invalid_path_types(caplog, action, invalid_path, param_name):
 
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
-            with pytest.raises(TypeError, match="paths must be"):
+            with pytest.raises(NeptuneUnableToLogData, match="paths must be"):
                 next(splitter)
         else:
             with caplog.at_level("WARNING"):
@@ -402,7 +405,7 @@ def test_invalid_metrics_values(caplog, action, invalid_value):
 
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
-            with pytest.raises(TypeError, match="values must be"):
+            with pytest.raises(NeptuneUnableToLogData, match="values must be"):
                 next(splitter)
         else:
             with caplog.at_level("WARNING"):
@@ -431,7 +434,7 @@ def test_invalid_configs_values(caplog, action, invalid_value):
 
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
-            with pytest.raises(TypeError, match="values must be"):
+            with pytest.raises(NeptuneUnableToLogData, match="values must be"):
                 next(splitter)
         else:
             with caplog.at_level("WARNING"):
@@ -461,7 +464,7 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
 
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
-            with pytest.raises(TypeError, match="Tags must be a"):
+            with pytest.raises(NeptuneUnableToLogData, match="Tags must be a"):
                 next(splitter)
         else:
             with caplog.at_level("WARNING"):

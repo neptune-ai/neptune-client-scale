@@ -106,7 +106,11 @@ class NeptuneUnableToLogData(NeptuneScaleError):
 {h1}
 NeptuneUnableToLogData: An error occurred, preventing Neptune from logging your data.
 {end}
+{reason}
 """
+
+    def __init__(self, reason: str = ""):
+        super().__init__(reason=reason)
 
 
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneUnableToLogData):
@@ -125,8 +129,7 @@ To resolve this issue, consider the following:
 """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # reason and operation don't matter, as we override the message string anyway
-        super().__init__(*args, reason="", operation="", **kwargs)
+        super().__init__(reason="")
 
 
 class NeptuneUnauthorizedError(NeptuneScaleError):

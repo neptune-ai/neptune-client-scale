@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
@@ -33,6 +31,7 @@ from neptune_scale.api.metrics import Metrics
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
+    NeptuneUnableToLogData,
 )
 from neptune_scale.util import (
     envs,
@@ -46,15 +45,7 @@ T = TypeVar("T")
 SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 
 
-def _invalid_value_action_from_env() -> str:
-    action = os.getenv(envs.INVALID_VALUE_ACTION, "drop")
-    if action not in ("drop", "raise"):
-        raise ValueError(f"Invalid value '{action}' for {envs.INVALID_VALUE_ACTION}. Must be 'drop' or 'raise'.")
-
-    return action
-
-
-INVALID_VALUE_ACTION = _invalid_value_action_from_env()
+INVALID_VALUE_ACTION = envs.get_option(envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop")
 SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
@@ -353,4 +344,4 @@ def _warn_or_raise_on_invalid_value(message: str) -> None:
     if INVALID_VALUE_ACTION == "drop":
         logger.warning(f"Dropping value. {message}.")
     else:
-        raise TypeError(message)
+        raise NeptuneUnableToLogData(message)
