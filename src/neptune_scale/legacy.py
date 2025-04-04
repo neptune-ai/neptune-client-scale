@@ -17,7 +17,7 @@ import neptune_scale.api.run
 
 __all__ = ("Run",)
 
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.sync.metadata_splitter import Metrics
 
 
 def warn_unsupported_params(fn: Callable) -> Callable:
