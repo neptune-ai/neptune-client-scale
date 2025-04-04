@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 
 from neptune_scale.sync.metadata_splitter import (
     MetadataSplitter,
+    Metrics,
     datetime_to_proto,
     make_step,
 )
@@ -38,7 +39,6 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
-from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,

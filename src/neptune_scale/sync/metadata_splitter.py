@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
-__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
+__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step", "Metrics")
 
 import math
 import warnings
@@ -27,7 +29,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
-from neptune_scale.api.metrics import Metrics
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneScaleWarning,
@@ -47,6 +48,16 @@ SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 
 INVALID_VALUE_ACTION = envs.get_option(envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop")
 SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
+
+
+@dataclass
+class Metrics:
+    """Class representing a set of metrics at a single step"""
+
+    data: dict[str, Union[float, int]]
+    step: Optional[Union[float, int]]
+    preview: bool = False
+    preview_completion: Optional[float] = None
 
 
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
