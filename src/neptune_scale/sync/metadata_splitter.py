@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+from neptune_scale.sync.parameters import (
+    MAX_SINGLE_OPERATION_SIZE_BYTES,
+    MAX_STRING_SERIES_DATA_POINT_LENGTH,
+)
 
-__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step", "Metrics")
+__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step", "Metrics", "StringSeries")
 
 import math
 import warnings
@@ -60,6 +63,12 @@ class Metrics:
     preview_completion: Optional[float] = None
 
 
+@dataclass(frozen=True)
+class StringSeries:
+    data: dict[str, str]
+    step: Union[float, int]
+
+
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def __init__(
         self,
@@ -69,10 +78,14 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
         metrics: Optional[Metrics],
+        string_series: Optional[StringSeries],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
+        if metrics and string_series:
+            assert metrics.step == string_series.step
+
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
@@ -81,6 +94,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
         self._metrics_preview = metrics.preview if metrics is not None else False
         self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
+        self._string_series = peekable(self._stream_string_series(string_series.data)) if string_series else None
 
         self._configs = peekable(self._stream_configs(configs)) if configs else None
         self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
@@ -117,9 +131,14 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             assets=self._configs,
             size=size,
         )
-        size = self.populate_append(
+        size = self.populate_append_metrics(
             update=update,
             assets=self._metrics,
+            size=size,
+        )
+        size = self.populate_append_string_series(
+            update=update,
+            assets=self._string_series,
             size=size,
         )
         size = self.populate_tags(
@@ -162,7 +181,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
         return size
 
-    def populate_append(
+    def populate_append_metrics(
         self,
         update: UpdateRunSnapshot,
         assets: Optional[peekable[tuple[str, float]]],
@@ -182,6 +201,30 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 break
 
             update.append[key].float64 = value
+            size, _ = new_size, next(assets)
+
+        return size
+
+    def populate_append_string_series(
+        self,
+        update: UpdateRunSnapshot,
+        assets: Optional[peekable[tuple[str, str, int]]],
+        size: int,
+    ) -> int:
+        if assets is None:
+            return size
+
+        while size < self._max_update_bytes_size:
+            try:
+                key, value, value_size = assets.peek()
+            except StopIteration:
+                break
+
+            new_size = size + proto_string_size(key) + value_size + 6
+            if new_size > self._max_update_bytes_size:
+                break
+
+            update.append[key].string = value
             size, _ = new_size, next(assets)
 
         return size
@@ -253,6 +296,23 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                     raise NeptuneFloatValueNanInfUnsupported(metric=key, step=step, value=value)
 
             yield key, value
+
+    def _stream_string_series(self, string_series: dict[str, str]) -> Iterator[tuple[str, str, int]]:
+        for key, value in self._validate_paths(string_series):
+            if not isinstance(value, str):
+                _warn_or_raise_on_invalid_value(f"String series values must be strings (got `{key}`:`{value}`)")
+                continue
+
+            data = value.encode("utf-8")
+            if len(data) > MAX_STRING_SERIES_DATA_POINT_LENGTH:
+                _warn_or_raise_on_invalid_value(
+                    f"String series values must be less than {MAX_STRING_SERIES_DATA_POINT_LENGTH}"
+                    " bytes when UTF-8 encoded"
+                )
+                continue
+
+            # Use proto_bytes_size to avoid encoding the value multiple times for size calculation
+            yield key, value, proto_bytes_size(data)
 
     def _stream_configs(
         self, configs: dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]
@@ -342,13 +402,29 @@ def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = Fa
     return Step(whole=whole, micro=micro)
 
 
-def proto_string_size(key: str) -> int:
+def proto_string_size(string: str) -> int:
     """
-    Calculates the size of the string in the protobuf message including an overhead of the length prefix (varint)
-        with an assumption of maximal string length.
+    Calculates the size of the string in the protobuf message including an overhead of the length prefix (varint).
     """
-    key_bin = bytes(key, "utf-8")
-    return len(key_bin) + 2 + (1 if len(key_bin) > 127 else 0)
+
+    return proto_bytes_size(bytes(string, "utf-8"))
+
+
+def proto_bytes_size(data: bytes) -> int:
+    """
+    Calculate the size of the bytes buffer encoded in a protobuf message.
+
+    This assumes that the field tag is lower than 15, thus it will fit in 1 byte. This condition
+    is true for proto fields that we are interested in (RunOperation and Value in particular).
+    """
+
+    size = len(data)
+    # Add 1 byte for tag, then a varint length encoding.
+    # Each byte that encodes length can hold 7 bits of data, because MSB is a continuation bit.
+    # See https://protobuf.dev/programming-guides/encoding/#varints
+    proto_size = 2 + size.bit_length() // 7 + 1 + size
+
+    return proto_size
 
 
 def _warn_or_raise_on_invalid_value(message: str) -> None:

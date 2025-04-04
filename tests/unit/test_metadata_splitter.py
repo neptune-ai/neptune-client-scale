@@ -25,6 +25,7 @@ from neptune_scale.exceptions import (
 from neptune_scale.sync.metadata_splitter import (
     MetadataSplitter,
     Metrics,
+    StringSeries,
 )
 
 
@@ -37,6 +38,7 @@ def test_empty():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        string_series=None,
         add_tags={},
         remove_tags={},
     )
@@ -67,6 +69,7 @@ def test_configs():
             "some/tags": {"tag1", "tag2"},
         },
         metrics=None,
+        string_series=None,
         add_tags={},
         remove_tags={},
     )
@@ -141,6 +144,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        string_series=None,
         add_tags={},
         remove_tags={},
     )
@@ -171,6 +175,7 @@ def test_tags():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        string_series=None,
         add_tags={
             "some/tags": {"tag1", "tag2"},
             "some/other_tags2": {"tag2", "tag3"},
@@ -228,6 +233,7 @@ def test_splitting():
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
+        string_series=None,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -272,6 +278,7 @@ def test_split_large_tags():
         timestamp=timestamp,
         configs=fields,
         metrics=metrics,
+        string_series=None,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -315,6 +322,7 @@ def test_raise_on_non_finite_float_metrics(value):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        string_series=None,
         add_tags={},
         remove_tags={},
         max_message_bytes_size=1024,
@@ -346,6 +354,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
             timestamp=datetime.now(),
             configs={},
             metrics=metrics,
+            string_series=None,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
@@ -364,12 +373,18 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
-@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics"))
+@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "string_series"))
 def test_invalid_path_types(caplog, action, invalid_path, param_name):
     data = {invalid_path: object()}
 
-    kwargs = {name: None for name in ("configs", "metrics", "add_tags", "remove_tags")}
-    kwargs[param_name] = data if param_name != "metrics" else Metrics(step=1, data=data)
+    kwargs = {name: None for name in ("configs", "metrics", "string_series", "add_tags", "remove_tags")}
+
+    if param_name == "metrics":
+        data = Metrics(step=1, data=data)
+    elif param_name == "string_series":
+        data = StringSeries(step=1, data=data)
+
+    kwargs[param_name] = data
 
     splitter = MetadataSplitter(
         project="workspace/project",
@@ -401,6 +416,7 @@ def test_invalid_metrics_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=Metrics(step=1, data=metrics),
+        string_series=None,
         add_tags={},
         remove_tags={},
     )
@@ -430,6 +446,7 @@ def test_invalid_configs_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=configs,
         metrics=None,
+        string_series=None,
         add_tags={},
         remove_tags={},
     )
@@ -460,6 +477,7 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=None,
+        string_series=None,
         add_tags=tags if operation == "add" else {},
         remove_tags=tags if operation == "remove" else {},
     )
@@ -475,3 +493,38 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
             assert len(result[0].modify_sets) == 1
             assert "ok" in result[0].modify_sets
             assert "Tags must be a" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize(
+    "invalid_value",
+    ("X" + "A" * 1024 * 1024 * 16, None, {"a-dict": 1}, 1, 1.0, object(), [], set, tuple(), datetime.now()),
+    ids=lambda val: "<16MB string>" if isinstance(val, str) else None,  # Don't let pytest print 16MB strings
+)
+def test_invalid_string_series_values(caplog, action, invalid_value):
+    # Always have one valid value under the key "ok-value" so we can check that the
+    # "drop" action does not drop valid values.
+    string_series = {"bad": invalid_value, "ok": "hi!"}
+
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=None,
+        metrics=None,
+        string_series=StringSeries(data=string_series, step=1),
+        add_tags={},
+        remove_tags={},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(NeptuneUnableToLogData, match="values must be"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].append) == 1
+            assert "ok" in result[0].append
+            assert "values must be" in caplog.text
