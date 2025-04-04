@@ -100,12 +100,9 @@ class OperationsRepository:
 
         self._timeout = timeout if timeout is not None else OPERATION_REPOSITORY_TIMEOUT
 
-        log_failure_action = os.getenv(envs.LOG_FAILURE_ACTION, "drop")
-        if log_failure_action not in ("drop", "raise"):
-            raise ValueError(
-                f"Invalid value '{log_failure_action}' for {envs.LOG_FAILURE_ACTION}. Must be 'drop' or 'raise'."
-            )
-        self._log_failure_action: Literal["raise", "drop"] = log_failure_action  # type: ignore
+        self._log_failure_action: Literal["raise", "drop"] = envs.get_option(  # type: ignore
+            envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop"
+        )
 
     def init_db(self) -> None:
         os.makedirs(self._db_path.parent, exist_ok=True)

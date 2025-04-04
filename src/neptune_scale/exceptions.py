@@ -46,7 +46,10 @@ __all__ = (
     "NeptuneLocalStorageInUnsupportedVersion",
 )
 
-from typing import Any
+from typing import (
+    Any,
+    Optional,
+)
 
 from neptune_scale.util.styles import (
     STYLES,
@@ -106,7 +109,11 @@ class NeptuneUnableToLogData(NeptuneScaleError):
 {h1}
 NeptuneUnableToLogData: An error occurred, preventing Neptune from logging your data.
 {end}
+{reason}
 """
+
+    def __init__(self, reason: str = "", **kwargs: Any) -> None:
+        super().__init__(reason=reason, **kwargs)
 
 
 class NeptuneOperationsQueueMaxSizeExceeded(NeptuneUnableToLogData):
@@ -124,9 +131,39 @@ To resolve this issue, consider the following:
         closely monitor your system's memory consumption.
 """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # reason and operation don't matter, as we override the message string anyway
-        super().__init__(*args, reason="", operation="", **kwargs)
+
+class NeptuneFloatValueNanInfUnsupported(NeptuneUnableToLogData):
+    message = """
+{h1}
+NeptuneFloatValueNanInfUnsupported: metric `{metric}` at step `{step}` has non-finite value of `{value}`.
+{end}
+Float series do not support logging NaN and Inf values. You can only log NaN and Inf as single config values.
+
+You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
+environment variable to `True`.
+
+For details, see https://docs-beta.neptune.ai/log_configs
+"""
+
+    def __init__(self, *, metric: str, step: Optional[float | int], value: Any) -> None:
+        super().__init__(metric=metric, step=step, value=value)
+
+
+class GenericFloatValueNanInfUnsupported(NeptuneFloatValueNanInfUnsupported):
+    message = """
+{h1}
+NeptuneFloatValueNanInfUnsupported: Float series do not support logging NaN and Inf values. You can only log NaN and Inf as single config values.
+{end}
+
+You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
+environment variable to `True`.
+
+For details, see https://docs-beta.neptune.ai/log_configs
+"""
+
+    def __init__(self) -> None:
+        # Because this class defines its own message, the argument values to super().__init__ don't matter here.
+        super().__init__(metric="", step=None, value=None)
 
 
 class NeptuneUnauthorizedError(NeptuneScaleError):
@@ -415,33 +452,6 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 NeptuneSeriesTimestampDecreasing: The timestamp of a series value is less than the most recently logged value.
 {end}
 Existing timestamps are allowed. For help, see https://docs-beta.neptune.ai/log_metrics
-"""
-
-
-class NeptuneFloatValueNanInfUnsupported(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneFloatValueNanInfUnsupported: metric `{metric}` at step `{step}` has non-finite value of `{value}`.
-{end}
-Float series do not support logging NaN and Inf values. You can only log NaN and Inf as single config values.
-
-You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
-environment variable to `True`.
-
-For details, see https://docs-beta.neptune.ai/log_configs
-"""
-
-
-class GenericFloatValueNanInfUnsupported(NeptuneFloatValueNanInfUnsupported):
-    message = """
-{h1}
-NeptuneFloatValueNanInfUnsupported: Float series do not support logging NaN and Inf values. You can only log NaN and Inf as single config values.
-{end}
-
-You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
-environment variable to `True`.
-
-For details, see https://docs-beta.neptune.ai/log_configs
 """
 
 

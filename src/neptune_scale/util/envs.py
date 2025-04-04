@@ -1,5 +1,8 @@
 import os
-from typing import Optional
+from typing import (
+    Optional,
+    Union,
+)
 
 PROJECT_ENV_NAME = "NEPTUNE_PROJECT"
 
@@ -38,3 +41,23 @@ def get_int(name: str, default: Optional[int] = None) -> Optional[int]:
         return default if value is None else int(value)
     except ValueError:
         raise ValueError(f"Environment variable {name} must be an integer, got '{value}'")
+
+
+def get_option(name: str, choices: Union[list[str], tuple[str, ...]], default: str) -> str:
+    """Get a string from env, returning the default if not found.
+    If the value is not in `choices`, raise ValueError.
+    The value is returned lowercase. The `choices` iterable should hold lowercase strings."""
+
+    assert default in choices
+
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    value_lower = value.lower()
+    if value_lower not in choices:
+        raise ValueError(f"{name} must be one of: {', '.join(choices)}, got '{value}'")
+
+    print(f"{name=} {value=} {value_lower=}")
+
+    return value_lower

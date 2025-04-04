@@ -313,9 +313,9 @@ def test_components_in_mode(api_token, mode):
     ) as run:
         # then
         if mode == "disabled":
-            assert run._attr_store is None
+            assert run._logging_enabled == False
         else:
-            assert run._attr_store is not None
+            assert run._logging_enabled == True
 
         if mode in ("disabled", "offline"):
             assert run._sync_process is None
