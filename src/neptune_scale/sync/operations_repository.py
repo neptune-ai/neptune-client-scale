@@ -402,6 +402,12 @@ class OperationsRepository:
 
                     logger.debug(f"Created new SQLite connection for {self._db_path}")
                 except sqlite3.DatabaseError as e:
+                    try:
+                        if self._connection:
+                            self._connection.close()
+                            self._connection = None
+                    except sqlite3.DatabaseError:
+                        logger.debug(f"Failed to close SQLite connection for {self._db_path}", exc_info=True)
                     raise NeptuneUnableToLogData() from e
 
             self._connection.execute("BEGIN")

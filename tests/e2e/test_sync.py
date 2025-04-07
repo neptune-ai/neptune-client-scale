@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import time
 from datetime import (
     datetime,
@@ -10,6 +9,7 @@ import pytest
 
 from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
+from neptune_scale.exceptions import NeptuneUnableToLogData
 
 from .conftest import (
     random_series,
@@ -40,7 +40,7 @@ def test_sync_invalid_file(tmp_path):
     with open(path, "w") as f:
         f.write("invalid")
 
-    with pytest.raises(sqlite3.DatabaseError):
+    with pytest.raises(NeptuneUnableToLogData):
         sync.sync_all(run_log_file=path, api_token=API_TOKEN)
 
 
