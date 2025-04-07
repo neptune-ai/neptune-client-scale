@@ -177,6 +177,8 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             raise NeptuneUnableToAuthenticateError() from e
         except httpx.RequestError as e:
             raise NeptuneConnectionLostError() from e
+        except JSONDecodeError as e:
+            raise NeptuneUnexpectedResponseError() from e
         except Exception as e:
             raise e
 
