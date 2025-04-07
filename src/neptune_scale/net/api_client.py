@@ -22,6 +22,7 @@ import functools
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from json import JSONDecodeError
 from typing import Any
 
 import httpx
@@ -44,10 +45,7 @@ from neptune_api.errors import (
     UnableToExchangeApiKeyError,
     UnableToRefreshTokenError,
 )
-from neptune_api.models import (
-    ClientConfig,
-    Error,
-)
+from neptune_api.models import ClientConfig
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
@@ -61,6 +59,7 @@ from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneInvalidCredentialsError,
     NeptuneUnableToAuthenticateError,
+    NeptuneUnexpectedResponseError,
 )
 from neptune_scale.sync.parameters import HTTP_CLIENT_NETWORKING_TIMEOUT
 from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
@@ -90,12 +89,21 @@ def get_config_and_token_urls(
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     ) as client:
-        config = get_client_config.sync(client=client)
-        if config is None or isinstance(config, Error):
-            raise RuntimeError(f"Failed to get client config: {config}")
-        response = client.get_httpx_client().get(config.security.open_id_discovery)
-        token_urls = TokenRefreshingURLs.from_dict(response.json())
-    return config, token_urls
+        try:
+            config_response = get_client_config.sync_detailed(client=client)
+            if config_response.status_code != 200:
+                raise NeptuneUnexpectedResponseError()
+
+            config = config_response.parsed
+            urls_response = client.get_httpx_client().get(config.security.open_id_discovery)
+            if not urls_response.is_success:
+                raise NeptuneUnexpectedResponseError()
+
+            token_urls = TokenRefreshingURLs.from_dict(urls_response.json())
+
+            return config, token_urls
+        except JSONDecodeError:
+            raise NeptuneUnexpectedResponseError()
 
 
 def create_auth_api_client(
