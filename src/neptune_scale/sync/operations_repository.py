@@ -220,28 +220,25 @@ class OperationsRepository:
                     cursor.execute("SELECT last_insert_rowid()")
                     return SequenceId(cursor.fetchone()[0])
 
-        except sqlite3.DatabaseError as e:
+        except NeptuneUnableToLogData:
             if self._log_failure_action == "raise":
-                raise NeptuneUnableToLogData() from e
-            elif self._log_failure_action == "drop":
+                raise
+            if self._log_failure_action == "drop":
                 logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
                 return None
 
     def save_create_run(self, run: CreateRun) -> SequenceId:
-        try:
-            with self._get_connection() as conn:  # type: ignore
-                with contextlib.closing(conn.cursor()) as cursor:
-                    current_time = int(time.time() * 1000)  # milliseconds timestamp
-                    serialized_operation = run.SerializeToString()
-                    operation_size_bytes = len(serialized_operation)
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                current_time = int(time.time() * 1000)  # milliseconds timestamp
+                serialized_operation = run.SerializeToString()
+                operation_size_bytes = len(serialized_operation)
 
-                    cursor.execute(
-                        "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
-                        (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
-                    )
-                    return SequenceId(cursor.lastrowid)
-        except sqlite3.DatabaseError as e:
-            raise NeptuneUnableToLogData() from e
+                cursor.execute(
+                    "INSERT INTO run_operations (timestamp, operation_type, operation, operation_size_bytes) VALUES (?, ?, ?, ?)",
+                    (current_time, OperationType.CREATE_RUN, serialized_operation, operation_size_bytes),
+                )
+                return SequenceId(cursor.lastrowid)
 
     def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
@@ -298,30 +295,27 @@ class OperationsRepository:
                 return cursor.rowcount or 0
 
     def save_metadata(self, project: str, run_id: str) -> None:
-        try:
-            with self._get_connection() as conn:  # type: ignore
-                with contextlib.closing(conn.cursor()) as cursor:
-                    # Check if metadata already exists
-                    cursor.execute(
-                        """
-                        SELECT COUNT(*) FROM metadata
-                        """
-                    )
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                # Check if metadata already exists
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM metadata
+                    """
+                )
 
-                    count = cursor.fetchone()[0]
-                    if count > 0:
-                        raise RuntimeError("Metadata already exists")
+                count = cursor.fetchone()[0]
+                if count > 0:
+                    raise RuntimeError("Metadata already exists")
 
-                    # Insert new metadata
-                    cursor.execute(
-                        """
-                        INSERT INTO metadata (version, project, run_id)
-                        VALUES (?, ?, ?)
-                        """,
-                        (DB_VERSION, project, run_id),
-                    )
-        except sqlite3.DatabaseError as e:
-            raise NeptuneUnableToLogData() from e
+                # Insert new metadata
+                cursor.execute(
+                    """
+                    INSERT INTO metadata (version, project, run_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    (DB_VERSION, project, run_id),
+                )
 
     def get_metadata(self) -> Optional[Metadata]:
         with self._get_connection() as conn:  # type: ignore
@@ -396,21 +390,27 @@ class OperationsRepository:
     def _get_connection(self) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
         with self._lock:
             if self._connection is None:
-                self._connection = sqlite3.connect(
-                    self._db_path,
-                    timeout=self._timeout,
-                    check_same_thread=False,  # we use RLock to synchronize access
-                )
+                try:
+                    self._connection = sqlite3.connect(
+                        self._db_path,
+                        timeout=self._timeout,
+                        check_same_thread=False,  # we use RLock to synchronize access
+                    )
 
-                self._connection.execute("PRAGMA journal_mode = WAL")
-                self._connection.execute("PRAGMA synchronous = FULL")
+                    self._connection.execute("PRAGMA journal_mode = WAL")
+                    self._connection.execute("PRAGMA synchronous = FULL")
 
-                logger.debug(f"Created new SQLite connection for {self._db_path}")
+                    logger.debug(f"Created new SQLite connection for {self._db_path}")
+                except sqlite3.DatabaseError as e:
+                    raise NeptuneUnableToLogData() from e
 
             self._connection.execute("BEGIN")
             try:
                 yield self._connection
                 self._connection.commit()
+            except sqlite3.DatabaseError as e:
+                self._connection.rollback()
+                raise NeptuneUnableToLogData() from e
             except Exception:
                 self._connection.rollback()
                 raise
