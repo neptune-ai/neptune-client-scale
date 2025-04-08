@@ -68,6 +68,13 @@ class Metadata:
     run_id: str
 
 
+@dataclass(frozen=True)
+class FileUploadRequest:
+    path: str
+    mime_type: str
+    size_bytes: int
+
+
 class OperationsRepository:
     """A disk-based repository for Neptune operations using SQLite.
 
@@ -135,6 +142,16 @@ class OperationsRepository:
                     version TEXT NOT NULL,
                     project TEXT NOT NULL,
                     run_id TEXT NOT NULL
+                )"""
+            )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_upload_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL
                 )"""
             )
 
@@ -362,6 +379,45 @@ class OperationsRepository:
                 if min_seq_id is None or max_seq_id is None:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
+
+    def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO file_upload_requests (path, mime_type, size_bytes)
+                    VALUES (?, ?, ?)
+                    """,
+                    [(file.path, file.mime_type, file.size_bytes) for file in files],
+                )
+                return SequenceId(cursor.lastrowid)
+
+    def get_file_upload_requests(self, n: int) -> dict[SequenceId, FileUploadRequest]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, path, mime_type, size_bytes
+                    FROM file_upload_requests
+                    LIMIT ?
+                    """,
+                    (n,),
+                )
+
+                rows = cursor.fetchall()
+
+        return {SequenceId(row[0]): FileUploadRequest(path=row[1], mime_type=row[2], size_bytes=row[3]) for row in rows}
+
+    def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    DELETE FROM file_upload_requests
+                    WHERE id = ?
+                    """,
+                    [(seq_id,) for seq_id in seq_ids],
+                )
 
     def _is_run_operations_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore

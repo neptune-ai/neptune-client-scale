@@ -17,6 +17,7 @@ from neptune_scale.exceptions import (
     NeptuneUnableToLogData,
 )
 from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
     Metadata,
     OperationsRepository,
     OperationType,
@@ -377,6 +378,108 @@ def get_operation_count(db_path: str) -> int:
         return count
     finally:
         conn.close()
+
+
+def test_save_file_upload_requests(operations_repo, temp_db_path):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+
+    # When
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # Then
+    conn = sqlite3.connect(operations_repo._db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, path, mime_type, size_bytes FROM file_upload_requests")
+    rows = cursor.fetchall()
+    conn.close()
+    assert rows == [
+        (i + 1, request.path, request.mime_type, request.size_bytes) for i, request in enumerate(file_requests)
+    ]
+
+
+def test_get_file_upload_requests_empty(operations_repo):
+    # Given
+    operations = operations_repo.get_file_upload_requests(n=10)
+    assert len(operations) == 0
+
+
+def test_get_file_upload_requests_with_operations(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    operations = operations_repo.get_file_upload_requests(n=10)
+
+    # Then
+    assert len(operations) == 3
+    assert operations == {SequenceId(i + 1): file_requests[i] for i in range(3)}
+
+
+def test_get_file_upload_requests_with_operations_limit(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    operations = operations_repo.get_file_upload_requests(n=2)
+
+    # Then
+    assert len(operations) == 2
+    assert operations == {SequenceId(i + 1): file_requests[i] for i in range(2)}
+
+
+def test_delete_file_upload_requests(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    operations_repo.delete_file_upload_requests(seq_ids=[SequenceId(1), SequenceId(3)])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 1
+    assert requests == {SequenceId(2): file_requests[1]}
+
+
+def test_delete_file_upload_requests_invalid_id(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When - try to delete with a non-positive sequence ID
+    operations_repo.delete_file_upload_requests(seq_ids=[SequenceId(0)])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 3
+
+
+def test_delete_file_upload_requests_empty(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When - try to delete with an empty list
+    operations_repo.delete_file_upload_requests(seq_ids=[])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 3
 
 
 @pytest.mark.parametrize("cleanup_files", [True, False])
