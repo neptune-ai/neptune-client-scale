@@ -67,6 +67,22 @@ def test_init_creates_tables(temp_db_path):
     repo.close(cleanup_files=True)
 
 
+def test_init_fails_with_neptune_exception(temp_db_path):
+    # Given
+    with open(temp_db_path, "wb") as f:
+        f.write(b"corrupted data")
+
+    # Then
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    with pytest.raises(NeptuneUnableToLogData) as exc:
+        repo.init_db()
+    assert "file is not a database" in str(exc.value.__cause__)
+
+    # Cleanup
+    os.remove(temp_db_path)
+
+
 def test_save_update_run_snapshots(operations_repo, temp_db_path):
     # Given
     snapshots = []
@@ -524,8 +540,9 @@ def test_concurrent_delete_sqlite_busy(temp_db_path):
     with _concurrent_transaction_cursor(temp_db_path) as cursor:
         _write_run_operation(cursor)
 
-        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        with pytest.raises(NeptuneUnableToLogData) as exc:
             operations_repo.delete_operations(up_to_seq_id=SequenceId(1))
+        assert "database is locked" in str(exc.value.__cause__)
     operations_repo.close(cleanup_files=True)
 
 
