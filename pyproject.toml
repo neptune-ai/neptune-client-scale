@@ -18,6 +18,7 @@ backoff = "^2.0.0"
 click = ">=7.0"
 tqdm = "^4.21.0"
 filetype = "^1.2.0"
+azure-storage-blob = "^12.7.0"
 
 [tool.poetry]
 name = "neptune-scale"
