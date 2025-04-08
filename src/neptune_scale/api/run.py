@@ -301,7 +301,7 @@ class Run(AbstractContextManager):
         return self._run_id
 
     @property
-    def experiment_name(self) -> str:
+    def experiment_name(self) -> Optional[str]:
         return self._experiment_name
 
     @property
@@ -309,11 +309,11 @@ class Run(AbstractContextManager):
         return self._mode
 
     @property
-    def fork_run_id(self) -> str:
+    def fork_run_id(self) -> Optional[str]:
         return self._fork_run_id
 
     @property
-    def fork_step(self) -> float:
+    def fork_step(self) -> Optional[Union[int, float]]:
         return self._fork_step
 
     @property
