@@ -12,11 +12,6 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
-from neptune_scale.sync.metadata_splitter import (
-    MetadataSplitter,
-    datetime_to_proto,
-    make_step,
-)
 from neptune_scale.sync.operations_repository import OperationsRepository
 
 __all__ = ["Run"]
@@ -38,19 +33,24 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
+from neptune_scale.api.attribute import AttributeStore
 from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
+    verify_dict_type,
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
     verify_type,
-    verify_value_between,
 )
 from neptune_scale.exceptions import (
     NeptuneApiTokenNotProvided,
     NeptuneDatabaseConflict,
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
+)
+from neptune_scale.net.serialization import (
+    datetime_to_proto,
+    make_step,
 )
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
@@ -180,7 +180,7 @@ class Run(AbstractContextManager):
             raise NeptuneProjectNotProvided()
         verify_project_qualified_name("project", project)
 
-        mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
+        self._mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
         verify_non_empty("run_id", run_id)
         verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
@@ -218,11 +218,13 @@ class Run(AbstractContextManager):
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
-            self._logging_enabled = True
+            self._attr_store: Optional[AttributeStore] = AttributeStore(
+                self._project, self._run_id, self._operations_repo, self._sequence_tracker
+            )
         else:
             self._operations_repo = None
             self._sequence_tracker = None
-            self._logging_enabled = False
+            self._attr_store = None
 
         if mode == "async":
             assert self._sequence_tracker is not None
@@ -289,6 +291,34 @@ class Run(AbstractContextManager):
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
+
+    @property
+    def project(self) -> str:
+        return self._project
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    @property
+    def experiment_name(self) -> str:
+        return self._experiment_name
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
+    def fork_run_id(self) -> str:
+        return self._fork_run_id
+
+    @property
+    def fork_step(self) -> float:
+        return self._fork_step
+
+    @property
+    def creation_time(self) -> datetime:
+        return self._creation_time
 
     def _handle_sync_process_death(self) -> None:
         with self._lock:
@@ -572,10 +602,11 @@ class Run(AbstractContextManager):
         - add_tags()
         - remove_tags()
         """
+        mtr = Metrics(step=step, data=metrics) if metrics is not None else None
         self._log(
             timestamp=timestamp,
             configs=configs,
-            metrics=Metrics(step=step, data=metrics) if metrics is not None else None,
+            metrics=mtr,
             tags_add=tags_add,
             tags_remove=tags_remove,
         )
@@ -590,25 +621,13 @@ class Run(AbstractContextManager):
     ) -> None:
         verify_type("timestamp", timestamp, (datetime, type(None)))
         verify_type("configs", configs, (dict, type(None)))
+        verify_type("metrics", metrics, (Metrics, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
 
-        if metrics is not None:
-            verify_type("metrics", metrics, Metrics)
-            verify_type("metrics", metrics.data, dict)
-            verify_type("step", metrics.step, (float, int, type(None)))
-            verify_type("preview", metrics.preview, bool)
-            verify_type("preview_completion", metrics.preview_completion, (float, type(None)))
-
-            if not metrics.preview:
-                if metrics.preview_completion not in (None, 1.0):
-                    raise ValueError("preview_completion can only be specified for metric previews")
-                # we don't send info about preview if preview=False
-                # and dropping 1.0 (even if it's technically a correct value)
-                # reduces chance of errors down the line
-                metrics.preview_completion = None
-            if metrics.preview_completion is not None:
-                verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
+        verify_dict_type("configs", configs, (float, bool, int, str, datetime, list, set, tuple))
+        verify_dict_type("tags_add", tags_add, (list, set, tuple))
+        verify_dict_type("tags_remove", tags_remove, (list, set, tuple))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -616,31 +635,16 @@ class Run(AbstractContextManager):
         if self._is_closing:
             return
 
-        if not self._logging_enabled:
+        if self._attr_store is None:
             return
 
-        assert self._operations_repo is not None
-        assert self._sequence_tracker is not None
-
-        if timestamp is None:
-            timestamp = datetime.now()
-        elif isinstance(timestamp, float):
-            timestamp = datetime.fromtimestamp(timestamp)
-
-        splitter: MetadataSplitter = MetadataSplitter(
-            project=self._project,
-            run_id=self._run_id,
+        self._attr_store.log(
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
-            add_tags=tags_add,
-            remove_tags=tags_remove,
+            tags_add=tags_add,
+            tags_remove=tags_remove,
         )
-
-        operations = list(splitter)
-        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
-
-        self._sequence_tracker.update_sequence_id(sequence_id)
 
     def _wait(
         self,
@@ -808,7 +812,10 @@ def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optio
 
 
 def _get_run_url(
-    api_token: Optional[str], project_name: str, run_id: Optional[str] = None, experiment_name: Optional[str] = None
+    api_token: Optional[str],
+    project_name: str,
+    run_id: Optional[str] = None,
+    experiment_name: Optional[str] = None,
 ) -> str:
     assert not (run_id and experiment_name)
     if api_token is None:

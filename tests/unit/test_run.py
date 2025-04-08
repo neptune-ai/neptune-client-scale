@@ -440,3 +440,200 @@ def test_run_with_ids_problematic_for_filesystems(api_token, project, run_id):
         mode="offline",
     ):
         ...
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_properties(api_token, mode):
+    # given
+    project = "workspace/project"
+    run_id = "test-run-id"
+    experiment_name = "test-experiment"
+
+    # when
+    run = Run(
+        project=project,
+        run_id=run_id,
+        experiment_name=experiment_name,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert run.project == project
+    assert run.run_id == run_id
+    assert run.experiment_name == experiment_name
+
+    # and properties are read-only
+    with pytest.raises(AttributeError):
+        run.project = "new-project"
+    with pytest.raises(AttributeError):
+        run.run_id = "new-run-id"
+    with pytest.raises(AttributeError):
+        run.experiment_name = "new-experiment"
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_properties_without_experiment(api_token, mode):
+    # given
+    project = "workspace/project"
+    run_id = "test-run-id"
+
+    # when
+    run = Run(
+        project=project,
+        run_id=run_id,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert run.project == project
+    assert run.run_id == run_id
+    assert run.experiment_name is None
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_properties_with_generated_run_id(api_token, mode):
+    # given
+    project = "workspace/project"
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert run.project == project
+    assert run.run_id is not None  # Should be auto-generated
+    assert len(run.run_id) > 0
+    assert isinstance(run.run_id, str)
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline", "async"])
+def test_run_mode_property(api_token, mode):
+    # given
+    project = "workspace/project"
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert run.mode == mode
+
+    # and property is read-only
+    with pytest.raises(AttributeError):
+        run.mode = "new-mode"
+
+    # cleanup
+    run.close()
+
+
+@freeze_time("2024-03-19 12:34:56.789012")
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_creation_time_property(api_token, mode):
+    # given
+    project = "workspace/project"
+    creation_time = datetime.now()
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+        creation_time=creation_time,
+    )
+
+    # then
+    assert run.creation_time == creation_time
+
+    # and property is read-only
+    with pytest.raises(AttributeError):
+        run.creation_time = datetime.now()
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_fork_properties(api_token, mode):
+    # given
+    project = "workspace/project"
+    fork_run_id = "parent-run-123"
+    fork_step = 42.5
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+        fork_run_id=fork_run_id,
+        fork_step=fork_step,
+    )
+
+    # then
+    assert run.fork_run_id == fork_run_id
+    assert run.fork_step == fork_step
+
+    # and properties are read-only
+    with pytest.raises(AttributeError):
+        run.fork_run_id = "new-parent"
+    with pytest.raises(AttributeError):
+        run.fork_step = 99.9
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_fork_properties_when_not_forked(api_token, mode):
+    # given
+    project = "workspace/project"
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert run.fork_run_id is None
+    assert run.fork_step is None
+
+    # cleanup
+    run.close()
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_run_creation_time_property_default(api_token, mode):
+    # given
+    project = "workspace/project"
+
+    # when
+    run = Run(
+        project=project,
+        api_token=api_token,
+        mode=mode,
+    )
+
+    # then
+    assert isinstance(run.creation_time, datetime)
+    assert run.creation_time is not None
+
+    # cleanup
+    run.close()
