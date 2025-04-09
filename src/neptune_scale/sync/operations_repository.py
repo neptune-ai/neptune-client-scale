@@ -422,14 +422,29 @@ class OperationsRepository:
     def _is_run_operations_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='run_operations'")
-                count: int = cursor.fetchone()[0]
-                if count == 0:
-                    return True
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM run_operations")
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        return False
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        pass
+                    else:
+                        raise
 
-                cursor.execute("SELECT COUNT(*) FROM run_operations")
-                count = cursor.fetchone()[0]
-                return count == 0
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM file_upload_requests")
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        return False
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        pass
+                    else:
+                        raise
+
+                return True
 
     def close(self, cleanup_files: bool) -> None:
         with self._lock:

@@ -483,7 +483,7 @@ def test_delete_file_upload_requests_empty(operations_repo):
 
 
 @pytest.mark.parametrize("cleanup_files", [True, False])
-def test_cleanup_empty_repository(temp_db_path, cleanup_files):
+def test_cleanup_repository_empty(temp_db_path, cleanup_files):
     # given
     repo = OperationsRepository(db_path=Path(temp_db_path))
     assert not os.path.exists(temp_db_path)
@@ -502,13 +502,59 @@ def test_cleanup_empty_repository(temp_db_path, cleanup_files):
 
 
 @pytest.mark.parametrize("cleanup_files", [True, False])
-def test_cleanup_nonempty_repository(temp_db_path, cleanup_files):
+def test_cleanup_repository_no_tables(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    conn = sqlite3.connect(temp_db_path)
+    cursor = conn.cursor()
+    cursor.execute("DROP TABLE run_operations")
+    cursor.execute("DROP TABLE metadata")
+    cursor.execute("DROP TABLE file_upload_requests")
+    conn.commit()
+    conn.close()
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path) != cleanup_files
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_run_snapshots(temp_db_path, cleanup_files):
     # given
     repo = OperationsRepository(db_path=Path(temp_db_path))
 
     # when
     repo.init_db()
     repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_file_requests(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    repo.save_file_upload_requests(
+        [FileUploadRequest(path="path", mime_type="application/octet-stream", size_bytes=123)]
+    )
 
     # then
     assert os.path.exists(temp_db_path)
