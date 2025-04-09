@@ -73,6 +73,7 @@ class FileUploadRequest:
     path: str
     mime_type: str
     size_bytes: int
+    is_temporary: bool = False
 
 
 class OperationsRepository:
@@ -151,7 +152,8 @@ class OperationsRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     path TEXT NOT NULL,
                     mime_type TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL
+                    size_bytes INTEGER NOT NULL,
+                    is_temporary INTEGER NOT NULL
                 )"""
             )
 
@@ -184,7 +186,8 @@ class OperationsRepository:
 
         return last_insert_rowid
 
-    def _chunk_operations(self, updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
+    @staticmethod
+    def _chunk_operations(updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
         """
         Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
         Returns serialized operations in a list of batches.
@@ -385,10 +388,10 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
-                    INSERT INTO file_upload_requests (path, mime_type, size_bytes)
-                    VALUES (?, ?, ?)
+                    INSERT INTO file_upload_requests (path, mime_type, size_bytes, is_temporary)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    [(file.path, file.mime_type, file.size_bytes) for file in files],
+                    [(file.path, file.mime_type, file.size_bytes, int(file.is_temporary)) for file in files],
                 )
                 return SequenceId(cursor.lastrowid)
 
@@ -397,7 +400,7 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
-                    SELECT id, path, mime_type, size_bytes
+                    SELECT id, path, mime_type, size_bytes, is_temporary
                     FROM file_upload_requests
                     LIMIT ?
                     """,
@@ -406,7 +409,12 @@ class OperationsRepository:
 
                 rows = cursor.fetchall()
 
-        return {SequenceId(row[0]): FileUploadRequest(path=row[1], mime_type=row[2], size_bytes=row[3]) for row in rows}
+        return {
+            SequenceId(row[0]): FileUploadRequest(
+                path=row[1], mime_type=row[2], size_bytes=row[3], is_temporary=bool(row[4])
+            )
+            for row in rows
+        }
 
     def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
         with self._get_connection() as conn:  # type: ignore

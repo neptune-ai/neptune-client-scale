@@ -383,7 +383,10 @@ def get_operation_count(db_path: str) -> int:
 def test_save_file_upload_requests(operations_repo, temp_db_path):
     # Given
     file_requests = [
-        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+        FileUploadRequest(
+            path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024, is_temporary=bool(i % 2)
+        )
+        for i in range(3)
     ]
 
     # When
@@ -392,11 +395,12 @@ def test_save_file_upload_requests(operations_repo, temp_db_path):
     # Then
     conn = sqlite3.connect(operations_repo._db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, path, mime_type, size_bytes FROM file_upload_requests")
+    cursor.execute("SELECT id, path, mime_type, size_bytes, is_temporary FROM file_upload_requests")
     rows = cursor.fetchall()
     conn.close()
     assert rows == [
-        (i + 1, request.path, request.mime_type, request.size_bytes) for i, request in enumerate(file_requests)
+        (i + 1, request.path, request.mime_type, request.size_bytes, request.is_temporary)
+        for i, request in enumerate(file_requests)
     ]
 
 
@@ -406,10 +410,13 @@ def test_get_file_upload_requests_empty(operations_repo):
     assert len(operations) == 0
 
 
-def test_get_file_upload_requests_with_operations(operations_repo):
+def test_get_file_upload_requests_nonempty(operations_repo):
     # Given
     file_requests = [
-        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+        FileUploadRequest(
+            path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024, is_temporary=bool(i % 2)
+        )
+        for i in range(3)
     ]
     operations_repo.save_file_upload_requests(file_requests)
 
@@ -421,10 +428,13 @@ def test_get_file_upload_requests_with_operations(operations_repo):
     assert operations == {SequenceId(i + 1): file_requests[i] for i in range(3)}
 
 
-def test_get_file_upload_requests_with_operations_limit(operations_repo):
+def test_get_file_upload_requests_with_limit(operations_repo):
     # Given
     file_requests = [
-        FileUploadRequest(path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024) for i in range(3)
+        FileUploadRequest(
+            path=f"path_{i}", mime_type="application/octet-stream", size_bytes=i * 1024, is_temporary=bool(i % 2)
+        )
+        for i in range(3)
     ]
     operations_repo.save_file_upload_requests(file_requests)
 
