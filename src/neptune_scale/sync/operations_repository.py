@@ -70,7 +70,8 @@ class Metadata:
 
 @dataclass(frozen=True)
 class FileUploadRequest:
-    path: str
+    source_path: str
+    target_path: str
     mime_type: str
     size_bytes: int
     is_temporary: bool = False
@@ -150,7 +151,8 @@ class OperationsRepository:
                 """
                 CREATE TABLE IF NOT EXISTS file_upload_requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    path TEXT NOT NULL,
+                    source_path TEXT NOT NULL,
+                    target_path TEXT NOT NULL,
                     mime_type TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
                     is_temporary INTEGER NOT NULL
@@ -388,10 +390,13 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
-                    INSERT INTO file_upload_requests (path, mime_type, size_bytes, is_temporary)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO file_upload_requests (source_path, target_path, mime_type, size_bytes, is_temporary)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    [(file.path, file.mime_type, file.size_bytes, int(file.is_temporary)) for file in files],
+                    [
+                        (file.source_path, file.target_path, file.mime_type, file.size_bytes, int(file.is_temporary))
+                        for file in files
+                    ],
                 )
                 return SequenceId(cursor.lastrowid)
 
@@ -400,7 +405,7 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
-                    SELECT id, path, mime_type, size_bytes, is_temporary
+                    SELECT id, source_path, target_path, mime_type, size_bytes, is_temporary
                     FROM file_upload_requests
                     LIMIT ?
                     """,
@@ -411,7 +416,7 @@ class OperationsRepository:
 
         return {
             SequenceId(row[0]): FileUploadRequest(
-                path=row[1], mime_type=row[2], size_bytes=row[3], is_temporary=bool(row[4])
+                source_path=row[1], target_path=row[2], mime_type=row[3], size_bytes=row[4], is_temporary=bool(row[5])
             )
             for row in rows
         }
