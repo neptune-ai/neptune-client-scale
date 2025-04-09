@@ -39,7 +39,7 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-DB_VERSION = "v1"
+DB_VERSION = "v2"
 
 SequenceId = typing.NewType("SequenceId", int)
 
@@ -400,7 +400,8 @@ class OperationsRepository:
                         for file in files
                     ],
                 )
-                return SequenceId(cursor.lastrowid)
+                cursor.execute("SELECT last_insert_rowid()")
+                return SequenceId(cursor.fetchone()[0])
 
     def get_file_upload_requests(self, n: int) -> list[FileUploadRequest]:
         with self._get_connection() as conn:  # type: ignore
@@ -439,7 +440,7 @@ class OperationsRepository:
                     [(seq_id,) for seq_id in seq_ids],
                 )
 
-    def _is_run_operations_empty(self) -> bool:
+    def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 try:
@@ -469,7 +470,7 @@ class OperationsRepository:
     def close(self, cleanup_files: bool) -> None:
         with self._lock:
             if self._connection is not None:
-                if cleanup_files and self._is_run_operations_empty():
+                if cleanup_files and self._is_repository_empty():
                     self._connection.close()
                     self._connection = None
                     try:

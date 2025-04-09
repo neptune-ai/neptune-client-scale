@@ -751,24 +751,6 @@ class Run(AbstractContextManager):
             verbose=verbose,
         )
 
-    def wait_for_file_upload(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
-        """
-        Waits until all files are uploaded by Neptune.
-
-        Once the call is complete, the files are saved in Neptune.
-
-        Args:
-            timeout (float, optional): In seconds, the maximum time to wait for processing.
-            verbose (bool): If True (default), prints messages about the waiting process.
-        """
-        self._wait(
-            phrase="processed",
-            sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
-            wait_seq=self._last_ack_seq,
-            timeout=timeout,
-            verbose=verbose,
-        )
-
     def get_run_url(self) -> str:
         """
         Returns a URL for viewing the run in the Neptune web app. Requires the API token to be provided

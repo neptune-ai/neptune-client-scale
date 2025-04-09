@@ -395,7 +395,10 @@ def test_save_file_upload_requests(operations_repo, temp_db_path):
     ]
 
     # When
-    operations_repo.save_file_upload_requests(file_requests)
+    last_id = operations_repo.save_file_upload_requests(file_requests)
+
+    # Then
+    assert last_id == 3
 
     # Then
     conn = sqlite3.connect(operations_repo._db_path)
