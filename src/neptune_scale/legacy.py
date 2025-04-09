@@ -45,7 +45,7 @@ def warn_unsupported_params(fn: Callable) -> Callable:
         if extra_kwargs:
             warn(
                 f"`{fn.__name__}()` was called with additional keyword argument(s): `{', '.join(extra_kwargs)}`. "
-                "These arguments are not supported by Neptune Scale and will be ignored."
+                "These arguments are not supported by Neptune and will be ignored."
             )
 
         return fn(*args, **kwargs)

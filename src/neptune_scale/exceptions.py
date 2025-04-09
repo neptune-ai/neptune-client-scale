@@ -58,7 +58,7 @@ from neptune_scale.util.styles import (
 
 
 class NeptuneScaleError(Exception):
-    message = "An error occurred in the Neptune Scale client."
+    message = "An error occurred in the Neptune client."
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
@@ -67,7 +67,7 @@ class NeptuneScaleError(Exception):
 
 
 class NeptuneScaleWarning(Warning):
-    message = "A warning occurred in the Neptune Scale client."
+    message = "A warning occurred in the Neptune client."
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
@@ -172,7 +172,7 @@ class NeptuneUnauthorizedError(NeptuneScaleError):
 NeptuneUnauthorizedError: You don't have permission to access the given resource.
 {end}
     - Verify that your API token is correct. To find your API token:
-        - Log in to Neptune Scale and open the user menu.
+        - Log in to Neptune and open the user menu.
         - If your workspace uses service accounts, ask the project owner to provide the token.
 
     - Verify that the provided project name is correct.
@@ -191,7 +191,7 @@ class NeptuneInvalidCredentialsError(NeptuneScaleError):
 NeptuneInvalidCredentialsError: The provided API token is invalid.
 {end}
 
-Make sure you copied your API token while logged in to Neptune Scale.
+Make sure you copied your API token while logged in to Neptune.
 If your workspace uses service accounts, ask the project owner for the token.
 
 There are two options to provide the API token:
@@ -222,7 +222,7 @@ For help, see https://docs-beta.neptune.ai/setup
 class NeptuneUnexpectedError(NeptuneScaleError):
     message = """
 {h1}
-NeptuneUnexpectedError: An unexpected error occurred in the Neptune Scale client.
+NeptuneUnexpectedError: An unexpected error occurred in the Neptune client.
 {end}
 Reason: `{reason}`
 
@@ -519,8 +519,8 @@ must only be added for later steps. Please adjust the order of your updates and 
 
 class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
     message = """The local storage database is in an unsupported version.
-    This may happen when you try to use a database created with a newer version of Neptune Scale with an older version of the library.
-    Please either upgrade Neptune Scale to the latest version or create a new local storage database."""
+    This may happen when you try to use a database created with a newer version of Neptune with an older version of the library.
+    Please either upgrade Neptune to the latest version or create a new local storage database."""
 
 
 class NeptuneDatabaseConflict(NeptuneScaleError):

@@ -1,19 +1,8 @@
-# Neptune Scale client
+# Neptune client
 
-> [!NOTE]
-> This package only works with the `3.x` version of neptune.ai called Neptune Scale, which is in beta.
->
-> You can't use the Scale client with the stable Neptune `2.x` versions currently available to SaaS and self-hosting customers. For the Python client corresponding to Neptune `2.x`, see https://github.com/neptune-ai/neptune-client.
+Neptune is an experiment tracker designed for teams that train foundation models.
 
-**What is Neptune?**
-
-Neptune is an experiment tracker. It enables researchers to monitor their model training, visualize and compare model metadata, and collaborate on AI/ML projects within a team.
-
-**What's different about Neptune Scale?**
-
-Neptune Scale is the next major version of Neptune. It's built on an entirely new architecture for ingesting and rendering data, with a focus on responsiveness and accuracy at scale.
-
-Neptune Scale supports forked experiments, with built-in mechanics for retaining run ancestry. This way, you can focus on analyzing the latest runs, but also visualize the full history of your experiments.
+Consisting of a Python API and web application, it brings enhanced scalability and responsiveness to support monitoring and debugging large-scale training.
 
 ## Installation
 
@@ -23,7 +12,7 @@ pip install neptune-scale
 
 ### Configure API token and project
 
-1. Log in to your Neptune Scale workspace.
+1. Log in to your Neptune workspace.
 1. Get your API token from your user menu in the bottom left corner.
 
     > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, access the workspace settings via the user menu.
@@ -55,7 +44,7 @@ pip install neptune-scale
 
     > If you skip this step, you need to pass the project name as an argument each time you start a run.
 
-You're ready to start using Neptune Scale.
+You're ready to start using Neptune.
 
 For more help with setup, see [Get started][scale-docs] in the Neptune documentation.
 
