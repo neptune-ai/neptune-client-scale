@@ -75,6 +75,7 @@ class FileUploadRequest:
     mime_type: str
     size_bytes: int
     is_temporary: bool = False
+    sequence_id: Optional[SequenceId] = None
 
 
 class OperationsRepository:
@@ -156,7 +157,8 @@ class OperationsRepository:
                     mime_type TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
                     is_temporary INTEGER NOT NULL
-                )"""
+                )
+                """
             )
 
     def save_update_run_snapshots(self, updates: list[UpdateRunSnapshot]) -> SequenceId:
@@ -400,7 +402,7 @@ class OperationsRepository:
                 )
                 return SequenceId(cursor.lastrowid)
 
-    def get_file_upload_requests(self, n: int) -> dict[SequenceId, FileUploadRequest]:
+    def get_file_upload_requests(self, n: int) -> list[FileUploadRequest]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
@@ -414,12 +416,17 @@ class OperationsRepository:
 
                 rows = cursor.fetchall()
 
-        return {
-            SequenceId(row[0]): FileUploadRequest(
-                source_path=row[1], target_path=row[2], mime_type=row[3], size_bytes=row[4], is_temporary=bool(row[5])
+        return [
+            FileUploadRequest(
+                sequence_id=SequenceId(row[0]),
+                source_path=row[1],
+                target_path=row[2],
+                mime_type=row[3],
+                size_bytes=row[4],
+                is_temporary=bool(row[5]),
             )
             for row in rows
-        }
+        ]
 
     def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
         with self._get_connection() as conn:  # type: ignore

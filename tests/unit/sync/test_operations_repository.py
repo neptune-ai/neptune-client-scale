@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import os
 import sqlite3
 import tempfile
@@ -429,11 +430,14 @@ def test_get_file_upload_requests_nonempty(operations_repo):
     operations_repo.save_file_upload_requests(file_requests)
 
     # When
-    operations = operations_repo.get_file_upload_requests(n=10)
+    requests = operations_repo.get_file_upload_requests(n=10)
 
     # Then
-    assert len(operations) == 3
-    assert operations == {SequenceId(i + 1): file_requests[i] for i in range(3)}
+    assert len(requests) == 3
+    assert requests == [
+        FileUploadRequest(**{**dataclasses.asdict(file_requests[i]), "sequence_id": SequenceId(i + 1)})
+        for i in range(3)
+    ]
 
 
 def test_get_file_upload_requests_with_limit(operations_repo):
@@ -451,11 +455,14 @@ def test_get_file_upload_requests_with_limit(operations_repo):
     operations_repo.save_file_upload_requests(file_requests)
 
     # When
-    operations = operations_repo.get_file_upload_requests(n=2)
+    requests = operations_repo.get_file_upload_requests(n=2)
 
     # Then
-    assert len(operations) == 2
-    assert operations == {SequenceId(i + 1): file_requests[i] for i in range(2)}
+    assert len(requests) == 2
+    assert requests == [
+        FileUploadRequest(**{**dataclasses.asdict(file_requests[i]), "sequence_id": SequenceId(i + 1)})
+        for i in range(2)
+    ]
 
 
 def test_delete_file_upload_requests(operations_repo):
@@ -478,7 +485,7 @@ def test_delete_file_upload_requests(operations_repo):
     # Then
     requests = operations_repo.get_file_upload_requests(n=10)
     assert len(requests) == 1
-    assert requests == {SequenceId(2): file_requests[1]}
+    assert requests == [FileUploadRequest(**{**dataclasses.asdict(file_requests[1]), "sequence_id": SequenceId(2)})]
 
 
 def test_delete_file_upload_requests_invalid_id(operations_repo):
