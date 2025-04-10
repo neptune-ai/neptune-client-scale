@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
@@ -49,6 +51,13 @@ INVALID_VALUE_ACTION = envs.get_option(envs.LOG_FAILURE_ACTION, ("drop", "raise"
 SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
+@dataclass
+class FileInfo:
+    path: str
+    size_bytes: int
+    mime_type: str
+
+
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def __init__(
         self,
@@ -58,6 +67,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
         metrics: Optional[Metrics],
+        files: Optional[dict[str, FileInfo]],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
@@ -70,6 +80,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
         self._metrics_preview = metrics.preview if metrics is not None else False
         self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
+        self._files = peekable(self._stream_files(files)) if files is not None else None
 
         self._configs = peekable(self._stream_configs(configs)) if configs else None
         self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
@@ -123,9 +134,20 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             operation=SET_OPERATION.REMOVE,
             size=size,
         )
+        size = self.populate_files(
+            update=update,
+            assets=self._files,
+            size=size,
+        )
 
         self._has_returned = True
         return update
+
+    def populate_files(
+        self, update: UpdateRunSnapshot, assets: Optional[peekable[tuple[str, FileInfo]]], size: int
+    ) -> int:
+        # populate update with FileRefs
+        ...
 
     def populate_assign(
         self,
@@ -282,6 +304,10 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 continue
 
             yield key, values
+
+    def _stream_files(self, files: dict[str, FileInfo]) -> Iterator[tuple[str, FileInfo]]:
+        # Verify path length, mime type length etc so they fit into proto FileRef
+        ...
 
     def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
         include_preview = self._metrics and self._metrics_preview

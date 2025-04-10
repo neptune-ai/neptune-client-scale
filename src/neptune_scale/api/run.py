@@ -12,7 +12,9 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.sync.files import user_files_to_upload_requests
 from neptune_scale.sync.metadata_splitter import (
+    FileInfo,
     MetadataSplitter,
     datetime_to_proto,
     make_step,
@@ -29,6 +31,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import (
+    IO,
     Any,
     Literal,
     Optional,
@@ -38,7 +41,10 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
-from neptune_scale.api.metrics import Metrics
+from neptune_scale.api.metrics import (
+    File,
+    Metrics,
+)
 from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,
@@ -567,6 +573,9 @@ class Run(AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self._log(tags_remove={name: tags})
 
+    def assign_files(self, files: dict[str, Union[str, Path, IO[bytes], File]]) -> None:
+        self._log(files=files)
+
     def log(
         self,
         step: Optional[Union[float, int]] = None,
@@ -598,6 +607,7 @@ class Run(AbstractContextManager):
         timestamp: Optional[datetime] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Metrics] = None,
+        files: Optional[dict[str, Union[str, Path, IO[bytes], File]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -605,6 +615,7 @@ class Run(AbstractContextManager):
         verify_type("configs", configs, (dict, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
+        verify_type("files", files, (dict, type(None)))
 
         if metrics is not None:
             verify_type("metrics", metrics, Metrics)
@@ -640,12 +651,17 @@ class Run(AbstractContextManager):
         elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
+        file_upload_requests = user_files_to_upload_requests(files) if files else {}
+        if file_upload_requests:
+            self._operations_repo.save_file_upload_requests(file_upload_requests.values())
+
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
+            files={k: FileInfo(v.target_path, v.size_bytes, v.mime_type) for k, v in file_upload_requests.items()},
             add_tags=tags_add,
             remove_tags=tags_remove,
         )

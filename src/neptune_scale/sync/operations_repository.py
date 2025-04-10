@@ -24,6 +24,7 @@ from typing import (
     Optional,
     Union,
 )
+from collections.abc import Iterable
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
@@ -381,7 +382,7 @@ class OperationsRepository:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
-    def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
+    def save_file_upload_requests(self, files: Iterable[FileUploadRequest]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
