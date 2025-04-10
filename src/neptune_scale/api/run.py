@@ -206,7 +206,12 @@ class Run(AbstractContextManager):
 
         if mode in ("offline", "async"):
             log_directory = log_directory or os.getenv(envs.LOG_DIRECTORY)
-            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, log_directory)
+            self._storage_directory_path: Optional[Path] = _resolve_run_storage_directory_path(
+                self._project, self._run_id, log_directory
+            )
+            self._storage_directory_path.mkdir(parents=True, exist_ok=True)
+
+            operations_repository_path = self._storage_directory_path / "run_operations.sqlite3"
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
                 db_path=operations_repository_path,
             )
@@ -220,6 +225,7 @@ class Run(AbstractContextManager):
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._logging_enabled = True
         else:
+            self._storage_directory_path = None
             self._operations_repo = None
             self._sequence_tracker = None
             self._logging_enabled = False
@@ -333,6 +339,13 @@ class Run(AbstractContextManager):
 
         if self._errors_queue is not None:
             self._errors_queue.close()
+
+        if self._storage_directory_path is not None:
+            try:
+                logger.debug(f"Removing directory {self._storage_directory_path}")
+                self._storage_directory_path.rmdir()
+            except Exception as e:
+                logger.info(f"Kept directory {self._storage_directory_path}: {e}")
 
     def terminate(self) -> None:
         """
@@ -797,14 +810,18 @@ def _sanitize_path_component(component: str) -> str:
     return result[:64]
 
 
-def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
+def _resolve_run_storage_directory_path(
+    project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]
+) -> Path:
+    """Return an absolute path to a directory where a Run should store its files."""
+
     sanitized_project = _sanitize_path_component(project)
     sanitized_run_id = _sanitize_path_component(run_id)
 
     timestamp_ns = int(time.time() * 1e9)
-    directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
+    base_directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
-    return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
+    return (base_directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}").absolute()
 
 
 def _get_run_url(
