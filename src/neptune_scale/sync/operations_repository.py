@@ -39,7 +39,7 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-DB_VERSION = "v1"
+DB_VERSION = "v2"
 
 SequenceId = typing.NewType("SequenceId", int)
 
@@ -66,6 +66,16 @@ class Operation:
 class Metadata:
     project: str
     run_id: str
+
+
+@dataclass(frozen=True)
+class FileUploadRequest:
+    source_path: str
+    target_path: str
+    mime_type: str
+    size_bytes: int
+    is_temporary: bool = False
+    sequence_id: Optional[SequenceId] = None
 
 
 class OperationsRepository:
@@ -138,6 +148,19 @@ class OperationsRepository:
                 )"""
             )
 
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS file_upload_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_path TEXT NOT NULL,
+                    target_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    is_temporary INTEGER NOT NULL
+                )
+                """
+            )
+
     def save_update_run_snapshots(self, updates: list[UpdateRunSnapshot]) -> SequenceId:
         """
         Guarantees:
@@ -167,7 +190,8 @@ class OperationsRepository:
 
         return last_insert_rowid
 
-    def _chunk_operations(self, updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
+    @staticmethod
+    def _chunk_operations(updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
         """
         Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
         Returns serialized operations in a list of batches.
@@ -357,22 +381,90 @@ class OperationsRepository:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
-    def _is_run_operations_empty(self) -> bool:
+    def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='run_operations'")
-                count: int = cursor.fetchone()[0]
-                if count == 0:
-                    return True
+                cursor.executemany(
+                    """
+                    INSERT INTO file_upload_requests (source_path, target_path, mime_type, size_bytes, is_temporary)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (file.source_path, file.target_path, file.mime_type, file.size_bytes, int(file.is_temporary))
+                        for file in files
+                    ],
+                )
+                cursor.execute("SELECT last_insert_rowid()")
+                return SequenceId(cursor.fetchone()[0])
 
-                cursor.execute("SELECT COUNT(*) FROM run_operations")
-                count = cursor.fetchone()[0]
-                return count == 0
+    def get_file_upload_requests(self, n: int) -> list[FileUploadRequest]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, source_path, target_path, mime_type, size_bytes, is_temporary
+                    FROM file_upload_requests
+                    LIMIT ?
+                    """,
+                    (n,),
+                )
+
+                rows = cursor.fetchall()
+
+        return [
+            FileUploadRequest(
+                sequence_id=SequenceId(row[0]),
+                source_path=row[1],
+                target_path=row[2],
+                mime_type=row[3],
+                size_bytes=row[4],
+                is_temporary=bool(row[5]),
+            )
+            for row in rows
+        ]
+
+    def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    DELETE FROM file_upload_requests
+                    WHERE id = ?
+                    """,
+                    [(seq_id,) for seq_id in seq_ids],
+                )
+
+    def _is_repository_empty(self) -> bool:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM run_operations")
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        return False
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        pass
+                    else:
+                        raise
+
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM file_upload_requests")
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        return False
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        pass
+                    else:
+                        raise
+
+                return True
 
     def close(self, cleanup_files: bool) -> None:
         with self._lock:
             if self._connection is not None:
-                if cleanup_files and self._is_run_operations_empty():
+                if cleanup_files and self._is_repository_empty():
                     self._connection.close()
                     self._connection = None
                     try:

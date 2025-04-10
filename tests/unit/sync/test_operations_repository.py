@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import os
 import sqlite3
 import tempfile
@@ -17,6 +18,7 @@ from neptune_scale.exceptions import (
     NeptuneUnableToLogData,
 )
 from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
     Metadata,
     OperationsRepository,
     OperationType,
@@ -395,8 +397,162 @@ def get_operation_count(db_path: str) -> int:
         conn.close()
 
 
+def test_save_file_upload_requests(operations_repo, temp_db_path):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+
+    # When
+    last_id = operations_repo.save_file_upload_requests(file_requests)
+
+    # Then
+    assert last_id == 3
+
+    # Then
+    conn = sqlite3.connect(operations_repo._db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, source_path, target_path, mime_type, size_bytes, is_temporary FROM file_upload_requests")
+    rows = cursor.fetchall()
+    conn.close()
+    assert rows == [
+        (i + 1, request.source_path, request.target_path, request.mime_type, request.size_bytes, request.is_temporary)
+        for i, request in enumerate(file_requests)
+    ]
+
+
+def test_get_file_upload_requests_empty(operations_repo):
+    # Given
+    operations = operations_repo.get_file_upload_requests(n=10)
+    assert len(operations) == 0
+
+
+def test_get_file_upload_requests_nonempty(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    requests = operations_repo.get_file_upload_requests(n=10)
+
+    # Then
+    assert len(requests) == 3
+    assert requests == [
+        FileUploadRequest(**{**dataclasses.asdict(file_requests[i]), "sequence_id": SequenceId(i + 1)})
+        for i in range(3)
+    ]
+
+
+def test_get_file_upload_requests_with_limit(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    requests = operations_repo.get_file_upload_requests(n=2)
+
+    # Then
+    assert len(requests) == 2
+    assert requests == [
+        FileUploadRequest(**{**dataclasses.asdict(file_requests[i]), "sequence_id": SequenceId(i + 1)})
+        for i in range(2)
+    ]
+
+
+def test_delete_file_upload_requests(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    operations_repo.delete_file_upload_requests(seq_ids=[SequenceId(1), SequenceId(3)])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 1
+    assert requests == [FileUploadRequest(**{**dataclasses.asdict(file_requests[1]), "sequence_id": SequenceId(2)})]
+
+
+def test_delete_file_upload_requests_invalid_id(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When - try to delete with a non-positive sequence ID
+    operations_repo.delete_file_upload_requests(seq_ids=[SequenceId(0)])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 3
+
+
+def test_delete_file_upload_requests_empty(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When - try to delete with an empty list
+    operations_repo.delete_file_upload_requests(seq_ids=[])
+
+    # Then
+    requests = operations_repo.get_file_upload_requests(n=10)
+    assert len(requests) == 3
+
+
 @pytest.mark.parametrize("cleanup_files", [True, False])
-def test_cleanup_empty_repository(temp_db_path, cleanup_files):
+def test_cleanup_repository_empty(temp_db_path, cleanup_files):
     # given
     repo = OperationsRepository(db_path=Path(temp_db_path))
     assert not os.path.exists(temp_db_path)
@@ -415,13 +571,68 @@ def test_cleanup_empty_repository(temp_db_path, cleanup_files):
 
 
 @pytest.mark.parametrize("cleanup_files", [True, False])
-def test_cleanup_nonempty_repository(temp_db_path, cleanup_files):
+def test_cleanup_repository_no_tables(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    conn = sqlite3.connect(temp_db_path)
+    cursor = conn.cursor()
+    cursor.execute("DROP TABLE run_operations")
+    cursor.execute("DROP TABLE metadata")
+    cursor.execute("DROP TABLE file_upload_requests")
+    conn.commit()
+    conn.close()
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path) != cleanup_files
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_run_snapshots(temp_db_path, cleanup_files):
     # given
     repo = OperationsRepository(db_path=Path(temp_db_path))
 
     # when
     repo.init_db()
     repo.save_update_run_snapshots([UpdateRunSnapshot(assign={"key": Value(string="value")})])
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_file_requests(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    repo.save_file_upload_requests(
+        [
+            FileUploadRequest(
+                source_path=f"source_path_{i}",
+                target_path=f"target_path_{i}",
+                mime_type="application/octet-stream",
+                size_bytes=i * 1024,
+                is_temporary=bool(i % 2),
+            )
+            for i in range(3)
+        ]
+    )
 
     # then
     assert os.path.exists(temp_db_path)
