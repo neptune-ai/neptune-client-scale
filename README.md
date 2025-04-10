@@ -4,11 +4,11 @@
 </div>
 
 <div align="center">
-  <a href="https://docs-beta.neptune.ai/quickstart/">Quickstart</a>
+  <a href="https://docs.neptune.ai/quickstart/">Quickstart</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://neptune.ai/">Website</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://docs-beta.neptune.ai/">Docs</a>
+  <a href="https://docs.neptune.ai/">Docs</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://github.com/neptune-ai/scale-examples">Examples</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
@@ -142,10 +142,10 @@ For help, contact us at [support@neptune.ai](mailto:support@neptune.ai).
 Created with :heart: by the [neptune.ai team &rarr;](https://neptune.ai/jobs#team)
 
 
-[api-ref]: https://docs-beta.neptune.ai/run
-[docs]: https://docs-beta.neptune.ai/setup
-[experiments]: https://docs-beta.neptune.ai/experiments
-[log-metadata]: https://docs-beta.neptune.ai/log_metadata
-[new-experiment]: https://docs-beta.neptune.ai/new_experiment
-[quickstart]: https://docs-beta.neptune.ai/quickstart
+[api-ref]: https://docs.neptune.ai/run
+[docs]: https://docs.neptune.ai/setup
+[experiments]: https://docs.neptune.ai/experiments
+[log-metadata]: https://docs.neptune.ai/log_metadata
+[new-experiment]: https://docs.neptune.ai/new_experiment
+[quickstart]: https://docs.neptune.ai/quickstart
 [demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/compare?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12&dash=dashboard&dashboardId=9e745b6c-2c98-4e23-abbc-9b56d8123fb8&compare=auto-5
