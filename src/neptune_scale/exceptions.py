@@ -471,6 +471,14 @@ NeptuneStringSetExceedsSizeLimit: String Set value is too long. Maximum length i
 """
 
 
+class NeptuneFileMetadataExceedsSizeLimit(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneFileMetadataExceedsSizeLimit: File metadata is too long. Maximum length is 4KB.
+{end}
+"""
+
+
 class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
     message = """
 {h1}

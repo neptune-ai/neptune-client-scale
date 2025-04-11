@@ -54,6 +54,7 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
+    NeptuneFileMetadataExceedsSizeLimit,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -127,6 +128,7 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
+    IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
 }
 
 
