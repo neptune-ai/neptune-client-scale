@@ -245,7 +245,14 @@ class SyncProcess(Process):
                     logger.debug(
                         f"sender thread alive: {sender_thread.is_alive()}, file uploader thread alive: {file_uploader_thread.is_alive()}"
                     )
-                    if status_tracking_queue.peek(max_size=1) is None:
+                    has_pending_operations = status_tracking_queue.peek(max_size=1) is not None
+                    has_pending_uploads = (
+                        bool(operations_repository.get_file_upload_requests(1))
+                        if file_uploader_thread.is_alive()
+                        else False
+                    )
+
+                    if not has_pending_operations and not has_pending_uploads:
                         logger.error("SyncProcess: sender thread(s) closed unexpectedly. Exiting")
                         break
 
