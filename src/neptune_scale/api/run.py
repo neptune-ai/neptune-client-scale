@@ -647,6 +647,7 @@ class Run(AbstractContextManager):
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
+            files=None,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )

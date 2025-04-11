@@ -35,3 +35,5 @@ OPERATION_REPOSITORY_TIMEOUT = 60  # 1 minute
 
 # Files
 MAX_FILE_TARGET_PATH_LENGTH = 800
+# Max total length of all fields in a FileRef: storage path, attribute path, mime type
+MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH = 3800
