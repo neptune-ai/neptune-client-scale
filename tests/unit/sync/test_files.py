@@ -1,5 +1,6 @@
 import gzip
 import pathlib
+import re
 import tempfile
 from unittest.mock import (
     Mock,
@@ -17,6 +18,8 @@ from azure.core.exceptions import (
 
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.files import (
+    _ensure_length,
+    generate_target_path,
     guess_mime_type_from_bytes,
     guess_mime_type_from_file,
 )
@@ -337,3 +340,81 @@ def test_file_uploader_thread_non_terminal_error(
     )
 
     mock_errors_queue.put.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "string, max_length, match_result",
+    [
+        ("A" * 20, 100, r"^A{20}$"),
+        ("A" * 11, 11, "^A{11}$"),
+        ("A" * 100, 19, r"^A{10}-[0-9a-f]{8}$"),
+        # Make sure we don't truncate with a trailing "/" before the unique string
+        ("attr/nested/path", 14, "^attr-[0-9a-f]{8}$"),
+    ],
+)
+def test_ensure_length(string, max_length, match_result):
+    result = _ensure_length(string, max_length)
+
+    assert len(result) <= max_length
+    assert re.fullmatch(match_result, result), f"{result} did not match {match_result}"
+
+
+@pytest.mark.parametrize(
+    "run_id, attribute_name, filename, max_length, expect_run_id, match_attribute, match_filename",
+    [
+        # Run_id and attribute name are short, run-id does not need sanitizing
+        ("run-id", "attribute/path", "file.txt", 1024, "run-id", r"^attribute/path$", r"^file.txt$"),
+        # Run_id and attribute name are short, run-id needs sanitizing
+        ("run/id", "attribute/path", "file.txt", 1024, "run_id", r"^attribute/path$", r"^file.txt$"),
+        # Exact match of max length with no truncation
+        ("R", "A" * 100, "X", 104, "R", r"^A{100}$", r"^X$"),
+        # Long attribute name should not truncate the filename if it's short enough
+        (
+            "run-id",
+            "attribute/path/" + "A" * 100,
+            "file.txt",
+            128,
+            "run-id",
+            r"^attribute/path/A*-[0-9a-f]{8}$",
+            r"^file.txt$",
+        ),
+        # Long file and attribute names truncate both, attribute name taking precedence
+        # File extension must be kept, maximum file length is 64 characters.
+        (
+            "run-id",
+            "attribute/" + "A" * 200,
+            "file" + "X" * 100 + ".txt",
+            128,
+            "run-id",
+            r"^attribute/A*-[0-9a-f]{8}$",
+            r"^fileX{47}-[0-9a-f]{8}\.txt$",
+        ),
+        # Short attribute name, long file name. Attribute name should not be truncated if there is room to truncate
+        # the filename.
+        (
+            "run-id",
+            "attribute/path",
+            "file" + "X" * 1000 + ".txt",
+            128,
+            "run-id",
+            r"^attribute/path$",
+            r"^fileX*-[0-9a-f]{8}\.txt$",
+        ),
+    ],
+)
+def test_generate_target_path(
+    run_id, attribute_name, filename, max_length, expect_run_id, match_attribute, match_filename
+):
+    result = generate_target_path(run_id, attribute_name, filename, max_length)
+    # +2 is for "/" separators
+    if len(run_id) + len(attribute_name) + len(filename) + 2 >= max_length:
+        assert len(result) == max_length, "Did not use all the available space"
+    else:
+        assert len(result) <= max_length
+
+    run_id_component, tail = result.split("/", maxsplit=1)
+    attribute_component, file_component = tail.rsplit("/", maxsplit=1)
+
+    assert run_id_component == expect_run_id
+    assert re.fullmatch(match_attribute, attribute_component), "Attribute component did not match"
+    assert re.fullmatch(match_filename, file_component), "File component did not match"
