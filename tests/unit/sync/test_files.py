@@ -361,6 +361,8 @@ def test_ensure_length(string, max_length, match_result):
 
 @pytest.mark.parametrize(
     "run_id, attribute_name, filename, max_length, expect_run_id, match_attribute, match_filename",
+    # Note that the trailing "-[0-9a-f]{8}" regex matches the hash digest used when
+    # truncating path components.
     [
         # Run_id and attribute name are short, run-id does not need sanitizing
         ("run-id", "attribute/path", "file.txt", 1024, "run-id", r"^attribute/path$", r"^file.txt$"),

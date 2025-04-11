@@ -41,7 +41,7 @@ def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path:
 
         return DEFAULT_MIME_TYPE
     except Exception as e:
-        logger.error(f"Error determining mime type for {target_path}: {e}")
+        logger.warning(f"Error determining mime type for {local_path}: {e}")
         return None
 
 
@@ -57,7 +57,7 @@ def guess_mime_type_from_bytes(data: bytes, target_path: Optional[str] = None) -
 
         return DEFAULT_MIME_TYPE
     except Exception as e:
-        logger.warning(f"Error determining mime type for {target_path}, defaulting to ${DEFAULT_MIME_TYPE}: {e}")
+        logger.warning(f"Error determining mime type for the provided buffer, defaulting to ${DEFAULT_MIME_TYPE}: {e}")
         return DEFAULT_MIME_TYPE
 
 
@@ -108,9 +108,10 @@ def generate_target_path(
      - attribute name takes precedence over the filename
      - the filename is truncated to fit the remaining space, but no less
        than 64 characters, including extension
-     - the file extension is not truncated
+     - file extension is not truncated
 
-    Truncated components have a hash digest appended to the end.
+    Truncated components have a hash digest appended to the end, with the format
+    of "ORIG_PATH_PREFIX-[0-9a-f]{8}".
     """
 
     filename_reserve = min(RESERVE_FILENAME_LENGTH, len(filename))
@@ -130,7 +131,7 @@ def generate_target_path(
 
     attribute_name = _ensure_length(attribute_name, max_attribute_length)
 
-    # Truncate the filename if it is too long. Keep the extension as is, only truncate the base part.
+    # Truncate the filename if it is too long, keeping the extension as is.
     max_filename_length = max_length - len(run_id) - len(attribute_name) - 2
     if len(filename) > max_filename_length:
         filename_parts = filename.rsplit(".", maxsplit=1)

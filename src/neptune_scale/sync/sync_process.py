@@ -651,6 +651,7 @@ class FileUploaderThread(Daemon):
 @with_api_errors_handling
 def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: Iterable[str]) -> dict[str, str]:
     """Fetch Azure urls for storing files. Return a dict of target_path -> upload url"""
+    logger.debug("Fetching file storage urls")
     response = client.fetch_file_storage_urls(paths=target_paths, project=project, mode="write")
     status_code = response.status_code
     if status_code != 200:
