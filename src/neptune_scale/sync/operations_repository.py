@@ -7,7 +7,7 @@ from neptune_scale.sync.parameters import (
     OPERATION_REPOSITORY_TIMEOUT,
 )
 
-__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
+__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId", "FileUploadRequest")
 
 import contextlib
 import datetime
