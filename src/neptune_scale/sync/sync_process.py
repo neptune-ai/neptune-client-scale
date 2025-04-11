@@ -618,11 +618,11 @@ class FileUploaderThread(Daemon):
                 for file in file_upload_requests:
                     try:
                         upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.target_path])
-                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
-
                         if file.is_temporary:
                             logger.debug(f"Removing temporary file {file.source_path}")
                             pathlib.Path(file.source_path).unlink(missing_ok=True)
+
+                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
                     except NeptuneRetryableError as e:
                         self._errors_queue.put(e)
                     except Exception as e:
