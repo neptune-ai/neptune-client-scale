@@ -53,6 +53,7 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
     NeptuneFileUploadError,
+    NeptuneFileUploadTemporaryError,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -663,8 +664,6 @@ def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: s
         with open(local_path, "rb") as file:
             client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
 
-            # Note that max_concurrency and chunking will only apply if the file is larger than 64MB (Azure default).
-            # Otherwise, it will be uploaded in a single request, single thread.
             client.upload_blob(
                 file,
                 content_type=mime_type,
@@ -673,7 +672,7 @@ def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: s
             )
     except azure.core.exceptions.AzureError as e:
         logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
-        raise NeptuneFileUploadError(file_path=local_path, reason=str(e)) from e
+        raise NeptuneFileUploadTemporaryError(file_path=local_path, reason=str(e)) from e
     except Exception as e:
         raise e
 

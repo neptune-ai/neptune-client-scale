@@ -299,7 +299,7 @@ There was an error uploading the file {file_path}: {reason}
 class NeptuneFileUploadTemporaryError(NeptuneRetryableError):
     message = """
 {h1}
-----NeptuneFileUploadTemporaryError: An temporary error occurred during file upload
+----NeptuneFileUploadTemporaryError: A temporary error occurred during file upload
 {end}
 There was an error uploading the file {file_path}: {reason}
 """

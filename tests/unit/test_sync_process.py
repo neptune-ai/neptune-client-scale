@@ -33,6 +33,7 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 from neptune_scale import NeptuneScaleWarning
 from neptune_scale.exceptions import (
     NeptuneFileUploadError,
+    NeptuneFileUploadTemporaryError,
     NeptuneScaleError,
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
@@ -866,10 +867,11 @@ def test_file_uploader_thread_non_terminal_error(
     assert mock_blob_client.upload_blob.call_count == 3
 
     # The file request should be deleted from the repository only once
-    mock_operations_repository.delete_file_upload_requests.assert_has_calls([call([disk_upload_request.sequence_id])])
+    mock_operations_repository.delete_file_upload_requests.assert_called_once_with([disk_upload_request.sequence_id])
 
     # Two NeptuneFileUploadErrors should be reported
     assert mock_errors_queue.put.call_count == 2
     assert all(
-        isinstance(call_args.args[0], NeptuneFileUploadError) for call_args in mock_errors_queue.put.call_args_list
+        isinstance(call_args.args[0], NeptuneFileUploadTemporaryError)
+        for call_args in mock_errors_queue.put.call_args_list
     )
