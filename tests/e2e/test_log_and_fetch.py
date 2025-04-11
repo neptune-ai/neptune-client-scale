@@ -12,6 +12,7 @@ from neptune_fetcher import ReadOnlyRun
 from pytest import mark
 
 from neptune_scale.api.run import Run
+from neptune_scale.sync.operations_repository import FileUploadRequest
 
 from .conftest import (
     random_series,
@@ -158,6 +159,26 @@ def test_single_non_finite_metric(value, run, ro_run):
     run.log_metrics(data={path: value}, step=1)
     run.wait_for_processing(SYNC_TIMEOUT)
     assert path not in refresh(ro_run).field_names
+
+
+def test_single_file(run, ro_run):
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    # TODO: log files using a public run method when available
+    run._operations_repo.save_file_upload_requests(file_requests)
+
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # TODO: assert that the requests are gone after it's implemented...
+    assert run._operations_repo.get_file_upload_requests_count() == len(file_requests)
 
 
 def test_async_lag_callback():

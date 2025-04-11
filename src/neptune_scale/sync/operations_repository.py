@@ -7,7 +7,7 @@ from neptune_scale.sync.parameters import (
     OPERATION_REPOSITORY_TIMEOUT,
 )
 
-__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId")
+__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId", "FileUploadRequest")
 
 import contextlib
 import datetime
@@ -434,32 +434,36 @@ class OperationsRepository:
                     [(seq_id,) for seq_id in seq_ids],
                 )
 
+    def get_file_upload_requests_count(self) -> int:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                return self._get_table_count(cursor, "file_upload_requests")
+
     def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                try:
-                    cursor.execute("SELECT COUNT(*) FROM run_operations")
-                    count = cursor.fetchone()[0]
-                    if count > 0:
-                        return False
-                except sqlite3.OperationalError as e:
-                    if "no such table" in str(e):
-                        pass
-                    else:
-                        raise
-
-                try:
-                    cursor.execute("SELECT COUNT(*) FROM file_upload_requests")
-                    count = cursor.fetchone()[0]
-                    if count > 0:
-                        return False
-                except sqlite3.OperationalError as e:
-                    if "no such table" in str(e):
-                        pass
-                    else:
-                        raise
-
+                if self._get_table_count(cursor, "run_operations") != 0:
+                    return False
+                if self._get_table_count(cursor, "file_upload_requests") != 0:
+                    return False
                 return True
+
+    @staticmethod
+    def _get_table_count(cursor: sqlite3.Cursor, table_name: str) -> int:
+        try:
+            cursor.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM '{table_name}'
+            """
+            )
+            count = cursor.fetchone()[0]
+            return int(count)
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e):
+                return 0
+            else:
+                raise
 
     def close(self, cleanup_files: bool) -> None:
         with self._lock:
