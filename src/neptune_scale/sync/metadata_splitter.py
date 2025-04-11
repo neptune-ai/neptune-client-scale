@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
+from dataclasses import dataclass
+
+from neptune_scale.sync.parameters import (
+    MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH,
+    MAX_SINGLE_OPERATION_SIZE_BYTES,
+)
 
 __all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
 
@@ -19,6 +24,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from more_itertools import peekable
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
+    FileRef,
     Preview,
     Step,
     StringSet,
@@ -49,6 +55,18 @@ INVALID_VALUE_ACTION = envs.get_option(envs.LOG_FAILURE_ACTION, ("drop", "raise"
 SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
 
 
+@dataclass(frozen=True)
+class FileRefData:
+    """Passed between Run and MetadataSplitter for file uploads"""
+
+    # py39 does not support slots=True on @dataclass
+    __slots__ = ("storage_path", "mime_type", "size_bytes")
+
+    storage_path: str
+    mime_type: str
+    size_bytes: int
+
+
 class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def __init__(
         self,
@@ -58,6 +76,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
         metrics: Optional[Metrics],
+        files: Optional[dict[str, FileRefData]],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
@@ -74,6 +93,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._configs = peekable(self._stream_configs(configs)) if configs else None
         self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
         self._remove_tags = peekable(self._stream_tags(remove_tags)) if remove_tags else None
+        self._files = peekable(self._stream_files(files)) if files else None
 
         self._max_update_bytes_size = (
             max_message_bytes_size
@@ -121,6 +141,11 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             update=update,
             assets=self._remove_tags,
             operation=SET_OPERATION.REMOVE,
+            size=size,
+        )
+        size = self.populate_assign(
+            update=update,
+            assets=self._files,
             size=size,
         )
 
@@ -282,6 +307,40 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 continue
 
             yield key, values
+
+    def _stream_files(self, files: dict[str, FileRefData]) -> Iterator[tuple[str, Value]]:
+        _is_instance = isinstance
+        for attr_name, file in self._validate_paths(files):
+            if not _is_instance(file.storage_path, str):
+                _warn_or_raise_on_invalid_value(
+                    f"File destination must be a string (got `{file.storage_path}` for {attr_name}`)"
+                )
+                continue
+
+            if not _is_instance(file.size_bytes, int) or file.size_bytes < 0:
+                _warn_or_raise_on_invalid_value(
+                    f"File size must be a positive number (got `{file.size_bytes}` for `{attr_name}`)"
+                )
+                continue
+
+            if not _is_instance(file.mime_type, str) or not file.mime_type:
+                _warn_or_raise_on_invalid_value(
+                    f"File mime type must be a non-empty string (got `{file.mime_type}` for `{attr_name}`)"
+                )
+                continue
+
+            total_length = len(file.storage_path) + len(file.mime_type) + len(attr_name)
+            if total_length > MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH:
+                _warn_or_raise_on_invalid_value(
+                    f"File attribute path, storage path and mime type are too long "
+                    f"({total_length} total, max is {MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH})"
+                )
+                continue
+
+            yield (
+                attr_name,
+                Value(file_ref=FileRef(path=file.storage_path, mime_type=file.mime_type, size_bytes=file.size_bytes)),
+            )
 
     def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
         include_preview = self._metrics and self._metrics_preview
