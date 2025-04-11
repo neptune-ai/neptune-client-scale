@@ -8,7 +8,6 @@ import azure.core.exceptions
 from azure.storage.blob import BlobClient
 
 from neptune_scale.sync.operations_repository import (
-    FileUploadRequest,
     Metadata,
     Operation,
     OperationsRepository,
@@ -24,7 +23,6 @@ import os
 import queue
 import signal
 import threading
-from collections.abc import Iterable
 from multiprocessing import Process
 from types import FrameType
 from typing import (
@@ -54,6 +52,7 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
+    NeptuneFileUploadError,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -599,70 +598,60 @@ class FileUploaderThread(Daemon):
         self._operations_repository = operations_repository
         self._errors_queue = errors_queue
 
-        self._neptune_client: Optional[ApiClient] = None
+        self._api_client: Optional[ApiClient] = None
 
     def close(self) -> None:
-        if self._neptune_client is not None:
-            self._neptune_client.close()
+        if self._api_client is not None:
+            self._api_client.close()
 
     def work(self) -> None:
         try:
             while file_upload_requests := self._operations_repository.get_file_upload_requests(10):
                 logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
-                if not self._neptune_client:
-                    self._neptune_client = backend_factory(self._neptune_api_token)
+                if not self._api_client:
+                    self._api_client = backend_factory(self._neptune_api_token)
 
                 target_paths = [file.target_path for file in file_upload_requests]
-
-                try:
-                    storage_urls = fetch_file_storage_urls(self._neptune_client, self._project, target_paths)
-                except NeptuneRetryableError as e:
-                    logger.debug(f"Error while fetching file storage urls: {e}")
-                    self._errors_queue.put(e)
-                    return
+                storage_urls = fetch_file_storage_urls(self._api_client, self._project, target_paths)
 
                 for file in file_upload_requests:
                     try:
                         upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.target_path])
-                    except azure.core.exceptions.AzureError as e:
-                        logger.warning(f"Will retry uploading file {file.source_path}: {e}")
-                        return
-                    except Exception as e:
-                        # Fatal failure. Do not retry the file, but clean it up and continue with the next one
-                        self._errors_queue.put(e)
-                        logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
+                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
 
-                    self._finalize_upload(file)
+                        if file.is_temporary:
+                            logger.debug(f"Removing temporary file {file.source_path}")
+                            pathlib.Path(file.source_path).unlink(missing_ok=True)
+                    except NeptuneRetryableError as e:
+                        self._errors_queue.put(e)
+                    except Exception as e:
+                        # Fatal failure. Do not retry the file, but keep it on disk.
+                        logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
+                        self._errors_queue.put(NeptuneFileUploadError(file_path=file.source_path, reason=str(e)))
+                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+        except NeptuneRetryableError as e:
+            self._errors_queue.put(e)
         except Exception as e:
+            logger.error("Error in file uploader thread", exc_info=e)
             self._errors_queue.put(e)
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
-    def _finalize_upload(self, file: FileUploadRequest) -> None:
-        assert file.sequence_id is not None
-
-        self._operations_repository.delete_file_upload_requests([file.sequence_id])
-        try:
-            if file.is_temporary:
-                logger.debug(f"Removing temporary file {file.source_path}")
-                pathlib.Path(file.source_path).unlink(missing_ok=True)
-        except Exception as e:
-            logger.warning(f"Unable to remove temporary file {file.source_path}: {e}")
-            self._errors_queue.put(e)
-
 
 @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
 @with_api_errors_handling
-def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: Iterable[str]) -> dict[str, str]:
+def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: list[str]) -> dict[str, str]:
     """Fetch Azure urls for storing files. Return a dict of target_path -> upload url"""
+
+    logger.debug(f"Fetch file storage URLs for {len(target_paths)} files")
     response = client.fetch_file_storage_urls(paths=target_paths, project=project, mode="write")
     status_code = response.status_code
     if status_code != 200:
         _raise_exception(status_code)
 
     if response.parsed is None:
-        raise NeptuneUnexpectedError("Server response is empty")
+        raise NeptuneUnexpectedResponseError("Server response is empty")
 
     return {file.path: file.url for file in response.parsed.files}
 
@@ -670,17 +659,22 @@ def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: Itera
 def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: str) -> None:
     logger.debug(f"Start: upload file {local_path}")
 
-    with open(local_path, "rb") as file:
-        client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
+    try:
+        with open(local_path, "rb") as file:
+            client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
 
-        # Note that max_concurrency and chunking will only apply if the file is larger than 64MB (Azure default).
-        # Otherwise, it will be uploaded in a single request, single thread.
-        client.upload_blob(
-            file,
-            content_type=mime_type,
-            overwrite=True,
-            max_concurrency=8,  # The default is 16, set it lower to save threads
-            length=size_bytes,
-        )
+            # Note that max_concurrency and chunking will only apply if the file is larger than 64MB (Azure default).
+            # Otherwise, it will be uploaded in a single request, single thread.
+            client.upload_blob(
+                file,
+                content_type=mime_type,
+                overwrite=True,
+                length=size_bytes,
+            )
+    except azure.core.exceptions.AzureError as e:
+        logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
+        raise NeptuneFileUploadError(file_path=local_path, reason=str(e)) from e
+    except Exception as e:
+        raise e
 
     logger.debug(f"Done: upload file {local_path}")
