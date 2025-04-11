@@ -315,7 +315,6 @@ class Run(AbstractContextManager):
         if self._sync_process is not None and self._sync_process.is_alive():
             if wait:
                 self.wait_for_processing()
-                self._wait_for_file_upload()
 
             self._sync_process.terminate()
             self._sync_process.join()
@@ -748,6 +747,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
@@ -755,6 +755,9 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -766,6 +769,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -773,6 +777,9 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
 
     def _wait_for_file_upload(
         self,
