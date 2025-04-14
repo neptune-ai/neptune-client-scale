@@ -1,3 +1,4 @@
+import hashlib
 import mimetypes
 import pathlib
 from typing import (
@@ -8,14 +9,21 @@ from typing import (
 
 import filetype
 
+from neptune_scale.sync.parameters import MAX_FILE_DESTINATION_LENGTH
 from neptune_scale.util import get_logger
+
+__all__ = (
+    "guess_mime_type_from_file",
+    "guess_mime_type_from_bytes",
+    "generate_destination",
+)
 
 DEFAULT_MIME_TYPE = "application/octet-stream"
 logger = get_logger()
 
 
-def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path: str) -> Optional[str]:
-    """Guess mime type by local file path and the target path. In case of an error, return None.
+def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], destination: Optional[str] = None) -> Optional[str]:
+    """Guess mime type by local file path and the destination path. In case of an error, return None.
 
     We return None instead of DEFAULT_MIME_TYPE under the assumption that an error here also means
     that the file is inaccessible or not found, thus the upload will fail.
@@ -24,28 +32,120 @@ def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path:
         if mime := mimetypes.guess_type(local_path)[0]:
             return mime
 
-        if mime := mimetypes.guess_type(target_path)[0]:
-            return mime
+        if destination:
+            if mime := mimetypes.guess_type(destination)[0]:
+                return mime
 
         if mime := filetype.guess_mime(local_path):
             return cast(str, mime)
 
         return DEFAULT_MIME_TYPE
     except Exception as e:
-        logger.error(f"Error determining mime type for {target_path}: {e}")
+        logger.warning(f"Error determining mime type for {local_path}: {e}")
         return None
 
 
-def guess_mime_type_from_bytes(data: bytes, target_path: str) -> str:
+def guess_mime_type_from_bytes(data: bytes, destination: Optional[str] = None) -> str:
     """Guess mime type by providing a buffer and the target path"""
     try:
-        if mime := mimetypes.guess_type(target_path)[0]:
-            return mime
+        if destination:
+            if mime := mimetypes.guess_type(destination)[0]:
+                return mime
 
         if mime := filetype.guess_mime(data):
             return cast(str, mime)
 
         return DEFAULT_MIME_TYPE
     except Exception as e:
-        logger.warning(f"Error determining mime type for {target_path}, defaulting to ${DEFAULT_MIME_TYPE}: {e}")
+        logger.warning(f"Error determining mime type for the provided buffer, defaulting to ${DEFAULT_MIME_TYPE}: {e}")
         return DEFAULT_MIME_TYPE
+
+
+def _digest_suffix(string: str) -> str:
+    digest = hashlib.blake2b(string.encode("utf-8"), digest_size=8).hexdigest()
+    return "-" + digest
+
+
+def _ensure_length(string: str, max_length: int) -> str:
+    """Ensure the string is within the specified length limit. If it's longer,
+    truncate it and append a 9-character unique string to the end.
+
+    The string must be a valid utf-8 string, and max_length cannot be less than 18:
+
+        - 17 bytes for "-HASH123456789abc"
+        - at least one byte for the original name part
+    """
+
+    assert max_length >= 18
+
+    if len(string) > max_length:
+        suffix = _digest_suffix(string)
+        truncate_at = max_length - len(suffix)
+        return string[:truncate_at] + suffix
+    return string
+
+
+# Maximum lengths of various components of the file destination.
+MAX_RUN_ID_COMPONENT_LENGTH = 300
+MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH = 300
+MAX_FILENAME_PATH_COMPONENT_LENGTH = 198
+MAX_FILENAME_EXTENSION_LENGTH = 32
+
+# Format: "run_id/attribute_path/file.txt", we need +2 to account for the "/" separators.
+# The lengths should add up to MAX_FILE_DESTINATION_LENGTH.
+assert (
+    MAX_RUN_ID_COMPONENT_LENGTH + MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH + MAX_FILENAME_PATH_COMPONENT_LENGTH + 2
+) == MAX_FILE_DESTINATION_LENGTH
+
+
+def _sanitize_run_id(run_id: str, max_length: int) -> str:
+    """Return run_id transformed such that is not longer than the max length, and does not
+    contain "/" characters. If "/" characters were present, there are replaced by "_" and a
+    digest suffix is added for uniqueness."""
+
+    # Don't add the suffix again if we know it'll be added by _ensure_length
+    suffix_added = len(run_id) > max_length
+    run_id = _ensure_length(run_id, max_length)
+    if not "/" in run_id:
+        return run_id
+
+    suffix = _digest_suffix(run_id) if not suffix_added else ""
+    run_id = run_id.replace("/", "_")
+    run_id += suffix
+
+    return run_id
+
+
+def generate_destination(run_id: str, attribute_name: str, filename: str) -> str:
+    """
+    Generate a path under which a file should be saved in the storage.
+
+    The path is generated in the format:
+        run-id/attribute/path/file.txt
+
+    The path is guaranteed not to exceed the max length. If necessary, path
+    components are truncated to fit their maximum allowed lengths.
+
+    Truncated run_id and attribute path components have a hash digest appended.
+    Truncated filenames: file.ext -> file-<digest>.ext, with ext being cut it too long,
+    without appending the hash digest.
+    """
+
+    run_id = _sanitize_run_id(run_id, MAX_RUN_ID_COMPONENT_LENGTH)
+    attribute_name = _ensure_length(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH)
+
+    # Truncate the filename if necessary, keeping extension (truncated) if present.
+    filename = pathlib.Path(filename).name
+    if len(filename) > MAX_FILENAME_PATH_COMPONENT_LENGTH:
+        filename_parts = filename.rsplit(".", maxsplit=1)
+        if len(filename_parts) == 2:
+            name, ext = filename_parts
+            ext_len = len(ext) + 1
+        else:
+            name, ext, ext_len = filename, "", 0
+
+        ext = ext[:MAX_FILENAME_EXTENSION_LENGTH]
+        name = _ensure_length(name, MAX_FILENAME_PATH_COMPONENT_LENGTH - ext_len)
+        filename = f"{name}.{ext}" if ext else name
+
+    return f"{run_id}/{attribute_name}/{filename}"
