@@ -39,6 +39,7 @@ __all__ = (
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
+    "NeptuneFileMetadataExceedsSizeLimit",
     "NeptuneAsyncLagThresholdExceeded",
     "NeptuneProjectNotProvided",
     "NeptuneApiTokenNotProvided",
@@ -493,6 +494,14 @@ class NeptuneStringSetExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
 NeptuneStringSetExceedsSizeLimit: String Set value is too long. Maximum length is 64KB.
+{end}
+"""
+
+
+class NeptuneFileMetadataExceedsSizeLimit(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneFileMetadataExceedsSizeLimit: File metadata is too long. Maximum length is 4KB.
 {end}
 """
 
