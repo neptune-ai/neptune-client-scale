@@ -251,7 +251,7 @@ class SyncProcess(Process):
 
             for thread in threads:
                 thread.join(timeout=SHUTDOWN_TIMEOUT)
-                thread.close()  # type: ignore
+                thread.close()
             operations_repository.close(cleanup_files=False)
         logger.info("Data synchronization finished")
 
