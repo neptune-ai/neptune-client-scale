@@ -20,10 +20,16 @@ __all__ = ("HostedApiClient", "ApiClient", "backend_factory", "with_api_errors_h
 import abc
 import functools
 import os
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 from dataclasses import dataclass
 from json import JSONDecodeError
-from typing import Any
+from typing import (
+    Any,
+    Literal,
+)
 
 import httpx
 from httpx import Timeout
@@ -54,6 +60,13 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.types import Response
+from neptune_storage_api.api.storagebridge import signed_url
+from neptune_storage_api.models import (
+    CreateSignedUrlsRequest,
+    CreateSignedUrlsResponse,
+    FileToSign,
+    Permission,
+)
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
@@ -130,6 +143,14 @@ class ApiClient(abc.ABC):
 
     def close(self) -> None: ...
 
+    @abc.abstractmethod
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]: ...
+
 
 class HostedApiClient(ApiClient):
     def __init__(self, api_token: str) -> None:
@@ -157,6 +178,20 @@ class HostedApiClient(ApiClient):
     def close(self) -> None:
         logger.debug("Closing API client")
         self.backend.__exit__()
+
+    def fetch_file_storage_urls(
+        self,
+        paths: Iterable[str],
+        project: str,
+        mode: Literal["read", "write"],
+    ) -> Response[CreateSignedUrlsResponse]:
+        permission = Permission(mode)
+        return signed_url.sync_detailed(
+            client=self.backend,
+            body=CreateSignedUrlsRequest(
+                files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],
+            ),
+        )
 
 
 def backend_factory(api_token: str) -> ApiClient:
