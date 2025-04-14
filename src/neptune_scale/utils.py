@@ -27,7 +27,7 @@ def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:  
 
     def _stringify_unsupported(d: dict[str, Any], prefix: str = "") -> None:
         for key, value in d.items():
-            new_key = f"{prefix}/{key}" if prefix else f"{prefix}{key}"
+            new_key = f"{prefix}/{key}" if prefix else key
             if isinstance(value, dict):
                 _stringify_unsupported(d=value, prefix=new_key)
             elif isinstance(value, (list, set, tuple)):
