@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neptune_scale.sync.parameters import (
-    MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH,
+    MAX_FILE_DESTINATION_LENGTH,
+    MAX_FILE_MIME_TYPE_LENGTH,
     MAX_SINGLE_OPERATION_SIZE_BYTES,
 )
 
@@ -60,9 +61,9 @@ class FileRefData:
     """Passed between Run and MetadataSplitter for file uploads"""
 
     # py39 does not support slots=True on @dataclass
-    __slots__ = ("storage_path", "mime_type", "size_bytes")
+    __slots__ = ("destination", "mime_type", "size_bytes")
 
-    storage_path: str
+    destination: str
     mime_type: str
     size_bytes: int
 
@@ -311,9 +312,17 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def _stream_files(self, files: dict[str, FileRefData]) -> Iterator[tuple[str, Value]]:
         _is_instance = isinstance
         for attr_name, file in self._validate_paths(files):
-            if not _is_instance(file.storage_path, str):
+            if not _is_instance(file.destination, str):
                 _warn_or_raise_on_invalid_value(
-                    f"File destination must be a string (got `{file.storage_path}` for {attr_name}`)"
+                    f"File destination must be a string of at most {MAX_FILE_DESTINATION_LENGTH} characters"
+                    f"(got `{file.destination}` for {attr_name}`)"
+                )
+                continue
+
+            if not _is_instance(file.mime_type, str) or len(file.mime_type) > MAX_FILE_MIME_TYPE_LENGTH:
+                _warn_or_raise_on_invalid_value(
+                    f"File mime type must be a string of at most {MAX_FILE_MIME_TYPE_LENGTH} characters"
+                    f" (got `{file.mime_type}` for `{attr_name}`)"
                 )
                 continue
 
@@ -323,23 +332,9 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 )
                 continue
 
-            if not _is_instance(file.mime_type, str) or not file.mime_type:
-                _warn_or_raise_on_invalid_value(
-                    f"File mime type must be a non-empty string (got `{file.mime_type}` for `{attr_name}`)"
-                )
-                continue
-
-            total_length = len(file.storage_path) + len(file.mime_type) + len(attr_name)
-            if total_length > MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH:
-                _warn_or_raise_on_invalid_value(
-                    f"File attribute path, storage path and mime type are too long "
-                    f"({total_length} total, max is {MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH})"
-                )
-                continue
-
             yield (
                 attr_name,
-                Value(file_ref=FileRef(path=file.storage_path, mime_type=file.mime_type, size_bytes=file.size_bytes)),
+                Value(file_ref=FileRef(path=file.destination, mime_type=file.mime_type, size_bytes=file.size_bytes)),
             )
 
     def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:

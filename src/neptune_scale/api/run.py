@@ -671,7 +671,19 @@ class Run(AbstractContextManager):
         elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
-        file_upload_requests = self._prepare_files_for_upload(files)
+        file_upload_requests = self._prepare_files_for_upload(files) if files else None
+        file_data = (
+            {
+                attr_name: FileRefData(
+                    destination=req.destination,
+                    mime_type=req.mime_type,
+                    size_bytes=req.size_bytes,
+                )
+                for attr_name, req in file_upload_requests
+            }
+            if file_upload_requests
+            else None
+        )
 
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
@@ -679,24 +691,18 @@ class Run(AbstractContextManager):
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
-            files={
-                attr_name: FileRefData(
-                    storage_path=req.target_path,
-                    mime_type=req.mime_type,
-                    size_bytes=req.size_bytes,
-                )
-                for attr_name, req in file_upload_requests
-            },
+            files=file_data,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
+        # Save file upload requests only after MetadataSplitter processed input
+        if file_upload_requests:
+            self._operations_repo.save_file_upload_requests([req[1] for req in file_upload_requests])
+
         operations = list(splitter)
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
         self._sequence_tracker.update_sequence_id(sequence_id)
-
-        # Save file upload requests only after MetadataSplitter processed input
-        self._operations_repo.save_file_upload_requests([req[1] for req in file_upload_requests])
 
     def _prepare_files_for_upload(
         self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
@@ -725,7 +731,7 @@ class Run(AbstractContextManager):
                     mime_type = mime_type or guess_mime_type_from_bytes(source, destination)
                     file_path = _save_buffer_to_disk(
                         self._storage_directory_path,  # type: ignore
-                        source[:size],
+                        source,
                         mimetypes.guess_extension(mime_type) if mime_type else None,
                     )
                     logger.debug(f"Saved temporary file {file_path} for attribute `{attr_name}`")
@@ -744,7 +750,7 @@ class Run(AbstractContextManager):
                         attr_name,
                         FileUploadRequest(
                             source_path=str(file_path.absolute()),
-                            target_path=destination or generate_destination(self._run_id, attr_name, file_path.name),
+                            destination=destination or generate_destination(self._run_id, attr_name, file_path.name),
                             mime_type=mime_type,
                             size_bytes=size,
                             is_temporary=isinstance(source, bytes),

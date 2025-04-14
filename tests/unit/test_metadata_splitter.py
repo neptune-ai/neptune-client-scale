@@ -35,6 +35,7 @@ def test_empty():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -65,6 +66,7 @@ def test_configs():
             "some/tags": {"tag1", "tag2"},
         },
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -139,6 +141,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -169,6 +172,7 @@ def test_tags():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        files=None,
         add_tags={
             "some/tags": {"tag1", "tag2"},
             "some/other_tags2": {"tag2", "tag3"},
@@ -226,6 +230,7 @@ def test_splitting():
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
+        files=None,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -270,6 +275,7 @@ def test_split_large_tags():
         timestamp=timestamp,
         configs=fields,
         metrics=metrics,
+        files=None,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -313,6 +319,7 @@ def test_raise_on_non_finite_float_metrics(value):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        files=None,
         add_tags={},
         remove_tags={},
         max_message_bytes_size=1024,
@@ -344,6 +351,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
             timestamp=datetime.now(),
             configs={},
             metrics=metrics,
+            files=None,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
@@ -366,7 +374,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
 def test_invalid_path_types(caplog, action, invalid_path, param_name):
     data = {invalid_path: object()}
 
-    kwargs = {name: None for name in ("configs", "metrics", "add_tags", "remove_tags")}
+    kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files")}
     kwargs[param_name] = data if param_name != "metrics" else Metrics(step=1, data=data)
 
     splitter = MetadataSplitter(
@@ -399,6 +407,7 @@ def test_invalid_metrics_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=Metrics(step=1, data=metrics),
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -428,6 +437,7 @@ def test_invalid_configs_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=configs,
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -458,6 +468,7 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=None,
+        files=None,
         add_tags=tags if operation == "add" else {},
         remove_tags=tags if operation == "remove" else {},
     )

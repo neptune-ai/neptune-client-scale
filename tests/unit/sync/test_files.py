@@ -62,7 +62,7 @@ def test_guess_mime_type_from_bytes(mock_guess_mime, filename, expected_mime_typ
 
 
 @pytest.mark.parametrize(
-    "local_path, target_path, expected_mime_type",
+    "local_path, destination, expected_mime_type",
     (
         ("test.txt", "test.jpg", "text/plain"),
         ("test.jpg", "test.txt", "image/jpeg"),
@@ -70,9 +70,9 @@ def test_guess_mime_type_from_bytes(mock_guess_mime, filename, expected_mime_typ
     ),
 )
 def test_guess_mime_type_from_file_no_disk_access_on_known_extension(
-    mock_guess_mime, local_path, target_path, expected_mime_type
+    mock_guess_mime, local_path, destination, expected_mime_type
 ):
-    mime = guess_mime_type_from_file(local_path, target_path)
+    mime = guess_mime_type_from_file(local_path, destination)
     assert mime == expected_mime_type
     mock_guess_mime.assert_not_called()
 
@@ -323,7 +323,7 @@ def test_file_uploader_thread_non_terminal_error(
 
     # Signed urls should be requested for each attempt
     mock_fetch_file_storage_urls.assert_has_calls(
-        [call(uploader_thread._neptune_client, "workspace/project", [user_file_upload_request.target_path])] * 3
+        [call(uploader_thread._neptune_client, "workspace/project", [user_file_upload_request.destination])] * 3
     )
 
     # An upload attempt should be made for 2 failures and the final success
