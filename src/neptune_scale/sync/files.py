@@ -22,8 +22,8 @@ DEFAULT_MIME_TYPE = "application/octet-stream"
 logger = get_logger()
 
 
-def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path: Optional[str] = None) -> Optional[str]:
-    """Guess mime type by local file path and the target path. In case of an error, return None.
+def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], destination: Optional[str] = None) -> Optional[str]:
+    """Guess mime type by local file path and the destination path. In case of an error, return None.
 
     We return None instead of DEFAULT_MIME_TYPE under the assumption that an error here also means
     that the file is inaccessible or not found, thus the upload will fail.
@@ -32,8 +32,8 @@ def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path:
         if mime := mimetypes.guess_type(local_path)[0]:
             return mime
 
-        if target_path:
-            if mime := mimetypes.guess_type(target_path)[0]:
+        if destination:
+            if mime := mimetypes.guess_type(destination)[0]:
                 return mime
 
         if mime := filetype.guess_mime(local_path):
@@ -45,11 +45,11 @@ def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], target_path:
         return None
 
 
-def guess_mime_type_from_bytes(data: bytes, target_path: Optional[str] = None) -> str:
+def guess_mime_type_from_bytes(data: bytes, destination: Optional[str] = None) -> str:
     """Guess mime type by providing a buffer and the target path"""
     try:
-        if target_path:
-            if mime := mimetypes.guess_type(target_path)[0]:
+        if destination:
+            if mime := mimetypes.guess_type(destination)[0]:
                 return mime
 
         if mime := filetype.guess_mime(data):

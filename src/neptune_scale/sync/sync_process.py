@@ -608,10 +608,10 @@ class FileUploaderThread(Daemon):
                 if not self._neptune_client:
                     self._neptune_client = backend_factory(self._neptune_api_token)
 
-                target_paths = [file.target_path for file in file_upload_requests]
+                destination_paths = [file.destination for file in file_upload_requests]
 
                 try:
-                    storage_urls = fetch_file_storage_urls(self._neptune_client, self._project, target_paths)
+                    storage_urls = fetch_file_storage_urls(self._neptune_client, self._project, destination_paths)
                 except NeptuneRetryableError as e:
                     logger.debug(f"Error while fetching file storage urls: {e}")
                     self._errors_queue.put(e)
@@ -619,7 +619,7 @@ class FileUploaderThread(Daemon):
 
                 for file in file_upload_requests:
                     try:
-                        upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.target_path])
+                        upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.destination])
                     except azure.core.exceptions.AzureError as e:
                         logger.warning(f"Will retry uploading file {file.source_path}: {e}")
                         return
@@ -649,10 +649,10 @@ class FileUploaderThread(Daemon):
 
 @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
 @with_api_errors_handling
-def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: Iterable[str]) -> dict[str, str]:
+def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: Iterable[str]) -> dict[str, str]:
     """Fetch Azure urls for storing files. Return a dict of target_path -> upload url"""
     logger.debug("Fetching file storage urls")
-    response = client.fetch_file_storage_urls(paths=target_paths, project=project, mode="write")
+    response = client.fetch_file_storage_urls(paths=destination_paths, project=project, mode="write")
     status_code = response.status_code
     if status_code != 200:
         _raise_exception(status_code)
