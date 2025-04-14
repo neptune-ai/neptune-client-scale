@@ -459,8 +459,10 @@ class OperationsRepository:
             )
             count = cursor.fetchone()[0]
             return int(count)
-        except sqlite3.OperationalError as e:
-            if "no such table" in str(e):
+        except sqlite3.OperationalError:
+            cursor.execute(f"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+            count = cursor.fetchone()[0]
+            if count == 0:
                 return 0
             else:
                 raise
