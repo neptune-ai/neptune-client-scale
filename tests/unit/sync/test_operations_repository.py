@@ -402,7 +402,7 @@ def test_save_file_upload_requests(operations_repo, temp_db_path):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -419,11 +419,11 @@ def test_save_file_upload_requests(operations_repo, temp_db_path):
     # Then
     conn = sqlite3.connect(operations_repo._db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, source_path, target_path, mime_type, size_bytes, is_temporary FROM file_upload_requests")
+    cursor.execute("SELECT id, source_path, destination, mime_type, size_bytes, is_temporary FROM file_upload_requests")
     rows = cursor.fetchall()
     conn.close()
     assert rows == [
-        (i + 1, request.source_path, request.target_path, request.mime_type, request.size_bytes, request.is_temporary)
+        (i + 1, request.source_path, request.destination, request.mime_type, request.size_bytes, request.is_temporary)
         for i, request in enumerate(file_requests)
     ]
 
@@ -439,7 +439,7 @@ def test_get_file_upload_requests_nonempty(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -470,7 +470,7 @@ def test_get_file_upload_requests_count_nonempty(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -491,7 +491,7 @@ def test_get_file_upload_requests_count_nonempty_limit(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -512,7 +512,7 @@ def test_get_file_upload_requests_with_limit(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -537,7 +537,7 @@ def test_delete_file_upload_requests(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -560,7 +560,7 @@ def test_delete_file_upload_requests_invalid_id(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -582,7 +582,7 @@ def test_delete_file_upload_requests_empty(operations_repo):
     file_requests = [
         FileUploadRequest(
             source_path=f"source_path_{i}",
-            target_path=f"target_path_{i}",
+            destination=f"destination_{i}",
             mime_type="application/octet-stream",
             size_bytes=i * 1024,
             is_temporary=bool(i % 2),
@@ -673,7 +673,7 @@ def test_cleanup_repository_nonempty_file_requests(temp_db_path, cleanup_files):
         [
             FileUploadRequest(
                 source_path=f"source_path_{i}",
-                target_path=f"target_path_{i}",
+                destination=f"destination_{i}",
                 mime_type="application/octet-stream",
                 size_bytes=i * 1024,
                 is_temporary=bool(i % 2),

@@ -71,7 +71,7 @@ class Metadata:
 @dataclass(frozen=True)
 class FileUploadRequest:
     source_path: str
-    target_path: str
+    destination: str
     mime_type: str
     size_bytes: int
     is_temporary: bool = False
@@ -153,7 +153,7 @@ class OperationsRepository:
                 CREATE TABLE IF NOT EXISTS file_upload_requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source_path TEXT NOT NULL,
-                    target_path TEXT NOT NULL,
+                    destination TEXT NOT NULL,
                     mime_type TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
                     is_temporary INTEGER NOT NULL
@@ -386,11 +386,11 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
-                    INSERT INTO file_upload_requests (source_path, target_path, mime_type, size_bytes, is_temporary)
+                    INSERT INTO file_upload_requests (source_path, destination, mime_type, size_bytes, is_temporary)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     [
-                        (file.source_path, file.target_path, file.mime_type, file.size_bytes, int(file.is_temporary))
+                        (file.source_path, file.destination, file.mime_type, file.size_bytes, int(file.is_temporary))
                         for file in files
                     ],
                 )
@@ -402,7 +402,7 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
-                    SELECT id, source_path, target_path, mime_type, size_bytes, is_temporary
+                    SELECT id, source_path, destination, mime_type, size_bytes, is_temporary
                     FROM file_upload_requests
                     LIMIT ?
                     """,
@@ -415,7 +415,7 @@ class OperationsRepository:
             FileUploadRequest(
                 sequence_id=SequenceId(row[0]),
                 source_path=row[1],
-                target_path=row[2],
+                destination=row[2],
                 mime_type=row[3],
                 size_bytes=row[4],
                 is_temporary=bool(row[5]),
