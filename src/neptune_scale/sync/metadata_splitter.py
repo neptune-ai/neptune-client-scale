@@ -90,8 +90,13 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._project = project
         self._run_id = run_id
 
+        if metrics is not None and metrics.step is not None:
+            self._step = make_step(number=metrics.step)
+        elif string_series is not None and string_series.step is not None:
+            self._step = make_step(number=string_series.step)
+        else:
+            self._step = None
         self._metrics = peekable(self._stream_metrics(metrics.step, metrics.data)) if metrics is not None else None
-        self._step = make_step(number=metrics.step) if (metrics is not None and metrics.step is not None) else None
         self._metrics_preview = metrics.preview if metrics is not None else False
         self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
         self._string_series = peekable(self._stream_string_series(string_series.data)) if string_series else None
