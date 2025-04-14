@@ -408,7 +408,7 @@ class SenderThread(Daemon):
 
 
 def _raise_exception(status_code: int) -> None:
-    logger.error("HTTP response error: %s", status_code)
+    logger.warning("HTTP response error: %s", status_code)
     if status_code == 403:
         raise NeptuneUnauthorizedError()
     elif status_code == 408:
