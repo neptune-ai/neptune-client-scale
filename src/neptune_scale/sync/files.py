@@ -9,13 +9,13 @@ from typing import (
 
 import filetype
 
-from neptune_scale.sync.parameters import MAX_FILE_TARGET_PATH_LENGTH
+from neptune_scale.sync.parameters import MAX_FILE_DESTINATION_LENGTH
 from neptune_scale.util import get_logger
 
 __all__ = (
     "guess_mime_type_from_file",
     "guess_mime_type_from_bytes",
-    "generate_target_path",
+    "generate_destination",
 )
 
 DEFAULT_MIME_TYPE = "application/octet-stream"
@@ -61,86 +61,91 @@ def guess_mime_type_from_bytes(data: bytes, target_path: Optional[str] = None) -
         return DEFAULT_MIME_TYPE
 
 
+def _digest_suffix(string: str) -> str:
+    digest = hashlib.blake2b(string.encode("utf-8"), digest_size=8).hexdigest()
+    return "-" + digest
+
+
 def _ensure_length(string: str, max_length: int) -> str:
     """Ensure the string is within the specified length limit. If it's longer,
     truncate it and append a 9-character unique string to the end.
 
-    The string is guaranteed not to be truncated at a "/", which is desirable for
-    attribute paths. This is only guaranteed if the string does not contain runs of
-    "/" characters.
+    The string must be a valid utf-8 string, and max_length cannot be less than 18:
 
-    Example: "attr/path", max_length=14 can be truncated to "attr/-HASH1234" as it
-    fits the limit. However, this would introduce a new undesired level in path
-    hierarchy. Thus, it will be truncated to "attr-HASH1234".
-
-    The string must be a valid utf-8 string, and max_length cannot be less than 11:
-
-        - 9 bytes for "-HASH1234"
-        - byte for the original name part
-        - 1 byte in case we need to skip a trailing "/"
+        - 17 bytes for "-HASH123456789abc"
+        - at least one byte for the original name part
     """
 
-    assert max_length >= 11
+    assert max_length >= 18
 
     if len(string) > max_length:
-        digest = hashlib.blake2b(string.encode("utf-8"), digest_size=4).hexdigest()
-        truncate_at = max_length - len(digest) - 1  # -1 for "-"
-        if string[truncate_at - 1] == "/":
-            truncate_at -= 1
-        return string[:truncate_at] + "-" + digest
+        suffix = _digest_suffix(string)
+        truncate_at = max_length - len(suffix)
+        return string[:truncate_at] + suffix
     return string
 
 
-# If the resulting target path needs truncating, the path component will
-# remain at least this many characters long
-RESERVE_FILENAME_LENGTH = 64
+# Maximum lengths of various components of the file destination.
+MAX_RUN_ID_COMPONENT_LENGTH = 300
+MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH = 300
+MAX_FILENAME_PATH_COMPONENT_LENGTH = 198
+MAX_FILENAME_EXTENSION_LENGTH = 32
+
+# Format: "run_id/attribute_path/file.txt", we need +2 to account for the "/" separators.
+# The lengths should add up to MAX_FILE_DESTINATION_LENGTH.
+assert (
+    MAX_RUN_ID_COMPONENT_LENGTH + MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH + MAX_FILENAME_PATH_COMPONENT_LENGTH + 2
+) == MAX_FILE_DESTINATION_LENGTH
 
 
-def generate_target_path(
-    run_id: str, attribute_name: str, filename: str, max_length: int = MAX_FILE_TARGET_PATH_LENGTH
-) -> str:
+def _sanitize_run_id(run_id: str, max_length: int) -> str:
+    """Return run_id transformed such that is not longer than the max length, and does not
+    contain "/" characters. If "/" characters were present, there are replaced by "_" and a
+    digest suffix is added for uniqueness."""
+
+    # Don't add the suffix again if we know it'll be added by _ensure_length
+    suffix_added = len(run_id) > max_length
+    run_id = _ensure_length(run_id, max_length)
+    if not "/" in run_id:
+        return run_id
+
+    suffix = _digest_suffix(run_id) if not suffix_added else ""
+    run_id = run_id.replace("/", "_")
+    run_id += suffix
+
+    return run_id
+
+
+def generate_destination(run_id: str, attribute_name: str, filename: str) -> str:
     """
-    Generate a path for storage. The path is generated in the format:
+    Generate a path under which a file should be saved in the storage.
+
+    The path is generated in the format:
         run-id/attribute/path/file.txt
 
     The path is guaranteed not to exceed the max length. If necessary, path
-    components are truncated to fit the length:
-     - attribute name takes precedence over the filename
-     - the filename is truncated to fit the remaining space, but no less
-       than 64 characters, including extension
-     - file extension is not truncated
+    components are truncated to fit their maximum allowed lengths.
 
-    Truncated components have a hash digest appended to the end, with the format
-    of "ORIG_PATH_PREFIX-[0-9a-f]{8}".
+    Truncated run_id and attribute path components have a hash digest appended.
+    Truncated filenames: file.ext -> file-<digest>.ext, with ext being cut it too long,
+    without appending the hash digest.
     """
 
-    filename_reserve = min(RESERVE_FILENAME_LENGTH, len(filename))
+    run_id = _sanitize_run_id(run_id, MAX_RUN_ID_COMPONENT_LENGTH)
+    attribute_name = _ensure_length(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH)
 
-    # Assume we want at least 32 chars for the attribute name
-    if len(run_id) + 2 + filename_reserve + 32 > max_length:
-        raise ValueError("The provided max_length is to small to fit the arguments")
-
-    if "/" in filename:
-        raise ValueError("Filename cannot contain '/' character")
-
-    run_id = run_id.replace("/", "_")
-
-    # Truncate the attribute name leaving space for the filename and 2 "/" characters
-    max_attribute_length = max_length - len(run_id) - filename_reserve - 2
-    assert max_attribute_length >= 32
-
-    attribute_name = _ensure_length(attribute_name, max_attribute_length)
-
-    # Truncate the filename if it is too long, keeping the extension as is.
-    max_filename_length = max_length - len(run_id) - len(attribute_name) - 2
-    if len(filename) > max_filename_length:
+    # Truncate the filename if necessary, keeping extension (truncated) if present.
+    filename = pathlib.Path(filename).name
+    if len(filename) > MAX_FILENAME_PATH_COMPONENT_LENGTH:
         filename_parts = filename.rsplit(".", maxsplit=1)
         if len(filename_parts) == 2:
             name, ext = filename_parts
+            ext_len = len(ext) + 1
         else:
-            name, ext = filename, ""
+            name, ext, ext_len = filename, "", 0
 
-        name = _ensure_length(name, max_filename_length - len(ext) - 1)
-        filename = name + "." + ext if ext else name
+        ext = ext[:MAX_FILENAME_EXTENSION_LENGTH]
+        name = _ensure_length(name, MAX_FILENAME_PATH_COMPONENT_LENGTH - ext_len)
+        filename = f"{name}.{ext}" if ext else name
 
     return f"{run_id}/{attribute_name}/{filename}"

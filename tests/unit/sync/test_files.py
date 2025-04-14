@@ -18,8 +18,12 @@ from azure.core.exceptions import (
 
 from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.files import (
+    MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH,
+    MAX_FILENAME_PATH_COMPONENT_LENGTH,
+    MAX_RUN_ID_COMPONENT_LENGTH,
     _ensure_length,
-    generate_target_path,
+    _sanitize_run_id,
+    generate_destination,
     guess_mime_type_from_bytes,
     guess_mime_type_from_file,
 )
@@ -28,6 +32,7 @@ from neptune_scale.sync.operations_repository import (
     OperationsRepository,
     SequenceId,
 )
+from neptune_scale.sync.parameters import MAX_FILE_DESTINATION_LENGTH
 from neptune_scale.sync.sync_process import FileUploaderThread
 
 
@@ -346,10 +351,8 @@ def test_file_uploader_thread_non_terminal_error(
     "string, max_length, match_result",
     [
         ("A" * 20, 100, r"^A{20}$"),
-        ("A" * 11, 11, "^A{11}$"),
-        ("A" * 100, 19, r"^A{10}-[0-9a-f]{8}$"),
-        # Make sure we don't truncate with a trailing "/" before the unique string
-        ("attr/nested/path", 14, "^attr-[0-9a-f]{8}$"),
+        ("A" * 20, 20, r"^A{20}$"),
+        ("A" * 100, 27, r"^A{10}-[0-9a-f]{16}$"),
     ],
 )
 def test_ensure_length(string, max_length, match_result):
@@ -360,63 +363,59 @@ def test_ensure_length(string, max_length, match_result):
 
 
 @pytest.mark.parametrize(
-    "run_id, attribute_name, filename, max_length, expect_run_id, match_attribute, match_filename",
-    # Note that the trailing "-[0-9a-f]{8}" regex matches the hash digest used when
+    "run_id, max_length, match",
+    [
+        ("run-id", 100, r"^run-id$"),
+        ("run/id/slashed", 100, r"^run_id_slashed-[0-9a-f]{16}$"),
+        # 100 - 17 (digest) - 6 ("run_id") -> 77 A's remaining
+        ("run/id" + "A" * 100, 100, r"^run_idA{77}-[0-9a-f]{16}$"),
+    ],
+)
+def test_sanitize_run_id(run_id, max_length, match):
+    result = _sanitize_run_id(run_id, max_length)
+    assert len(result) <= max_length
+    assert re.fullmatch(match, result), f"{result} did not match {match}"
+
+
+@pytest.mark.parametrize(
+    "run_id, attribute_name, filename, match_run_id, match_attribute, match_filename",
+    # Note that the trailing "-[0-9a-f]{16}" regex matches the hash digest used when
     # truncating path components.
     [
         # Run_id and attribute name are short, run-id does not need sanitizing
-        ("run-id", "attribute/path", "file.txt", 1024, "run-id", r"^attribute/path$", r"^file.txt$"),
+        ("run-id", "attribute/path", "file.txt", "^run-id$", r"^attribute/path$", r"^file.txt$"),
         # Run_id and attribute name are short, run-id needs sanitizing
-        ("run/id", "attribute/path", "file.txt", 1024, "run_id", r"^attribute/path$", r"^file.txt$"),
+        ("run/id", "attribute/path", "file.txt", r"^run_id-[0-9a-f]{16}$", r"^attribute/path$", r"^file.txt$"),
         # Exact match of max length with no truncation
-        ("R", "A" * 100, "X", 104, "R", r"^A{100}$", r"^X$"),
-        # Long attribute name should not truncate the filename if it's short enough
-        (
-            "run-id",
-            "attribute/path/" + "A" * 100,
-            "file.txt",
-            128,
-            "run-id",
-            r"^attribute/path/A*-[0-9a-f]{8}$",
-            r"^file.txt$",
-        ),
-        # Long file and attribute names truncate both, attribute name taking precedence
-        # File extension must be kept, maximum file length is 64 characters.
-        (
-            "run-id",
-            "attribute/" + "A" * 200,
-            "file" + "X" * 100 + ".txt",
-            128,
-            "run-id",
-            r"^attribute/A*-[0-9a-f]{8}$",
-            r"^fileX{47}-[0-9a-f]{8}\.txt$",
-        ),
-        # Short attribute name, long file name. Attribute name should not be truncated if there is room to truncate
-        # the filename.
+        ("R" * 300, "A" * 300, "X" * 198, "^R{300}$", r"^A{300}$", r"^X{198}$"),
+        # Truncation of all components
+        ("R" * 500, "A" * 500, "X" * 500, "^R{283}-[0-9a-f]{16}$", r"^A{283}-[0-9a-f]{16}$", r"^X{181}-[0-9a-f]{16}$"),
+        # Long filename should be truncated, with extension shortened as well
         (
             "run-id",
             "attribute/path",
-            "file" + "X" * 1000 + ".txt",
-            128,
-            "run-id",
+            "F" * 500 + "." + "E" * 100,
+            "^run-id$",
             r"^attribute/path$",
-            r"^fileX*-[0-9a-f]{8}\.txt$",
+            r"^F+-[0-9a-f]{16}\.E{32}$",
         ),
     ],
 )
-def test_generate_target_path(
-    run_id, attribute_name, filename, max_length, expect_run_id, match_attribute, match_filename
-):
-    result = generate_target_path(run_id, attribute_name, filename, max_length)
+def test_generate_destination(run_id, attribute_name, filename, match_run_id, match_attribute, match_filename):
+    result = generate_destination(run_id, attribute_name, filename)
     # +2 is for "/" separators
-    if len(run_id) + len(attribute_name) + len(filename) + 2 >= max_length:
-        assert len(result) == max_length, "Did not use all the available space"
+    if len(run_id) + len(attribute_name) + len(filename) + 2 >= MAX_FILE_DESTINATION_LENGTH:
+        assert len(result) == MAX_FILE_DESTINATION_LENGTH, "Did not use all the available space"
     else:
-        assert len(result) <= max_length
+        assert len(result) <= MAX_FILE_DESTINATION_LENGTH
 
     run_id_component, tail = result.split("/", maxsplit=1)
     attribute_component, file_component = tail.rsplit("/", maxsplit=1)
 
-    assert run_id_component == expect_run_id
+    assert len(run_id_component) <= MAX_RUN_ID_COMPONENT_LENGTH
+    assert len(attribute_component) <= MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    assert len(file_component) <= MAX_FILENAME_PATH_COMPONENT_LENGTH
+
+    assert re.fullmatch(match_run_id, run_id_component), "RunId component did not match"
     assert re.fullmatch(match_attribute, attribute_component), "Attribute component did not match"
     assert re.fullmatch(match_filename, file_component), "File component did not match"

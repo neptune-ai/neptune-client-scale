@@ -16,7 +16,7 @@ from urllib.parse import quote_plus
 
 from neptune_scale.api.types import File
 from neptune_scale.sync.files import (
-    generate_target_path,
+    generate_destination,
     guess_mime_type_from_bytes,
     guess_mime_type_from_file,
 )
@@ -744,7 +744,7 @@ class Run(AbstractContextManager):
                         attr_name,
                         FileUploadRequest(
                             source_path=str(file_path.absolute()),
-                            target_path=destination or generate_target_path(self._run_id, attr_name, file_path.name),
+                            target_path=destination or generate_destination(self._run_id, attr_name, file_path.name),
                             mime_type=mime_type,
                             size_bytes=size,
                             is_temporary=isinstance(source, bytes),

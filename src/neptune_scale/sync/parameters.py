@@ -34,6 +34,7 @@ MAX_REQUEST_SIZE_BYTES = 16 * 1024 * 1024  # 16MB
 OPERATION_REPOSITORY_TIMEOUT = 60  # 1 minute
 
 # Files
-MAX_FILE_TARGET_PATH_LENGTH = 800
 # Max total length of all fields in a FileRef: storage path, attribute path, mime type
 MAX_PROTO_FILE_REF_FIELDS_TOTAL_LENGTH = 3800
+# Max length of destination path in file storage backend
+MAX_FILE_DESTINATION_LENGTH = 800
