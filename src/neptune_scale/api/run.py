@@ -792,6 +792,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
+        upload_count_limit = 1_000_000
         begin_time = time.monotonic()
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None
@@ -804,12 +805,13 @@ class Run(AbstractContextManager):
                         return
                 assert self._operations_repo is not None
 
-                upload_count = self._operations_repo.get_file_upload_requests_count()
+                upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
 
                 if upload_count > 0:
                     last_print_timestamp = print_message(
-                        "Waiting for remaining %d file(s) to be uploaded",
+                        "Waiting for remaining %d%s file(s) to be uploaded",
                         upload_count,
+                        "" if upload_count < upload_count_limit else "+",
                         last_print=last_print_timestamp,
                         verbose=verbose,
                     )

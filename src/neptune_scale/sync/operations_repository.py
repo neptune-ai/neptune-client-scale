@@ -434,29 +434,35 @@ class OperationsRepository:
                     [(seq_id,) for seq_id in seq_ids],
                 )
 
-    def get_file_upload_requests_count(self) -> int:
+    def get_file_upload_requests_count(self, limit: Optional[int] = None) -> int:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                return self._get_table_count(cursor, "file_upload_requests")
+                return self._get_table_count(cursor, "file_upload_requests", limit=limit)
 
     def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                if self._get_table_count(cursor, "run_operations") != 0:
+                if self._get_table_count(cursor, "run_operations", limit=1) != 0:
                     return False
-                if self._get_table_count(cursor, "file_upload_requests") != 0:
+                if self._get_table_count(cursor, "file_upload_requests", limit=1) != 0:
                     return False
                 return True
 
     @staticmethod
-    def _get_table_count(cursor: sqlite3.Cursor, table_name: str) -> int:
+    def _get_table_count(cursor: sqlite3.Cursor, table_name: str, limit: Optional[int] = None) -> int:
         try:
+            if limit is None:
+                source = table_name
+            else:
+                source = f"(SELECT * FROM {table_name} LIMIT {limit})"
+
             cursor.execute(
                 f"""
                 SELECT COUNT(*)
-                FROM '{table_name}'
-            """
+                FROM {source}
+                """
             )
+
             count = cursor.fetchone()[0]
             return int(count)
         except sqlite3.OperationalError:
