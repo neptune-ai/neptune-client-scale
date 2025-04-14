@@ -24,6 +24,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from json import JSONDecodeError
 from typing import Any
+from importlib.metadata import version as get_version
+from sys import version as python_version
 
 import httpx
 from httpx import Timeout
@@ -109,7 +111,7 @@ def get_config_and_token_urls(
 def create_auth_api_client(
     *, credentials: Credentials, config: ClientConfig, token_refreshing_urls: TokenRefreshingURLs, verify_ssl: bool
 ) -> AuthenticatedClient:
-    return AuthenticatedClient(
+    client = AuthenticatedClient(
         base_url=credentials.base_url,
         credentials=credentials,
         client_id=config.security.client_id,
@@ -119,6 +121,13 @@ def create_auth_api_client(
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     )
+    client_version = get_version("neptune-scale")
+    api_version = get_version("neptune-api")
+    httpx_version = get_version("httpx")
+    version = f"neptune-scale/{client_version} neptune-api/{api_version} httpx/{httpx_version} python/{python_version}"
+    logger.debug(f"User-Agent: {version}")
+    client = client.with_headers({"User-Agent": version})
+    return client
 
 
 class ApiClient(abc.ABC):
