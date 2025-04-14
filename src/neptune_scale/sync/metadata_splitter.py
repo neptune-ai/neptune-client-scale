@@ -123,6 +123,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             self._has_returned
             and not self._configs
             and not self._metrics
+            and not self._string_series
             and not self._add_tags
             and not self._remove_tags
         ):

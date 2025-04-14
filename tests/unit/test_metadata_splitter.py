@@ -214,8 +214,8 @@ def test_tags():
 
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_splitting():
+    max_size = 2 * 1024 * 1024
     # given
-    max_size = 1024
     timestamp = datetime.now()
     configs = {f"config{v}": v for v in range(1000)}
     add_tags = {f"add/tag{v}": {f"value{v}"} for v in range(1000)}
@@ -226,6 +226,10 @@ def test_splitting():
         preview=True,
     )
 
+    string_series = StringSeries(
+        step=1, data={f"string-series-large{v}": "A" * 1024 * 1024 if v % 2 else f"value{v}" for v in range(100)}
+    )
+
     # and
     builder = MetadataSplitter(
         project="workspace/project",
@@ -233,7 +237,7 @@ def test_splitting():
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
-        string_series=None,
+        string_series=string_series,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -250,11 +254,19 @@ def test_splitting():
 
     # Common metadata
     assert all(op.step.whole == 1 for op in result)
-    assert all(op.preview.is_preview if len(op.append) > 0 else True for op in result)
+    # Check preview only if there is a metric in a given RunOperation
+    assert all(
+        op.preview.is_preview if any(k.startswith("metrics") for k in op.append.keys()) else True for op in result
+    )
     assert all(op.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
 
     # Check if all metrics, configs and tags are present in the result
-    assert sorted([key for op in result for key in op.append.keys()]) == sorted(list(metrics.data.keys()))
+    assert sorted([key for op in result for key in op.append.keys() if key.startswith("metric")]) == sorted(
+        list(metrics.data.keys())
+    )
+    assert sorted([key for op in result for key in op.append.keys() if key.startswith("string-series")]) == sorted(
+        list(string_series.data.keys())
+    )
     assert sorted([key for op in result for key in op.assign.keys()]) == sorted(list(configs.keys()))
     assert sorted([key for op in result for key in op.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
@@ -498,8 +510,9 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize(
     "invalid_value",
-    ("X" + "A" * 1024 * 1024 * 16, None, {"a-dict": 1}, 1, 1.0, object(), [], set, tuple(), datetime.now()),
-    ids=lambda val: "<16MB string>" if isinstance(val, str) else None,  # Don't let pytest print 16MB strings
+    (1204 * 1024 + 1, None, {"a-dict": 1}, 1, 1.0, object(), [], set, tuple(), datetime.now()),
+    # Don't let pytest print large strings in case of failure
+    ids=lambda val: f"<{len(val)}-byte string>" if isinstance(val, str) else None,
 )
 def test_invalid_string_series_values(caplog, action, invalid_value):
     # Always have one valid value under the key "ok-value" so we can check that the
