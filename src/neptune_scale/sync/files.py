@@ -61,59 +61,43 @@ def guess_mime_type_from_bytes(data: bytes, destination: Optional[str] = None) -
         return DEFAULT_MIME_TYPE
 
 
+# Maximum lengths of various components of the file destination.
+MAX_RUN_ID_COMPONENT_LENGTH = 300
+MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH = 300
+MAX_FILENAME_EXTENSION_LENGTH = 18
+MAX_FILENAME_PATH_COMPONENT_LENGTH = 180
+
+# Format: "run_id/attribute_path/file.txt", we need +2 to account for the "/" separators.
+# The lengths should add up to MAX_FILE_DESTINATION_LENGTH.
+assert (
+    MAX_RUN_ID_COMPONENT_LENGTH
+    + MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    + MAX_FILENAME_EXTENSION_LENGTH
+    + MAX_FILENAME_PATH_COMPONENT_LENGTH
+    + 2
+) == MAX_FILE_DESTINATION_LENGTH
+
+
 def _digest_suffix(string: str) -> str:
     digest = hashlib.blake2b(string.encode("utf-8"), digest_size=8).hexdigest()
     return "-" + digest
 
 
-def _ensure_length(string: str, max_length: int) -> str:
-    """Ensure the string is within the specified length limit. If it's longer,
-    truncate it and append a 9-character unique string to the end.
+def _trim_with_optional_digest_suffix(input_str: str, max_length: int) -> str:
+    if len(input_str) <= max_length:
+        return input_str
 
-    The string must be a valid utf-8 string, and max_length cannot be less than 18:
-
-        - 17 bytes for "-HASH123456789abc"
-        - at least one byte for the original name part
-    """
-
-    assert max_length >= 18
-
-    if len(string) > max_length:
-        suffix = _digest_suffix(string)
-        truncate_at = max_length - len(suffix)
-        return string[:truncate_at] + suffix
-    return string
+    suffix = _digest_suffix(input_str)
+    return input_str[: max_length - len(suffix)] + suffix
 
 
-# Maximum lengths of various components of the file destination.
-MAX_RUN_ID_COMPONENT_LENGTH = 300
-MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH = 300
-MAX_FILENAME_PATH_COMPONENT_LENGTH = 198
-MAX_FILENAME_EXTENSION_LENGTH = 32
+def _trim_and_sanitize_with_digest_suffix(input_str: str, max_length: int) -> str:
+    sanitized = input_str
+    if "/" in input_str:
+        sanitized = input_str.replace("/", "_")
 
-# Format: "run_id/attribute_path/file.txt", we need +2 to account for the "/" separators.
-# The lengths should add up to MAX_FILE_DESTINATION_LENGTH.
-assert (
-    MAX_RUN_ID_COMPONENT_LENGTH + MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH + MAX_FILENAME_PATH_COMPONENT_LENGTH + 2
-) == MAX_FILE_DESTINATION_LENGTH
-
-
-def _sanitize_run_id(run_id: str, max_length: int) -> str:
-    """Return run_id transformed such that is not longer than the max length, and does not
-    contain "/" characters. If "/" characters were present, there are replaced by "_" and a
-    digest suffix is added for uniqueness."""
-
-    # Don't add the suffix again if we know it'll be added by _ensure_length
-    suffix_added = len(run_id) > max_length
-    run_id = _ensure_length(run_id, max_length)
-    if not "/" in run_id:
-        return run_id
-
-    suffix = _digest_suffix(run_id) if not suffix_added else ""
-    run_id = run_id.replace("/", "_")
-    run_id += suffix
-
-    return run_id
+    suffix = _digest_suffix(input_str)
+    return sanitized[: max_length - len(suffix)] + suffix
 
 
 def generate_destination(run_id: str, attribute_name: str, filename: str) -> str:
@@ -121,7 +105,7 @@ def generate_destination(run_id: str, attribute_name: str, filename: str) -> str
     Generate a path under which a file should be saved in the storage.
 
     The path is generated in the format:
-        run-id/attribute/path/file.txt
+        <run_id>/<attribute_name>/<filename>
 
     The path is guaranteed not to exceed the max length. If necessary, path
     components are truncated to fit their maximum allowed lengths.
@@ -131,21 +115,15 @@ def generate_destination(run_id: str, attribute_name: str, filename: str) -> str
     without appending the hash digest.
     """
 
-    run_id = _sanitize_run_id(run_id, MAX_RUN_ID_COMPONENT_LENGTH)
-    attribute_name = _ensure_length(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH)
+    run_id = _trim_and_sanitize_with_digest_suffix(run_id, MAX_RUN_ID_COMPONENT_LENGTH)
+    attribute_name = _trim_with_optional_digest_suffix(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH)
 
     # Truncate the filename if necessary, keeping extension (truncated) if present.
-    filename = pathlib.Path(filename).name
     if len(filename) > MAX_FILENAME_PATH_COMPONENT_LENGTH:
-        filename_parts = filename.rsplit(".", maxsplit=1)
-        if len(filename_parts) == 2:
-            name, ext = filename_parts
-            ext_len = len(ext) + 1
-        else:
-            name, ext, ext_len = filename, "", 0
-
-        ext = ext[:MAX_FILENAME_EXTENSION_LENGTH]
-        name = _ensure_length(name, MAX_FILENAME_PATH_COMPONENT_LENGTH - ext_len)
-        filename = f"{name}.{ext}" if ext else name
+        path = pathlib.Path(filename)
+        extension = path.suffix  # includes the dot (.txt)
+        filename_no_ext = path.name[: -len(extension)] if extension else path.name
+        filename_no_ext = _trim_with_optional_digest_suffix(filename_no_ext, MAX_FILENAME_PATH_COMPONENT_LENGTH)
+        filename = filename_no_ext + extension[:MAX_FILENAME_EXTENSION_LENGTH]
 
     return f"{run_id}/{attribute_name}/{filename}"
