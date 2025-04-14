@@ -1,29 +1,45 @@
-# Neptune Scale client
+<div align="center">
+    <img src="https://raw.githubusercontent.com/neptune-ai/neptune-client/assets/readme/Github-cover-022025.png" width="1500" />
+ <h1>neptune.ai</h1>
+</div>
 
-> [!NOTE]
-> This package only works with the `3.x` version of neptune.ai called Neptune Scale, which is in beta.
->
-> You can't use the Scale client with the stable Neptune `2.x` versions currently available to SaaS and self-hosting customers. For the Python client corresponding to Neptune `2.x`, see https://github.com/neptune-ai/neptune-client.
+<div align="center">
+  <a href="https://docs.neptune.ai/quickstart/">Quickstart</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://neptune.ai/">Website</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://docs.neptune.ai/">Docs</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://github.com/neptune-ai/scale-examples">Examples</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://neptune.ai/blog">Blog</a>
+&nbsp;
+  <hr />
+</div>
 
-**What is Neptune?**
+Neptune is an experiment tracker purpose-built for foundation model training.
 
-Neptune is an experiment tracker. It enables researchers to monitor their model training, visualize and compare model metadata, and collaborate on AI/ML projects within a team.
+With Neptune, you can monitor thousands of per-layer metrics—losses, gradients, and activations—at any scale. Visualize them with no lag and no missed spikes. Drill down into logs and debug training issues fast. Keep your model training stable while reducing wasted GPU cycles.
 
-**What's different about Neptune Scale?**
+<a href="https://youtu.be/0J4dsEq8i08"><b>Watch a 3min explainer video →</b></a>
+&nbsp;
 
-Neptune Scale is the next major version of Neptune. It's built on an entirely new architecture for ingesting and rendering data, with a focus on responsiveness and accuracy at scale.
+<a href="https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/table?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12"><b>Play with a live example project in the Neptune app  →</b></a>
+&nbsp;
 
-Neptune Scale supports forked experiments, with built-in mechanics for retaining run ancestry. This way, you can focus on analyzing the latest runs, but also visualize the full history of your experiments.
+## Get started
 
-## Installation
+Neptune consists of a Python API and a web application.
+
+Install the Python client library:
 
 ```bash
 pip install neptune-scale
 ```
 
-### Configure API token and project
+Configure the API token and project:
 
-1. Log in to your Neptune Scale workspace.
+1. Log in to your Neptune workspace.
 1. Get your API token from your user menu in the bottom left corner.
 
     > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, access the workspace settings via the user menu.
@@ -55,9 +71,9 @@ pip install neptune-scale
 
     > If you skip this step, you need to pass the project name as an argument each time you start a run.
 
-You're ready to start using Neptune Scale.
+You're ready to start using Neptune.
 
-For more help with setup, see [Get started][scale-docs] in the Neptune documentation.
+For more help with setup, see [Get started][docs] in the Neptune documentation.
 
 ## Example usage
 
@@ -66,12 +82,12 @@ Create an experiment:
 ```python
 from neptune_scale import Run
 
-run = Run(experiment_name="ExperimentName")
+run = Run(experiment_name="MyExperimentName")
 ```
 
 Then, call logging methods on the run and pass the metadata as a dictionary.
 
-Log configuration or other simple values with [`log_configs()`](#log_configs):
+Log configuration or other simple values with `log_configs()`:
 
 ```python
 run.log_configs(
@@ -82,7 +98,7 @@ run.log_configs(
 )
 ```
 
-Inside a training loop or other iteration, use [`log_metrics()`](#log_metrics) to append metric values:
+Inside a training loop or other iteration, use `log_metrics()` to append metric values:
 
 ```python
 # inside a loop
@@ -93,10 +109,10 @@ for step in range(100):
     )
 ```
 
-To help identify and group runs, you can apply tags:
+To help organize and group runs, you can apply tags:
 
 ```python
-run.add_tags(tags=["tag1", "tag2"])
+run.add_tags(tags=["testing", "data v1.0"])
 ```
 
 The run is stopped when exiting the context or the script finishes execution, but you can use [`close()`](#close) to stop it once logging is no longer needed:
@@ -112,22 +128,24 @@ For more instructions, see the Neptune documentation:
 - [Quickstart][quickstart]
 - [Create an experiment][new-experiment]
 - [Log metadata][log-metadata]
-
-## API reference
-
-See [API reference][api-ref] in the Neptune documentation.
-
----
+- [API reference][api-ref]
 
 ## Getting help
 
-For help, contact support@neptune.ai.
+For help, contact us at [support@neptune.ai](mailto:support@neptune.ai).
+
+&nbsp;
+<hr />
+
+## People behind Neptune
+
+Created with :heart: by the [neptune.ai team &rarr;](https://neptune.ai/jobs#team)
 
 
-[api-ref]: https://docs-beta.neptune.ai/run
-[scale-docs]: https://docs-beta.neptune.ai/setup
-[experiments]: https://docs-beta.neptune.ai/experiments
-[log-metadata]: https://docs-beta.neptune.ai/log_metadata
-[new-experiment]: https://docs-beta.neptune.ai/new_experiment
-[quickstart]: https://docs-beta.neptune.ai/quickstart
-[demo-project]: https://scale.neptune.ai/o/neptune/org/LLM-training-example/runs/compare?viewId=9d0e03d5-d0e9-4c0a-a546-f065181de1d2&dash=charts&compare=uItSQytpSbTH0c84P6iKGycQhv1rZr-qt4Z-CzEVBwD0
+[api-ref]: https://docs.neptune.ai/run
+[docs]: https://docs.neptune.ai/setup
+[experiments]: https://docs.neptune.ai/experiments
+[log-metadata]: https://docs.neptune.ai/log_metadata
+[new-experiment]: https://docs.neptune.ai/new_experiment
+[quickstart]: https://docs.neptune.ai/quickstart
+[demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/compare?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12&dash=dashboard&dashboardId=9e745b6c-2c98-4e23-abbc-9b56d8123fb8&compare=auto-5
