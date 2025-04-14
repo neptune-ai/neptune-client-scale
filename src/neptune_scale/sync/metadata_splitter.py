@@ -303,6 +303,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             yield key, value
 
     def _stream_string_series(self, string_series: dict[str, str]) -> Iterator[tuple[str, str, int]]:
+        _is_instance = isinstance  # local binding, faster in tight loops
         for key, value in self._validate_paths(string_series):
             if not isinstance(value, str):
                 _warn_or_raise_on_invalid_value(f"String series values must be strings (got `{key}`:`{value}`)")
