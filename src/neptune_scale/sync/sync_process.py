@@ -227,61 +227,63 @@ class SyncProcess(Process):
         threads = [sender_thread, status_thread, file_uploader_thread]
         parent_process = psutil.Process(os.getpid()).parent()
 
+        def metadata_sending_threads_died() -> bool:
+            return not sender_thread.is_alive() or not status_thread.is_alive()
+
+        def interrupt_metadata_sending_threads() -> None:
+            if sender_thread.is_alive():
+                sender_thread.interrupt()
+
+            # we're interrupting the status thread only if
+            # - it's alive, and
+            # - the status tracking queue is empty, and
+            # - we know it will stay empty (since sender_thread is dead)
+            elif status_thread.is_alive() and status_tracking_queue.peek(max_size=1) is None:
+                status_thread.interrupt()
+
+        def file_uploader_thread_died() -> bool:
+            return not file_uploader_thread.is_alive()
+
+        def interrupt_file_uploader_thread() -> None:
+            file_uploader_thread.interrupt()
+
+        def all_threads_died() -> bool:
+            return all(not t.is_alive() for t in threads)
+
+        def close_all_threads() -> None:
+            for t in threads:
+                t.interrupt()
+            for t in threads:
+                t.join(timeout=SHUTDOWN_TIMEOUT)
+                t.close()  # type: ignore
+
         for thread in threads:
             thread.start()
 
         try:
-            sender_thread_error_logged = False
-            file_uploader_thread_error_logged = False
             while not stop_event.is_set():
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
 
-                if not self._is_process_running(parent_process):
-                    logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
+                if metadata_sending_threads_died():
+                    interrupt_file_uploader_thread()
+                    interrupt_metadata_sending_threads()
+
+                if file_uploader_thread_died():
+                    interrupt_metadata_sending_threads()
+
+                if all_threads_died():
                     break
 
-                if not sender_thread.is_alive() or not file_uploader_thread.is_alive():
-                    logger.debug(
-                        f"sender thread alive: {sender_thread.is_alive()}, file uploader thread alive: {file_uploader_thread.is_alive()}"
-                    )
-                    has_pending_operations = status_tracking_queue.peek(max_size=1) is not None
-                    has_pending_uploads = (
-                        bool(operations_repository.get_file_upload_requests(1))
-                        if file_uploader_thread.is_alive()
-                        else False
-                    )
-
-                    if not has_pending_operations and not has_pending_uploads:
-                        logger.error("SyncProcess: sender thread(s) closed unexpectedly. Exiting")
-                        break
-
-                    if not sender_thread.is_alive() and not sender_thread_error_logged:
-                        logger.error(
-                            "SyncProcess: sender thread closed unexpectedly. Waiting for status tracking thread to finish"
-                        )
-                        sender_thread_error_logged = True
-
-                    if not file_uploader_thread.is_alive() and not file_uploader_thread_error_logged:
-                        logger.error(
-                            "SyncProcess: file uploader thread closed unexpectedly. Waiting for status tracking thread to finish"
-                        )
-                        file_uploader_thread_error_logged = True
-
-                if not status_thread.is_alive():
-                    logger.error("SyncProcess: status tracking thread closed unexpectedly. Exiting")
+                if not self._is_process_running(parent_process):
+                    logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
                     break
 
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
         finally:
             logger.info("Data synchronization stopping")
-            for thread in threads:
-                thread.interrupt()
-
-            for thread in threads:
-                thread.join(timeout=SHUTDOWN_TIMEOUT)
-                thread.close()  # type: ignore
+            close_all_threads()
             operations_repository.close(cleanup_files=False)
         logger.info("Data synchronization finished")
 
