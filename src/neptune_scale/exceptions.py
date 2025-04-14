@@ -58,7 +58,7 @@ from neptune_scale.util.styles import (
 
 
 class NeptuneScaleError(Exception):
-    message = "An error occurred in the Neptune Scale client."
+    message = "An error occurred in the Neptune client."
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
@@ -67,7 +67,7 @@ class NeptuneScaleError(Exception):
 
 
 class NeptuneScaleWarning(Warning):
-    message = "A warning occurred in the Neptune Scale client."
+    message = "A warning occurred in the Neptune client."
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ensure_style_detected()
@@ -142,7 +142,7 @@ Float series do not support logging NaN and Inf values. You can only log NaN and
 You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
 environment variable to `True`.
 
-For details, see https://docs-beta.neptune.ai/log_configs
+For details, see https://docs.neptune.ai/log_configs
 """
 
     def __init__(self, *, metric: str, step: Optional[float | int], value: Any) -> None:
@@ -158,7 +158,7 @@ NeptuneFloatValueNanInfUnsupported: Float series do not support logging NaN and 
 You can configure Neptune to skip non-finite metric values by setting the `NEPTUNE_SKIP_NON_FINITE_METRICS`
 environment variable to `True`.
 
-For details, see https://docs-beta.neptune.ai/log_configs
+For details, see https://docs.neptune.ai/log_configs
 """
 
     def __init__(self) -> None:
@@ -172,7 +172,7 @@ class NeptuneUnauthorizedError(NeptuneScaleError):
 NeptuneUnauthorizedError: You don't have permission to access the given resource.
 {end}
     - Verify that your API token is correct. To find your API token:
-        - Log in to Neptune Scale and open the user menu.
+        - Log in to Neptune and open the user menu.
         - If your workspace uses service accounts, ask the project owner to provide the token.
 
     - Verify that the provided project name is correct.
@@ -191,7 +191,7 @@ class NeptuneInvalidCredentialsError(NeptuneScaleError):
 NeptuneInvalidCredentialsError: The provided API token is invalid.
 {end}
 
-Make sure you copied your API token while logged in to Neptune Scale.
+Make sure you copied your API token while logged in to Neptune.
 If your workspace uses service accounts, ask the project owner for the token.
 
 There are two options to provide the API token:
@@ -215,14 +215,14 @@ and omit the {bold}api_token{end} argument from the {bold}Run{end} constructor:
 {h2}Option 2: Run argument{end}
 Pass the token to the {bold}Run{end} constructor via the {bold}api_token{end} argument:
     {python}neptune_scale.Run(project="WORKSPACE_NAME/PROJECT_NAME", api_token="YOUR_API_TOKEN"){end}
-For help, see https://docs-beta.neptune.ai/setup
+For help, see https://docs.neptune.ai/setup
 """
 
 
 class NeptuneUnexpectedError(NeptuneScaleError):
     message = """
 {h1}
-NeptuneUnexpectedError: An unexpected error occurred in the Neptune Scale client.
+NeptuneUnexpectedError: An unexpected error occurred in the Neptune client.
 {end}
 Reason: `{reason}`
 
@@ -291,7 +291,7 @@ class NeptuneProjectNotFound(NeptuneProjectError):
 {h1}
 NeptuneProjectNotFound: Either the project hasn't been created yet or the name is incorrect.
 {end}
-For help, see https://docs-beta.neptune.ai/setup
+For help, see https://docs.neptune.ai/setup
 """
 
 
@@ -338,7 +338,7 @@ class NeptuneRunConflicting(NeptuneRunError):
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
 {end}
-For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
+For forking instructions, see https://docs.neptune.ai/fork_experiment
 """
 
 
@@ -347,7 +347,7 @@ class NeptuneRunForkParentNotFound(NeptuneScaleWarning):
 {h1}
 ----NeptuneRunForkParentNotFound: The provided parent run does not exist.
 {end}
-For forking instructions, see https://docs-beta.neptune.ai/fork_experiment
+For forking instructions, see https://docs.neptune.ai/fork_experiment
 """
 
 
@@ -393,7 +393,7 @@ NeptuneAttributePathNonWritable: Attribute is not writable.
 {end}
 You could be trying to overwrite a read-only attribute. Note that most of the "sys/*" attributes are read-only.
 
-For details, see https://docs-beta.neptune.ai/sys
+For details, see https://docs.neptune.ai/sys
 """
 
 
@@ -402,7 +402,7 @@ class NeptuneAttributeTypeUnsupported(NeptuneScaleError):
 {h1}
 NeptuneAttributeTypeUnsupported: the provided attribute type is not supported by Neptune.
 {end}
-For supported types, see https://docs-beta.neptune.ai/attribute_types
+For supported types, see https://docs.neptune.ai/attribute_types
 """
 
 
@@ -420,7 +420,7 @@ class NeptuneSeriesPointDuplicate(NeptuneScaleWarning):
 {h1}
 NeptuneSeriesPointDuplicate: The exact same data point (value + step pair) was already logged for this series.
 {end}
-For help, see https://docs-beta.neptune.ai/log_metrics
+For help, see https://docs.neptune.ai/log_metrics
 """
 
 
@@ -433,7 +433,7 @@ This can be caused by either:
 - The step of a series value is smaller than the most recently logged step for this series
 - the step is exactly the same but the value is different
 
-For help, see https://docs-beta.neptune.ai/log_metrics
+For help, see https://docs.neptune.ai/log_metrics
 """
 
 
@@ -442,7 +442,7 @@ class NeptuneSeriesStepNotAfterForkPoint(NeptuneScaleError):
 {h1}
 NeptuneSeriesStepNotAfterForkPoint: The series value must be greater than the step specified by the `fork_step` argument.
 {end}
-For help, see https://docs-beta.neptune.ai/fork_experiment
+For help, see https://docs.neptune.ai/fork_experiment
 """
 
 
@@ -451,7 +451,7 @@ class NeptuneSeriesTimestampDecreasing(NeptuneScaleError):
 {h1}
 NeptuneSeriesTimestampDecreasing: The timestamp of a series value is less than the most recently logged value.
 {end}
-Existing timestamps are allowed. For help, see https://docs-beta.neptune.ai/log_metrics
+Existing timestamps are allowed. For help, see https://docs.neptune.ai/log_metrics
 """
 
 
@@ -488,7 +488,7 @@ NeptuneProjectNotProvided: The project name was not provided.
 Make sure to specify the project name in the `project` parameter of the `Run`
 constructor or with the `NEPTUNE_PROJECT` environment variable.
 
-For instructions, see https://docs-beta.neptune.ai/setup
+For instructions, see https://docs.neptune.ai/setup
 
 """
 
@@ -501,7 +501,7 @@ NeptuneApiTokenNotProvided: The Neptune API token was not provided.
 Make sure to specify the API token in the `api_token` parameter of the `Run`
 constructor or with the `NEPTUNE_API_TOKEN` environment variable.
 
-For instructions, see https://docs-beta.neptune.ai/api_token
+For instructions, see https://docs.neptune.ai/api_token
 """
 
 
@@ -519,8 +519,8 @@ must only be added for later steps. Please adjust the order of your updates and 
 
 class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
     message = """The local storage database is in an unsupported version.
-    This may happen when you try to use a database created with a newer version of Neptune Scale with an older version of the library.
-    Please either upgrade Neptune Scale to the latest version or create a new local storage database."""
+    This may happen when you try to use a database created with a newer version of Neptune with an older version of the library.
+    Please either upgrade Neptune to the latest version or create a new local storage database."""
 
 
 class NeptuneDatabaseConflict(NeptuneScaleError):
