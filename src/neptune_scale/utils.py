@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 
-def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:  # noqa: C901
+def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """
     A helper function that flattens a nested dictionary structure and casts unsupported values to strings to be logged in Neptune.
     Note:
