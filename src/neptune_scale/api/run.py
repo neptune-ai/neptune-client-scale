@@ -62,6 +62,7 @@ from neptune_scale.sync.parameters import (
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
+    OPERATION_REPOSITORY_POLL_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sequence_tracker import SequenceTracker
@@ -669,7 +670,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        begin_time = time.time()
+        begin_time = time.monotonic()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
         last_print_timestamp: Optional[float] = None
 
@@ -688,6 +689,9 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
+                if timeout is not None:
+                    time_elapsed = time.monotonic() - begin_time
+                    wait_time = max(0, min(wait_time, timeout - time_elapsed))
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -717,15 +721,20 @@ class Run(AbstractContextManager):
                     )
                 else:
                     # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                    if verbose:
+                        logger.info(f"All operations were {phrase}")
+                    break
+
+                if timeout is not None:
+                    time_elapsed = time.monotonic() - begin_time
+                    if time_elapsed > timeout:
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
                         break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
                 return
-
-        if verbose:
-            logger.info(f"All operations were {phrase}")
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -738,6 +747,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
@@ -745,6 +755,9 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -756,6 +769,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -763,6 +777,62 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+
+    def _wait_for_file_upload(
+        self,
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+    ) -> None:
+        if verbose:
+            logger.info("Waiting for all files to be uploaded")
+
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        upload_count_limit = 1_000_000
+        begin_time = time.monotonic()
+        sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
+        last_print_timestamp: Optional[float] = None
+
+        while True:
+            try:
+                with self._lock:
+                    if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        return
+                assert self._operations_repo is not None
+
+                upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
+
+                if upload_count > 0:
+                    last_print_timestamp = print_message(
+                        "Waiting for remaining %d%s file(s) to be uploaded",
+                        upload_count,
+                        "" if upload_count < upload_count_limit else "+",
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+
+                    if timeout is not None:
+                        time_elapsed = time.monotonic() - begin_time
+                        if time_elapsed > timeout:
+                            if verbose:
+                                logger.info("Waiting interrupted because timeout was reached")
+                            break
+                        sleep_time = min(sleep_time, timeout - time_elapsed)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    if verbose:
+                        logger.info("All files were uploaded")
+                    break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
 
     def get_run_url(self) -> str:
         """

@@ -459,6 +459,54 @@ def test_get_file_upload_requests_nonempty(operations_repo):
     ]
 
 
+def test_get_file_upload_requests_count_empty(operations_repo):
+    # Given
+    count = operations_repo.get_file_upload_requests_count()
+    assert count == 0
+
+
+def test_get_file_upload_requests_count_nonempty(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    count = operations_repo.get_file_upload_requests_count()
+
+    # Then
+    assert count == 3
+
+
+def test_get_file_upload_requests_count_nonempty_limit(operations_repo):
+    # Given
+    file_requests = [
+        FileUploadRequest(
+            source_path=f"source_path_{i}",
+            target_path=f"target_path_{i}",
+            mime_type="application/octet-stream",
+            size_bytes=i * 1024,
+            is_temporary=bool(i % 2),
+        )
+        for i in range(3)
+    ]
+    operations_repo.save_file_upload_requests(file_requests)
+
+    # When
+    count = operations_repo.get_file_upload_requests_count(limit=2)
+
+    # Then
+    assert count == 2
+
+
 def test_get_file_upload_requests_with_limit(operations_repo):
     # Given
     file_requests = [
