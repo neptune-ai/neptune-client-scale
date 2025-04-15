@@ -10,10 +10,10 @@ from datetime import (
 import numpy as np
 import pytest
 from neptune_fetcher import ReadOnlyRun
+from neptune_fetcher.alpha import runs
 from pytest import mark
 
 from neptune_scale.api.run import Run
-from neptune_scale.api.types import File
 
 from .conftest import (
     random_series,
@@ -162,12 +162,18 @@ def test_single_non_finite_metric(value, run, ro_run):
     assert path not in refresh(ro_run).field_names
 
 
-@pytest.mark.skip(reason="no backend support for this yet")
-def test_single_file(run, ro_run):
-    run.assign_files({f"test_file_{i}": File(source=b"test_{i}", mime_type="text/plain") for i in range(3)})
+def test_single_file(run, run_init_kwargs, temp_dir):
+    # given
+    files = {"test_files/file": b"Hello world"}
+
+    # when
+    run.assign_files(files)
     run.wait_for_processing(SYNC_TIMEOUT)
 
+    # then
     assert run._operations_repo.get_file_upload_requests_count() == 0
+    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file", destination=temp_dir)
+    # todo: check the file content
 
 
 def test_async_lag_callback():
