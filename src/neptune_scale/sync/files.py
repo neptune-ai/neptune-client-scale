@@ -57,7 +57,7 @@ def guess_mime_type_from_bytes(data: bytes, destination: Optional[str] = None) -
 
         return DEFAULT_MIME_TYPE
     except Exception as e:
-        logger.warning(f"Error determining mime type for the provided buffer, defaulting to ${DEFAULT_MIME_TYPE}: {e}")
+        logger.warning(f"Error determining mime type for the provided buffer, defaulting to {DEFAULT_MIME_TYPE}: {e}")
         return DEFAULT_MIME_TYPE
 
 
