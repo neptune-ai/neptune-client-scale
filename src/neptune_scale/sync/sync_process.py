@@ -633,7 +633,7 @@ class FileUploaderThread(Daemon):
                     except Exception as e:
                         # Fatal failure. Do not retry the file, but keep it on disk.
                         logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
-                        self._errors_queue.put(NeptuneFileUploadError(file_path=file.source_path, reason=str(e)))
+                        self._errors_queue.put(NeptuneFileUploadError())
                         self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
@@ -675,7 +675,7 @@ def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: s
             )
     except azure.core.exceptions.AzureError as e:
         logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
-        raise NeptuneFileUploadTemporaryError(file_path=local_path, reason=str(e)) from e
+        raise NeptuneFileUploadTemporaryError() from e
     except Exception as e:
         raise e
 

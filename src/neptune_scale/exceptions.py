@@ -290,11 +290,7 @@ class NeptuneFileUploadError(NeptuneScaleError):
 {h1}
 ----NeptuneFileUploadError: An unrecoverable error occurred during file upload
 {end}
-There was an error uploading the file {file_path}: {reason}
 """
-
-    def __init__(self, file_path: str, reason: str) -> None:
-        super().__init__(file_path=file_path, reason=reason)
 
 
 class NeptuneFileUploadTemporaryError(NeptuneRetryableError):
@@ -302,11 +298,7 @@ class NeptuneFileUploadTemporaryError(NeptuneRetryableError):
 {h1}
 ----NeptuneFileUploadTemporaryError: A temporary error occurred during file upload
 {end}
-There was an error uploading the file {file_path}: {reason}
 """
-
-    def __init__(self, file_path: str, reason: str) -> None:
-        super().__init__(file_path=file_path, reason=reason)
 
 
 class NeptuneProjectError(NeptuneScaleError):
