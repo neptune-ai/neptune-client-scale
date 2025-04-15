@@ -7,5 +7,5 @@ pytest
 pytest-timeout
 pytest-xdist
 freezegun
-neptune-fetcher==0.14.4b0
-neptune-api @ git+https://github.com/neptune-ai/neptune-api.git@dev/file-atoms-redux
+neptune-fetcher @ git+https://github.com/neptune-ai/neptune-fetcher.git@ms/files
+neptune-api @ git+https://github.com/neptune-ai/neptune-api.git@ms/update-update
