@@ -1,5 +1,6 @@
 import math
 import os
+import pathlib
 import threading
 import time
 from datetime import (
@@ -8,11 +9,13 @@ from datetime import (
 )
 
 import numpy as np
+import pytest
 from neptune_fetcher import ReadOnlyRun
 from neptune_fetcher.alpha import runs
 from pytest import mark
 
 from neptune_scale.api.run import Run
+from neptune_scale.api.types import File
 
 from .conftest import (
     random_series,
@@ -161,20 +164,6 @@ def test_single_non_finite_metric(value, run, ro_run):
     assert path not in refresh(ro_run).field_names
 
 
-def test_single_file(run, run_init_kwargs, temp_dir):
-    # given
-    files = {"test_files/file": b"Hello world"}
-
-    # when
-    run.assign_files(files)
-    run.wait_for_processing(SYNC_TIMEOUT)
-
-    # then
-    assert run._operations_repo.get_file_upload_requests_count() == 0
-    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file", destination=temp_dir)
-    # todo: check the file content
-
-
 def test_async_lag_callback():
     event = threading.Event()
     with Run(
@@ -198,3 +187,68 @@ def test_async_lag_callback():
         # Second callback should be called after logging configs
         event.wait(timeout=60)
         assert event.is_set()
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"test_files/file_txt1": b"bytes content"},
+        {"test_files/file_txt2": "tests/e2e/resources/file.txt"},
+        {"test_files/file_txt3": pathlib.Path("tests/e2e/resources/file.txt")},
+        {"test_files/file_txt4": File(source="tests/e2e/resources/file.txt")},
+        {"test_files/file_txt5": File(source="tests/e2e/resources/file.txt", mime_type="application/json")},
+        {"test_files/file_txt6": File(source=pathlib.Path("tests/e2e/resources/file.txt"), mime_type="application/json")},
+        {"test_files/file_binary1": "tests/e2e/resources/binary_file"},
+        {"test_files/file_binary2": pathlib.Path("tests/e2e/resources/binary_file")},
+        {"test_files/file_binary3": File(source="tests/e2e/resources/binary_file")},
+        {"test_files/file_binary4": File(source="tests/e2e/resources/binary_file", mime_type="audio/mpeg")},
+        {"test_files/file_binary5": File(source=pathlib.Path("tests/e2e/resources/binary_file"), mime_type="audio/mpeg")},
+        {"test_files/file_multiple1a": "tests/e2e/resources/file.txt", "test_files/file_multiple1b": "tests/e2e/resources/file.txt"},
+        {"test_files/file_multiple2a": "tests/e2e/resources/file.txt", "test_files/file_multiple2b": "tests/e2e/resources/binary_file", "test_files/file_multiple2c": b"bytes content"},
+        {"test_files/汉字Пр\U00009999/file_txt2": "tests/e2e/resources/file.txt"},
+    ],
+)
+def test_assign_files(run, run_init_kwargs, temp_dir, files):
+    # when
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    assert run._operations_repo.get_file_upload_requests_count() == 0
+    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file", destination=temp_dir)
+    # check content
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"test_files/file_txt1": b"a" * (10 * 1024 * 1024)},
+    ],
+)
+def test_assign_files_large(run, run_init_kwargs, temp_dir, files):
+    # when
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    assert run._operations_repo.get_file_upload_requests_count() == 0
+    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file", destination=temp_dir)
+    # check content
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {},
+        {"test_files/file_error1": ""},
+        {"test_files/file_error2": "tests/e2e/resources"},
+        {"test_files/file_error3": "tests/e2e/resources/does-not-exist"},
+        {"test_files/file_error4": pathlib.Path("tests/e2e/resources/does-not-exist")},
+    ],
+)
+def test_assign_files_error(run, run_init_kwargs, temp_dir, files):
+    # when
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file", destination=temp_dir)
