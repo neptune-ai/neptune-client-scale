@@ -654,6 +654,11 @@ class Run(AbstractContextManager):
             if metrics.preview_completion is not None:
                 verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
 
+        if string_series is not None:
+            verify_type("string_series", string_series, StringSeries)
+            verify_type("string_series", string_series.data, dict)
+            verify_type("step", string_series.step, (float, int, type(None)))
+
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
         # to keep the common path faster, because the benefit of locking here is minimal.
