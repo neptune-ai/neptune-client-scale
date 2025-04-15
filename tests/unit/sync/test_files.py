@@ -12,8 +12,7 @@ from neptune_scale.sync.files import (
     MAX_FILENAME_EXTENSION_LENGTH,
     MAX_FILENAME_PATH_COMPONENT_LENGTH,
     MAX_RUN_ID_COMPONENT_LENGTH,
-    _trim_and_sanitize_with_digest_suffix,
-    _trim_with_optional_digest_suffix,
+    _sanitize_and_trim,
     generate_destination,
     guess_mime_type_from_bytes,
     guess_mime_type_from_file,
@@ -81,31 +80,19 @@ def test_guess_mime_type_from_file_read_disk_on_unknown_extension(mock_guess_mim
 
 
 @pytest.mark.parametrize(
-    "string, max_length, match_result",
+    "run_id, max_length, force_suffix, match",
     [
-        ("A" * 20, 100, r"^A{20}$"),
-        ("A" * 20, 20, r"^A{20}$"),
-        ("A" * 100, 27, r"^A{10}-[0-9a-f]{16}$"),
-    ],
-)
-def test_ensure_length(string, max_length, match_result):
-    result = _trim_with_optional_digest_suffix(string, max_length)
-
-    assert len(result) <= max_length
-    assert re.fullmatch(match_result, result), f"{result} did not match {match_result}"
-
-
-@pytest.mark.parametrize(
-    "run_id, max_length, match",
-    [
-        ("run-id", 100, r"^run-id-[0-9a-f]{16}$"),
-        ("run/id/slashed", 100, r"^run_id_slashed-[0-9a-f]{16}$"),
+        ("run-id", 100, True, r"^run-id-[0-9a-f]{16}$"),
+        ("run/id/slashed.dotted./", 100, True, r"^run_id_slashed_dotted__-[0-9a-f]{16}$"),
         # 100 - 17 (digest) - 6 ("run_id") -> 77 A's remaining
-        ("run/id" + "A" * 100, 100, r"^run_idA{77}-[0-9a-f]{16}$"),
+        ("run/id" + "A" * 100, 100, True, r"^run_idA{77}-[0-9a-f]{16}$"),
+        ("A" * 20, 100, False, r"^A{20}$"),
+        ("A" * 20, 20, False, r"^A{20}$"),
+        ("A" * 100, 27, False, r"^A{10}-[0-9a-f]{16}$"),
     ],
 )
-def test_trim_and_sanitize_with_digest_suffix(run_id, max_length, match):
-    result = _trim_and_sanitize_with_digest_suffix(run_id, max_length)
+def test_sanitize_and_trim(run_id, max_length, match, force_suffix):
+    result = _sanitize_and_trim(run_id, max_length, force_suffix=force_suffix)
     assert len(result) <= max_length
     assert re.fullmatch(match, result), f"{result} did not match {match}"
 
@@ -115,11 +102,35 @@ def test_trim_and_sanitize_with_digest_suffix(run_id, max_length, match):
     # Note that the trailing "-[0-9a-f]{16}" regex matches the hash digest used when
     # truncating path components.
     [
-        ("run-id", "attribute/path", "file.txt", "^run-id-[0-9a-f]{16}$", r"^attribute/path$", r"^file.txt$"),
-        # Run_id and attribute name are short, run-id needs sanitizing
-        ("run/id", "attribute/path", "file.txt", r"^run_id-[0-9a-f]{16}$", r"^attribute/path$", r"^file.txt$"),
-        # Exact match of max length with no truncation, except for run-id which always has digest
-        ("R" * 300, "A" * 300, "F" * 180 + "." + "E" * 17, "^R{283}-[0-9a-f]{16}$", r"^A{300}$", r"^F{180}\.E{17}$"),
+        # Slashes in run id and attribute name should be replaced with underscores,
+        # and both components should always have digest suffixes.
+        # File should be preserved if there are no dots apart from the extension.
+        (
+            "/run/id",
+            "attribute/path/",
+            "file.txt",
+            "^_run_id-[0-9a-f]{16}$",
+            r"^attribute_path_-[0-9a-f]{16}$",
+            r"^file.txt$",
+        ),
+        # File name should never contain dots, if there is no extension
+        (
+            "/run/id",
+            "attribute/path/",
+            "file.txt...",
+            "^_run_id-[0-9a-f]{16}$",
+            r"^attribute_path_-[0-9a-f]{16}$",
+            r"^file_txt___$",
+        ),
+        # Exact match of max length taking digest into account
+        (
+            "R" * 283,
+            "A" * 283,
+            "F" * 180 + "." + "E" * 17,
+            "^R{283}-[0-9a-f]{16}$",
+            r"^A{283}-[0-9a-f]{16}$",
+            r"^F{180}\.E{17}$",
+        ),
         # Truncation of all components
         (
             "R" * 500,
@@ -132,10 +143,10 @@ def test_trim_and_sanitize_with_digest_suffix(run_id, max_length, match):
         # Long filename should be truncated, with extension shortened as well
         (
             "run-id",
-            "attribute/path",
+            "attribute-path",
             "F" * 500 + "." + "E" * 100,
             "^run-id-[0-9a-f]{16}$",
-            r"^attribute/path$",
+            r"^attribute-path-[0-9a-f]{16}$",
             r"^F+-[0-9a-f]{16}\.E{17}$",
         ),
     ],

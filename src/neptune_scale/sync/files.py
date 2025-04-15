@@ -83,20 +83,13 @@ def _digest_suffix(string: str) -> str:
     return "-" + digest
 
 
-def _trim_with_optional_digest_suffix(input_str: str, max_length: int) -> str:
-    if len(input_str) <= max_length:
-        return input_str
-
-    suffix = _digest_suffix(input_str)
-    return input_str[: max_length - len(suffix)] + suffix
+_DISALLOWED_CHARS_REPLACEMENT = str.maketrans({char: "_" for char in "/."})
 
 
-def _trim_and_sanitize_with_digest_suffix(input_str: str, max_length: int) -> str:
-    sanitized = input_str
-    if "/" in input_str:
-        sanitized = input_str.replace("/", "_")
+def _sanitize_and_trim(input_str: str, max_length: int, force_suffix: bool) -> str:
+    sanitized = input_str.translate(_DISALLOWED_CHARS_REPLACEMENT)
 
-    suffix = _digest_suffix(input_str)
+    suffix = _digest_suffix(input_str) if force_suffix or len(sanitized) > max_length else ""
     return sanitized[: max_length - len(suffix)] + suffix
 
 
@@ -110,20 +103,22 @@ def generate_destination(run_id: str, attribute_name: str, filename: str) -> str
     The path is guaranteed not to exceed the max length. If necessary, path
     components are truncated to fit their maximum allowed lengths.
 
-    Truncated run_id and attribute path components have a hash digest appended.
-    Truncated filenames: file.ext -> file-<digest>.ext, with ext being cut it too long,
-    without appending the hash digest.
+    All path components have "." and "/" replaced with "_". Run id an attribute path
+    always have a hash digest appended.
+
+    Filenames have "." and "/" characters replaced with "_", except for "." in the extension.
+    The extension is truncated to a maximum length of 18 characters, and
+    the file stem, if necessary, is truncated with digest appended.
     """
 
-    run_id = _trim_and_sanitize_with_digest_suffix(run_id, MAX_RUN_ID_COMPONENT_LENGTH)
-    attribute_name = _trim_with_optional_digest_suffix(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH)
+    run_id = _sanitize_and_trim(run_id, MAX_RUN_ID_COMPONENT_LENGTH, force_suffix=True)
+    attribute_name = _sanitize_and_trim(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH, force_suffix=True)
 
-    # Truncate the filename if necessary, keeping extension (truncated) if present.
-    if len(filename) > MAX_FILENAME_PATH_COMPONENT_LENGTH:
-        path = pathlib.Path(filename)
-        extension = path.suffix  # includes the dot (.txt)
-        filename_no_ext = path.name[: -len(extension)] if extension else path.name
-        filename_no_ext = _trim_with_optional_digest_suffix(filename_no_ext, MAX_FILENAME_PATH_COMPONENT_LENGTH)
-        filename = filename_no_ext + extension[:MAX_FILENAME_EXTENSION_LENGTH]
+    # Sanitize the filename. Truncate if necessary, keeping extension (truncated) if present.
+    path = pathlib.Path(filename)
+    extension = path.suffix  # includes the dot (.txt)
+    filename_no_ext = path.name[: -len(extension)] if extension else path.name
+    filename_no_ext = _sanitize_and_trim(filename_no_ext, MAX_FILENAME_PATH_COMPONENT_LENGTH, force_suffix=False)
+    filename = filename_no_ext + extension[:MAX_FILENAME_EXTENSION_LENGTH]
 
     return f"{run_id}/{attribute_name}/{filename}"
