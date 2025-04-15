@@ -23,7 +23,10 @@ from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneUnableToLogData,
 )
-from neptune_scale.sync.metadata_splitter import MetadataSplitter
+from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
+    MetadataSplitter,
+)
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -484,3 +487,39 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
             assert len(result[0].modify_sets) == 1
             assert "ok" in result[0].modify_sets
             assert "Tags must be a" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize(
+    "invalid_value",
+    (
+        FileRefData(destination="D" * 1024, mime_type="M", size_bytes=0),
+        FileRefData(destination="D", mime_type="M" * 1024, size_bytes=0),
+    ),
+)
+def test_too_long_files_values(caplog, action, invalid_value):
+    # Always have one valid value under the key "ok- so we can check that the
+    # "drop" action does not drop valid values.
+    files = {"bad": invalid_value, "ok": FileRefData("destination", "mime_type", 0)}
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=None,
+        metrics=None,
+        files=files,
+        add_tags={},
+        remove_tags={},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(NeptuneUnableToLogData, match="must be a string of at most"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].assign) == 1
+            assert "ok" in result[0].assign
+            assert "must be a string of at most" in caplog.text

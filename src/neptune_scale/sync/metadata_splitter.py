@@ -8,7 +8,7 @@ from neptune_scale.sync.parameters import (
     MAX_SINGLE_OPERATION_SIZE_BYTES,
 )
 
-__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step")
+__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step", "FileRefData")
 
 import math
 import warnings
@@ -312,23 +312,17 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     def _stream_files(self, files: dict[str, FileRefData]) -> Iterator[tuple[str, Value]]:
         _is_instance = isinstance
         for attr_name, file in self._validate_paths(files):
-            if not _is_instance(file.destination, str):
+            if len(file.destination) > MAX_FILE_DESTINATION_LENGTH:
                 _warn_or_raise_on_invalid_value(
                     f"File destination must be a string of at most {MAX_FILE_DESTINATION_LENGTH} characters"
                     f"(got `{file.destination}` for {attr_name}`)"
                 )
                 continue
 
-            if not _is_instance(file.mime_type, str) or len(file.mime_type) > MAX_FILE_MIME_TYPE_LENGTH:
+            if len(file.mime_type) > MAX_FILE_MIME_TYPE_LENGTH:
                 _warn_or_raise_on_invalid_value(
                     f"File mime type must be a string of at most {MAX_FILE_MIME_TYPE_LENGTH} characters"
                     f" (got `{file.mime_type}` for `{attr_name}`)"
-                )
-                continue
-
-            if not _is_instance(file.size_bytes, int) or file.size_bytes < 0:
-                _warn_or_raise_on_invalid_value(
-                    f"File size must be a positive number (got `{file.size_bytes}` for `{attr_name}`)"
                 )
                 continue
 

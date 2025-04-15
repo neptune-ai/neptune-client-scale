@@ -740,24 +740,20 @@ class Run(AbstractContextManager):
                     file_path = Path(source)
                     mime_type = mime_type or guess_mime_type_from_file(file_path, destination)
                     if mime_type is None:
-                        raise Exception(f"Cannot determine mime type for file {file_path}")
+                        raise Exception(f"Cannot determine mime type for file '{file_path}'")
                     size = size or file_path.stat().st_size
                 else:
                     logger.warning(f"Skipping file attribute `{attr_name}`: Unsupported type {type(file)}")
                     continue
 
-                result.append(
-                    (
-                        attr_name,
-                        FileUploadRequest(
-                            source_path=str(file_path.absolute()),
-                            destination=destination or generate_destination(self._run_id, attr_name, file_path.name),
-                            mime_type=mime_type,
-                            size_bytes=size,
-                            is_temporary=isinstance(source, bytes),
-                        ),
-                    )
+                request = FileUploadRequest(
+                    source_path=str(file_path.absolute()),
+                    destination=str(destination) or generate_destination(self._run_id, attr_name, file_path.name),
+                    mime_type=str(mime_type),
+                    size_bytes=int(size),
+                    is_temporary=isinstance(source, bytes),
                 )
+                result.append((attr_name, request))
             except Exception as e:
                 logger.warning(f"Skipping file attribute `{attr_name}`: {e}")
                 continue
