@@ -743,13 +743,11 @@ def test_file_uploader_thread_successful_upload_flow(
         call(
             buffer_upload_request.source_path,
             buffer_upload_request.mime_type,
-            buffer_upload_request.size_bytes,
             "text-url",
         ),
         call(
             disk_upload_request.source_path,
             disk_upload_request.mime_type,
-            disk_upload_request.size_bytes,
             "image-url",
         ),
     ]
@@ -805,13 +803,11 @@ def test_file_uploader_thread_terminal_error(
         call(
             "no-such-file",
             "text/plain",
-            123,
             "text-url",
         ),
         call(
             disk_upload_request.source_path,
             disk_upload_request.mime_type,
-            disk_upload_request.size_bytes,
             "image-url",
         ),
     ]

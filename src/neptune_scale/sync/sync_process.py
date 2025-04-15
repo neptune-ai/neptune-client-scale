@@ -622,7 +622,7 @@ class FileUploaderThread(Daemon):
 
                 for file in file_upload_requests:
                     try:
-                        upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.destination])
+                        upload_file(file.source_path, file.mime_type, storage_urls[file.destination])
                         if file.is_temporary:
                             logger.debug(f"Removing temporary file {file.source_path}")
                             pathlib.Path(file.source_path).unlink(missing_ok=True)
@@ -660,10 +660,11 @@ def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: 
     return {file.path: file.url for file in response.parsed.files}
 
 
-def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: str) -> None:
+def upload_file(local_path: str, mime_type: str, storage_url: str) -> None:
     logger.debug(f"Start: upload file {local_path}")
 
     try:
+        size_bytes = Path(local_path).stat().st_size
         with open(local_path, "rb") as file:
             client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
 
