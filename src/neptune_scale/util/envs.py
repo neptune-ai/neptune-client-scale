@@ -58,6 +58,4 @@ def get_option(name: str, choices: Union[list[str], tuple[str, ...]], default: s
     if value_lower not in choices:
         raise ValueError(f"{name} must be one of: {', '.join(choices)}, got '{value}'")
 
-    print(f"{name=} {value=} {value_lower=}")
-
     return value_lower
