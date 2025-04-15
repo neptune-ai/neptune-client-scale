@@ -22,10 +22,10 @@ import functools
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from json import JSONDecodeError
-from typing import Any
 from importlib.metadata import version as get_version
+from json import JSONDecodeError
 from sys import version as python_version
+from typing import Any
 
 import httpx
 from httpx import Timeout
