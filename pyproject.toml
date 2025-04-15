@@ -79,7 +79,7 @@ line-length = 120
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["F", "UP"]
+select = ["F", "UP", "T201"]
 ignore = ["UP006", "UP007"]
 
 [tool.mypy]
