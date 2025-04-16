@@ -38,25 +38,24 @@ from neptune_scale.util import (
     SharedInt,
     get_logger,
 )
+from neptune_scale.util.timer import Timer
 
 logger = get_logger()
 
 
-def sync_all(
-    run_log_file: Path,
-    api_token: str,
-) -> None:
+def sync_all(run_log_file: Path, api_token: str, timeout: Optional[float] = None) -> None:
     if not run_log_file.exists():
         raise FileNotFoundError(f"Run log file {run_log_file} does not exist")
     run_log_file = run_log_file.resolve()
 
     runner = SyncRunner(api_token=api_token, run_log_file=run_log_file)
+    timer = Timer(timeout)
 
     try:
         runner.start()
-        runner.wait()
+        runner.wait(timeout=timer.remaining_time())
     finally:
-        runner.stop()
+        runner.stop(timeout=timer.remaining_time())
 
 
 @dataclass
@@ -124,7 +123,7 @@ class SyncRunner:
 
         self._errors_monitor.start()
 
-    def wait(self, progress_bar_enabled: bool = True, wait_time: float = 0.1) -> None:
+    def wait(self, progress_bar_enabled: bool = True, wait_time: float = 0.1, timeout: Optional[float] = None) -> None:
         operation_progress = _ProgressStatus(
             progress=0,
             max_progress=self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1 if self._log_seq_id_range else 0,
@@ -133,6 +132,11 @@ class SyncRunner:
 
         if operation_progress.finished and file_progress.finished:
             return
+
+        if timeout is not None and timeout <= 0:
+            return
+
+        timer = Timer(timeout)
 
         with tqdm(
             desc="Syncing operations",
@@ -146,9 +150,20 @@ class SyncRunner:
                         logger.warning("Waiting interrupted because sync process is not running")
                         return
 
+                    if timer.is_finite():
+                        if timer.is_expired():
+                            logger.info("Waiting interrupted because timeout was reached")
+                            return
+                        wait_time = min(wait_time, timer.remaining_time() or 0)
                     operation_progress = self._wait_operation_submit(
                         last_progress=operation_progress, wait_time=wait_time
                     )
+
+                    if timer.is_finite():
+                        if timer.is_expired():
+                            logger.info("Waiting interrupted because timeout was reached")
+                            return
+                        wait_time = min(wait_time, timer.remaining_time() or 0)
                     file_progress = self._wait_file_upload(last_progress=file_progress, wait_time=wait_time)
 
                     progress_bar.update(operation_progress.progress + file_progress.progress - progress_bar.n)
@@ -188,14 +203,16 @@ class SyncRunner:
 
         return last_progress.updated(progress=uploaded_count)
 
-    def stop(self) -> None:
+    def stop(self, timeout: Optional[float] = None) -> None:
+        timer = Timer(timeout)
+
         if self._sync_process is not None:
             self._sync_process.terminate()
-            self._sync_process.join()
+            self._sync_process.join(timeout=timer.remaining_time())
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(remaining_iterations=1)
-            self._errors_monitor.join()
+            self._errors_monitor.interrupt(remaining_iterations=0 if timer.is_expired() else 1)
+            self._errors_monitor.join(timeout=timer.remaining_time())
 
         self._operations_repository.close(cleanup_files=True)
         self._errors_queue.close()
