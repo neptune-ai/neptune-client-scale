@@ -1,6 +1,7 @@
 import math
 import os
 import pathlib
+import re
 import threading
 import time
 from datetime import (
@@ -11,7 +12,10 @@ from datetime import (
 import numpy as np
 import pytest
 from neptune_fetcher import ReadOnlyRun
-from neptune_fetcher.alpha import runs, filters
+from neptune_fetcher.alpha import (
+    filters,
+    runs,
+)
 from pytest import mark
 
 from neptune_scale.api.run import Run
@@ -188,70 +192,177 @@ def test_async_lag_callback():
         event.wait(timeout=60)
         assert event.is_set()
 
+
 @pytest.mark.parametrize(
     "files",
     [
         {"test_files/file_txt1": b"bytes content"},
-        {"test_files/file_txt2": "tests/e2e/resources/file.txt"},
-        {"test_files/file_txt3": pathlib.Path("tests/e2e/resources/file.txt")},
-        {"test_files/file_txt4": pathlib.Path("tests/e2e/resources/file.txt").absolute()},
-        {"test_files/file_txt5": File(source="tests/e2e/resources/file.txt")},
-        {"test_files/file_txt6": File(source="tests/e2e/resources/file.txt", mime_type="application/json")},
-        {"test_files/file_txt7": File(source=pathlib.Path("tests/e2e/resources/file.txt"), mime_type="application/json")},
-        {"test_files/file_txt8": "tests/e2e/resources/link_file"},
-        {"test_files/file_binary1": "tests/e2e/resources/binary_file"},
-        {"test_files/file_binary2": pathlib.Path("tests/e2e/resources/binary_file")},
-        {"test_files/file_binary3": File(source="tests/e2e/resources/binary_file")},
-        {"test_files/file_binary4": File(source="tests/e2e/resources/binary_file", mime_type="audio/mpeg")},
-        {"test_files/file_binary5": File(source=pathlib.Path("tests/e2e/resources/binary_file"), mime_type="audio/mpeg")},
-        {"test_files/file_multiple1a": "tests/e2e/resources/file.txt", "test_files/file_multiple1b": "tests/e2e/resources/file.txt"},
-        {"test_files/file_multiple2a": "tests/e2e/resources/file.txt", "test_files/file_multiple2b": "tests/e2e/resources/binary_file", "test_files/file_multiple2c": b"bytes content"},
-        {"test_files/汉字Пр\U00009999/file_txt2": "tests/e2e/resources/file.txt"},  # todo: are there invalid characters? add an error case
-        {"test_files/file_path_length1" + "a" * 3 * 1024: "tests/e2e/resources/text_file.txt"},  # just below file metadata limit
+        {"test_files/file_txt2": "e2e/resources/file.txt"},
+        {"test_files/file_txt3": pathlib.Path("e2e/resources/file.txt")},
+        {"test_files/file_txt4": pathlib.Path("e2e/resources/file.txt").absolute()},
+        {"test_files/file_txt5": File(source="e2e/resources/file.txt")},
+        {"test_files/file_txt6": File(source="e2e/resources/file.txt", mime_type="application/json")},
+        {"test_files/file_txt7": File(source=pathlib.Path("e2e/resources/file.txt"), mime_type="application/json")},
+        {"test_files/file_txt8": File(source="e2e/resources/file.txt", size=1024)},
+        {"test_files/file_txt9": File(source="e2e/resources/file.txt", destination="custom_destination.txt")},
+        {"test_files/file_txt10": "e2e/resources/link_file"},
+        {"test_files/file_binary1": "e2e/resources/binary_file"},
+        {"test_files/file_binary2": pathlib.Path("e2e/resources/binary_file")},
+        {"test_files/file_binary3": File(source="e2e/resources/binary_file")},
+        {"test_files/file_binary4": File(source="e2e/resources/binary_file", mime_type="audio/mpeg")},
+        {"test_files/file_binary5": File(source=pathlib.Path("e2e/resources/binary_file"), mime_type="audio/mpeg")},
+        {
+            "test_files/file_multiple1a": "e2e/resources/file.txt",
+            "test_files/file_multiple1b": "e2e/resources/file.txt",
+        },
+        {
+            "test_files/file_multiple2a": "e2e/resources/file.txt",
+            "test_files/file_multiple2b": "e2e/resources/binary_file",
+            "test_files/file_multiple2c": b"bytes content",
+        },
+        {
+            "test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"
+        },  # todo: are there invalid characters? add an error case
+        {"test_files/file_path_length1-" + "a" * 46: "e2e/resources/file.txt"},  # just below file metadata limit
         {"test_files/file_large1": b"a" * (10 * 1024 * 1024)},
-        {"test_files/file_empty1": "tests/e2e/resources/empty_file"}
+        {"test_files/file_empty1": "e2e/resources/empty_file"},
     ],
 )
 def test_assign_files(run, run_init_kwargs, temp_dir, files):
+    # given
+    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    run_id = run_init_kwargs["run_id"]
+
     # when
     run.assign_files(files)
     run.wait_for_processing(SYNC_TIMEOUT)
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_init_kwargs["run_id"], attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
 
     # check content
-    for attribute, expected in files.items():
-        file_path = os.path.join(temp_dir, attribute)
-        assert os.path.exists(file_path), f"File {file_path} does not exist"
-        if isinstance(expected, bytes):
-            with open(file_path, "rb") as f:
-                content = f.read()
-            assert content == expected, f"Content of {file_path} does not match"
-        else:
-            with open(file_path, "r") as f:
-                content = f.read()
-            with open(expected, "r") as f:
-                expected_content = f.read()
-            assert content == expected_content, f"Content of {file_path} does not match"
+    for attribute_path, attribute_content in files.items():
+        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
 @pytest.mark.parametrize(
-    "files",
+    "files, expected",
     [
-        {"test_files/file_destination1": File(source="tests/e2e/resources/file.txt", destination="custom_destination.txt")},
-    ]
+        (
+            {"test_files/file_destination1": b"Hello world"},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination1/[^/.]+.bin"),
+                "size_bytes": 11,
+                "mime_type": "application/octet-stream",
+            },
+        ),
+        (
+            {"test_files/file_destination2": "e2e/resources/file.txt"},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination2/file.txt"),
+                "size_bytes": 19,
+                "mime_type": "text/plain",
+            },
+        ),
+        (
+            {"test_files/file_destination3": File(source="e2e/resources/file.txt")},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination3/file.txt"),
+                "size_bytes": 19,
+                "mime_type": "text/plain",
+            },
+        ),
+        (
+            {
+                "test_files/file_destination4": File(
+                    source="e2e/resources/file.txt", destination="custom_destination.txt"
+                )
+            },
+            {"path": "custom_destination.txt", "size_bytes": 19, "mime_type": "text/plain"},
+        ),
+        (
+            {"test_files/file_destination5": File(source="e2e/resources/file.txt", size=67)},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination5/file.txt"),
+                "size_bytes": 67,
+                "mime_type": "text/plain",
+            },
+        ),
+        (
+            {"test_files/file_destination6": File(source="e2e/resources/file.txt", mime_type="application/json")},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination6/file.txt"),
+                "size_bytes": 19,
+                "mime_type": "application/json",
+            },
+        ),
+        (
+            {"test_files/file_destination7": File(source="e2e/resources/binary_file")},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination7/binary_file"),
+                "size_bytes": 1024,
+                "mime_type": "application/octet-stream",
+            },
+        ),
+        (
+            {"test_files/file_destination8": File(source="e2e/resources/binary_file", mime_type="audio/mpeg")},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination8/binary_file"),
+                "size_bytes": 1024,
+                "mime_type": "audio/mpeg",
+            },
+        ),
+        (
+            {"test_files/file_destination9": File(source="e2e/resources/binary_file", size=123)},
+            {
+                "path": re.compile("[^/]+/test_files/file_destination9/binary_file"),
+                "size_bytes": 123,
+                "mime_type": "application/octet-stream",
+            },
+        ),
+    ],
 )
-def test_assign_files_destination(run, run_init_kwargs, temp_dir, files):
+def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
+    # given
+    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    run_id = run_init_kwargs["run_id"]
+
     # when
     run.assign_files(files)
     run.wait_for_processing(SYNC_TIMEOUT)
 
     # then
     attributes = list(files.keys())
-    df = runs.fetch_runs_table(runs=run_init_kwargs["run_id"], attributes=filters.AttributeFilter(name_eq=attributes))
-    df[run_init_kwargs["run_id"]["test_files/file_destination1"] == "custom_destination.txt"]
+    df = runs.fetch_runs_table(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes))
+
+    for attribute in attributes:
+        for key, value in expected.items():
+            if isinstance(value, re.Pattern):
+                assert re.match(value, df.loc[run_id][attribute, key])
+            else:
+                assert df.loc[run_id][attribute, key] == value
+
+
+def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
+    # given
+    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    run_id = run_init_kwargs["run_id"]
+    files = {"test_files/file_duplicate1": "e2e/resources/file.txt"}
+
+    # when
+    run.assign_files(files)
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    attributes = list(files.keys())
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+
+    # check content
+    for attribute_path, attribute_content in files.items():
+        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
+
 
 @pytest.mark.parametrize(
     "files",
@@ -262,33 +373,63 @@ def test_assign_files_destination(run, run_init_kwargs, temp_dir, files):
         {"test_files/file_error3": "tests/e2e/resources"},  # a directory
         {"test_files/file_error4": "tests/e2e/resources/does-not-exist"},
         {"test_files/file_error5": pathlib.Path("tests/e2e/resources/does-not-exist")},
-        {"test_files/file_error6" + "a" * 4 * 1024: "tests/e2e/resources/text_file.txt"},  # file metadata limit
+        {"test_files/file_error6" + "a" * 100: "tests/e2e/resources/text_file.txt"},  # hit file metadata limit
         {"test_files/file_error_link": "tests/e2e/resources/invalid_link_file"},
-        {"test_files/file_error_large1": b"a" * (20 * 1024 * 1024)},  # is there a size limit?
+        # {"test_files/file_error_large1": b"a" * (20 * 1024 * 1024)},  # is there a size limit for a file?
     ],
 )
 def test_assign_files_error(run, run_init_kwargs, temp_dir, files):
-    with pytest.raises(ValueError):
-        run.assign_files(files)
+    # given
+    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    run_id = run_init_kwargs["run_id"]
+
+    # when
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    attributes = list(files.keys())
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+
+    # check content
+    # TODO: would be nice to check the error
+
+    for attribute_path, attribute_content in files.items():
+        actual_path = temp_dir / run_id / attribute_path
+        assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
 
 
 def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
-    # when
+    # given
+    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
     file_path = temp_dir / "file_no_access"
     with open(file_path, "w") as f:
         f.write("test content")
     os.chmod(file_path, 0o000)  # remove read access
+    files = {"test_files/file_no_access": file_path}
+    run_id = run_init_kwargs["run_id"]
+
+    # when
+    run.assign_files(files)  # emit a warning and skip only
 
     # then
-    files = {"test_files/file_no_access": file_path}
-    with pytest.raises(ValueError):
-        run.assign_files(files)
+    attributes = list(files.keys())
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
 
-def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
-    files = {"test_files/file_duplicate1": "tests/e2e/resources/text_file.txt"}
+    expected_path = temp_dir / run_id / attributes[0]
+    assert not os.path.exists(expected_path), f"File {expected_path} should not exist"
 
-    run.assign_files(files)
-    run.assign_files(files)
-    run.wait_for_processing(SYNC_TIMEOUT)
 
-    runs.download_files(runs=run_init_kwargs["run_id"], attributes="test_files/file_duplicate1", destination=temp_dir)
+def compare_content(actual_path, expected_content):
+    assert os.path.exists(actual_path), f"File {actual_path} does not exist"
+
+    with open(actual_path, "rb") as f:
+        actual_content = f.read()
+
+    if not isinstance(expected_content, bytes):
+        if isinstance(expected_content, File):
+            expected_content = expected_content.source
+        with open(expected_content, "rb") as f:
+            expected_content = f.read()
+
+    assert actual_content == expected_content
