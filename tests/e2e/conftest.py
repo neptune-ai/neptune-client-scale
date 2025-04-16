@@ -72,17 +72,17 @@ def run_init_kwargs(project):
 
 
 @fixture(scope="module")
-def errors_queue():
+def on_error_queue():
     return queue.Queue()
 
 
 @fixture(scope="module")
-def run(project, run_init_kwargs, errors_queue):
+def run(project, run_init_kwargs, on_error_queue):
     """Plain neptune_scale.Run instance. We're scoping it to "module", as it seems to be a
     good compromise, mostly because of execution time."""
 
     def error_callback(error, last_seen_at):
-        errors_queue.put(error)
+        on_error_queue.put(error)
 
     run = Run(on_error_callback=error_callback, **run_init_kwargs)
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})

@@ -423,7 +423,7 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
         ),
     ],
 )
-def test_assign_files_error(run, run_init_kwargs, temp_dir, errors_queue, caplog, files, error_type, warnings):
+def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, caplog, files, error_type, warnings):
     # given
     ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
@@ -443,10 +443,10 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, errors_queue, caplog
         assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
 
     if error_type is None:
-        assert errors_queue.empty()
+        assert on_error_queue.empty()
     else:
-        assert not errors_queue.empty()
-        actual_error = errors_queue.get()
+        assert not on_error_queue.empty()
+        actual_error = on_error_queue.get()
         assert isinstance(actual_error, error_type)
 
     for warning in warnings:
