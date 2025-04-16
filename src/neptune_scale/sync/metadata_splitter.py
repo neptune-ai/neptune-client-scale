@@ -116,6 +116,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             and not self._metrics
             and not self._add_tags
             and not self._remove_tags
+            and not self._files
         ):
             raise StopIteration
 
