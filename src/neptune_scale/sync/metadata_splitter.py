@@ -7,7 +7,15 @@ from neptune_scale.sync.parameters import (
     MAX_STRING_SERIES_DATA_POINT_LENGTH,
 )
 
-__all__ = ("MetadataSplitter", "datetime_to_proto", "make_step", "Metrics", "StringSeries")
+__all__ = (
+    "MetadataSplitter",
+    "datetime_to_proto",
+    "make_step",
+    "Metrics",
+    "StringSeries",
+    "max_update_run_snapshot_size",
+    "string_series_to_update_run_snapshots",
+)
 
 import math
 import warnings
@@ -78,39 +86,28 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         timestamp: datetime,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]],
         metrics: Optional[Metrics],
-        string_series: Optional[StringSeries],
         add_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         remove_tags: Optional[dict[str, Union[list[str], set[str], tuple[str]]]],
         max_message_bytes_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
     ):
-        if metrics and string_series:
-            assert metrics.step == string_series.step
-
         self._timestamp = datetime_to_proto(timestamp)
         self._project = project
         self._run_id = run_id
 
         if metrics is not None and metrics.step is not None:
             self._step = make_step(number=metrics.step)
-        elif string_series is not None and string_series.step is not None:
-            self._step = make_step(number=string_series.step)
         else:
             self._step = None
-        self._metrics = peekable(self._stream_metrics(metrics.step, metrics.data)) if metrics is not None else None
-        self._metrics_preview = metrics.preview if metrics is not None else False
-        self._metrics_preview_completion = metrics.preview_completion if metrics is not None else 0.0
-        self._string_series = peekable(self._stream_string_series(string_series.data)) if string_series else None
 
+        self._metrics = peekable(self._stream_metrics(metrics.step, metrics.data)) if metrics is not None else None
+        self._preview = _make_preview(metrics) if metrics else None
         self._configs = peekable(self._stream_configs(configs)) if configs else None
         self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
         self._remove_tags = peekable(self._stream_tags(remove_tags)) if remove_tags else None
 
-        self._max_update_bytes_size = (
-            max_message_bytes_size
-            - RunOperation(
-                project=self._project,
-                run_id=self._run_id,
-            ).ByteSize()
+        preview_byte_size = self._preview.ByteSize() if self._preview else 0
+        self._max_update_bytes_size = max_update_run_snapshot_size(
+            project, run_id, max_message_bytes_size - preview_byte_size
         )
         self._has_returned = False
 
@@ -123,13 +120,12 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
             self._has_returned
             and not self._configs
             and not self._metrics
-            and not self._string_series
             and not self._add_tags
             and not self._remove_tags
         ):
             raise StopIteration
 
-        update = self._make_empty_update_snapshot()
+        update = UpdateRunSnapshot(step=self._step, timestamp=self._timestamp, preview=self._preview)
         size = update.ByteSize()
 
         size = self.populate_assign(
@@ -140,11 +136,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         size = self.populate_append_metrics(
             update=update,
             assets=self._metrics,
-            size=size,
-        )
-        size = self.populate_append_string_series(
-            update=update,
-            assets=self._string_series,
             size=size,
         )
         size = self.populate_tags(
@@ -211,30 +202,6 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
         return size
 
-    def populate_append_string_series(
-        self,
-        update: UpdateRunSnapshot,
-        assets: Optional[peekable[tuple[str, str, int]]],
-        size: int,
-    ) -> int:
-        if assets is None:
-            return size
-
-        while size < self._max_update_bytes_size:
-            try:
-                key, value, value_size = assets.peek()
-            except StopIteration:
-                break
-
-            new_size = size + proto_string_size(key) + value_size + 6
-            if new_size > self._max_update_bytes_size:
-                break
-
-            update.append[key].string = value
-            size, _ = new_size, next(assets)
-
-        return size
-
     def populate_tags(
         self, update: UpdateRunSnapshot, assets: Optional[peekable[Any]], operation: SET_OPERATION.ValueType, size: int
     ) -> int:
@@ -270,17 +237,8 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
         return size
 
-    def _validate_paths(self, fields: dict[str, T]) -> Iterator[tuple[str, T]]:
-        _is_instance = isinstance  # local binding, faster in tight loops
-        for key, value in fields.items():
-            if not _is_instance(key, str):
-                _warn_or_raise_on_invalid_value(f"Field paths must be strings (got `{key}`)")
-                continue
-
-            yield key, value
-
     def _stream_metrics(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
-        for key, value in self._validate_paths(metrics):
+        for key, value in _validate_paths(metrics):
             try:
                 value = float(value)
             except (ValueError, TypeError, OverflowError):
@@ -303,29 +261,11 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
             yield key, value
 
-    def _stream_string_series(self, string_series: dict[str, str]) -> Iterator[tuple[str, str, int]]:
-        _is_instance = isinstance  # local binding, faster in tight loops
-        for key, value in self._validate_paths(string_series):
-            if not isinstance(value, str):
-                _warn_or_raise_on_invalid_value(f"String series values must be strings (got `{key}`:`{value}`)")
-                continue
-
-            data = value.encode("utf-8")
-            if len(data) > MAX_STRING_SERIES_DATA_POINT_LENGTH:
-                _warn_or_raise_on_invalid_value(
-                    f"String series values must be less than {MAX_STRING_SERIES_DATA_POINT_LENGTH}"
-                    " bytes when UTF-8 encoded"
-                )
-                continue
-
-            # Use proto_bytes_size to avoid encoding the value multiple times for size calculation
-            yield key, value, proto_bytes_size(data)
-
     def _stream_configs(
         self, configs: dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]
     ) -> Iterator[tuple[str, Value]]:
         _is_instance = isinstance  # local binding, faster in tight loops
-        for key, value in self._validate_paths(configs):
+        for key, value in _validate_paths(configs):
             if _is_instance(value, float):
                 yield key, Value(float64=value)
             elif _is_instance(value, bool):
@@ -350,7 +290,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
     ) -> Iterator[tuple[str, Union[list[str], set[str], tuple[str]]]]:
         accepted_tag_collection_types = (list, set, tuple)
         _is_instance = isinstance  # local binding, faster in tight loops
-        for key, values in self._validate_paths(tags):
+        for key, values in _validate_paths(tags):
             if not _is_instance(values, accepted_tag_collection_types) or any(
                 not _is_instance(tag, str) for tag in values
             ):
@@ -361,24 +301,78 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
             yield key, values
 
-    def _make_empty_update_snapshot(self) -> UpdateRunSnapshot:
-        include_preview = self._metrics and self._metrics_preview
-        return UpdateRunSnapshot(
-            step=self._step,
-            preview=(self._make_preview() if include_preview else None),
-            timestamp=self._timestamp,
-            assign={},
-            append={},
-            modify_sets={},
-        )
 
-    def _make_preview(self) -> Optional[Preview]:
-        if not self._metrics_preview:
-            return None
-        # let backend default completion
-        if self._metrics_preview_completion is not None:
-            return Preview(is_preview=True, completion_ratio=self._metrics_preview_completion)
-        return Preview(is_preview=True)
+def _validate_paths(fields: dict[str, T]) -> Iterator[tuple[str, T]]:
+    _is_instance = isinstance  # local binding, faster in tight loops
+    for key, value in fields.items():
+        if not _is_instance(key, str):
+            _warn_or_raise_on_invalid_value(f"Field paths must be strings (got `{key}`)")
+            continue
+
+        yield key, value
+
+
+def _make_preview(metrics: Metrics) -> Optional[Preview]:
+    if not metrics.preview:
+        return None
+    # let backend default completion
+    if metrics.preview_completion is not None:
+        return Preview(is_preview=True, completion_ratio=metrics.preview_completion)
+    return Preview(is_preview=True)
+
+
+def string_series_to_update_run_snapshots(
+    string_series: Optional[StringSeries],
+    timestamp: datetime,
+    max_size: int,
+) -> Iterator[UpdateRunSnapshot]:
+    if not string_series:
+        return
+
+    stream = peekable(_stream_string_series(string_series.data))
+    step = make_step(string_series.step)
+    timestamp = datetime_to_proto(timestamp)
+
+    # Local bindings for faster name lookups
+    _proto_string_size = proto_string_size
+    _peek_stream = stream.peek
+    while stream:
+        update = UpdateRunSnapshot(step=step, timestamp=timestamp)
+
+        size = 0
+        while size < max_size:
+            try:
+                key, value, value_size = _peek_stream()
+            except StopIteration:
+                break
+
+            new_size = size + _proto_string_size(key) + value_size + 6
+            if new_size > max_size:
+                break
+
+            update.append[key].string = value
+            size, _ = new_size, next(stream)
+
+        yield update
+
+
+def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, str, int]]:
+    _is_instance = isinstance  # local binding, faster in tight loops
+    for key, value in _validate_paths(string_series):
+        if not isinstance(value, str):
+            _warn_or_raise_on_invalid_value(f"String series values must be strings (got `{key}`:`{value}`)")
+            continue
+
+        data = value.encode("utf-8")
+        if len(data) > MAX_STRING_SERIES_DATA_POINT_LENGTH:
+            _warn_or_raise_on_invalid_value(
+                f"String series values must be less than {MAX_STRING_SERIES_DATA_POINT_LENGTH}"
+                " bytes when UTF-8 encoded"
+            )
+            continue
+
+        # Use proto_bytes_size to avoid encoding the value multiple times for size calculation
+        yield key, value, proto_bytes_size(data)
 
 
 def datetime_to_proto(dt: datetime) -> Timestamp:
@@ -407,6 +401,22 @@ def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = Fa
     micro = micro % m
 
     return Step(whole=whole, micro=micro)
+
+
+# Bare minimum size of an empty UpdateRunSnapshot without preview
+EMPTY_UPDATE_RUN_SNAPSHOT_SIZE: int = UpdateRunSnapshot(
+    step=make_step(1), timestamp=Timestamp(seconds=1, nanos=1)
+).ByteSize()
+
+
+def max_update_run_snapshot_size(
+    project: str, run_id: str, max_message_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES
+) -> int:
+    result: int = (
+        max_message_size - RunOperation(project=project, run_id=run_id).ByteSize() - EMPTY_UPDATE_RUN_SNAPSHOT_SIZE
+    )
+    assert result > 0
+    return result
 
 
 def proto_string_size(string: str) -> int:

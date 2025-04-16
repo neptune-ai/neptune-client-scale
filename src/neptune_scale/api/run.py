@@ -6,18 +6,21 @@ from __future__ import annotations
 
 import base64
 import binascii
+import itertools
 import json
 import re
 from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.sync import metadata_splitter
 from neptune_scale.sync.metadata_splitter import (
     MetadataSplitter,
     Metrics,
     StringSeries,
     datetime_to_proto,
     make_step,
+    string_series_to_update_run_snapshots,
 )
 from neptune_scale.sync.operations_repository import OperationsRepository
 
@@ -220,10 +223,14 @@ class Run(AbstractContextManager):
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._logging_enabled = True
+            self._max_update_run_snapshot_size = metadata_splitter.max_update_run_snapshot_size(
+                self._project, self._run_id
+            )
         else:
             self._operations_repo = None
             self._sequence_tracker = None
             self._logging_enabled = False
+            self._max_update_run_snapshot_size = 0
 
         if mode == "async":
             assert self._sequence_tracker is not None
@@ -682,12 +689,16 @@ class Run(AbstractContextManager):
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
-            string_series=string_series,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
-        operations = list(splitter)
+        operations = list(
+            itertools.chain(
+                splitter,
+                string_series_to_update_run_snapshots(string_series, timestamp, self._max_update_run_snapshot_size),
+            )
+        )
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
 
         self._sequence_tracker.update_sequence_id(sequence_id)

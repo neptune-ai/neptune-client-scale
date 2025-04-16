@@ -26,6 +26,8 @@ from neptune_scale.sync.metadata_splitter import (
     MetadataSplitter,
     Metrics,
     StringSeries,
+    datetime_to_proto,
+    string_series_to_update_run_snapshots,
 )
 
 
@@ -214,24 +216,17 @@ def test_tags():
 
 def test_string_series():
     string_series = StringSeries(data={f"string{i}": f"value{i}" for i in range(1000)}, step=1)
+    timestamp = datetime.now()
+    updates = string_series_to_update_run_snapshots(string_series, timestamp=timestamp, max_size=512)
 
-    builder = MetadataSplitter(
-        project="workspace/project",
-        run_id="run_id",
-        timestamp=datetime.now(),
-        configs={},
-        metrics=None,
-        string_series=string_series,
-        add_tags={},
-        remove_tags={},
-        max_message_bytes_size=128,
-    )
-
-    result = list(builder)
+    result = list(updates)
     assert len(result) > 1
 
     # Gather all UpdateRunSnapshot.append data and compare against input
     append_values = {key: value.string for op in result for key, value in op.append.items()}
+    proto_timestamp = datetime_to_proto(timestamp)
+
+    assert all(op.timestamp == proto_timestamp for op in result)
     assert len(append_values) == len(string_series.data)
     assert append_values == string_series.data
 
