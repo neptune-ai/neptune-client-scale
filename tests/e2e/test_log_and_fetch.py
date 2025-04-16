@@ -226,6 +226,8 @@ def test_async_lag_callback():
             "test_files/file_multiple2a": "e2e/resources/file.txt",
             "test_files/file_multiple2b": "e2e/resources/binary_file",
             "test_files/file_multiple2c": b"bytes content",
+            "test_files/file_multiple2d": File(source="e2e/resources/file.txt"),
+            "test_files/file_multiple2e": File(source=b"bytes content"),
         },
         {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
@@ -481,9 +483,10 @@ def compare_content(actual_path, expected_content):
     with open(actual_path, "rb") as f:
         actual_content = f.read()
 
+    if isinstance(expected_content, File):
+        expected_content = expected_content.source
+
     if not isinstance(expected_content, bytes):
-        if isinstance(expected_content, File):
-            expected_content = expected_content.source
         with open(expected_content, "rb") as f:
             expected_content = f.read()
 
