@@ -355,7 +355,8 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
 
 
 @pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
-def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
+@pytest.mark.parametrize("wait_after_first_upload", [True, False])
+def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, wait_after_first_upload):
     # given
     ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
@@ -363,6 +364,10 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
 
     # when
     run.assign_files(files)
+    if wait_after_first_upload:
+        run.wait_for_processing(SYNC_TIMEOUT)
+
+    files = {"test_files/file_duplicate1": "e2e/resources/binary_file"}
     run.assign_files(files)
     run.wait_for_processing(SYNC_TIMEOUT)
 
