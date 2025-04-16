@@ -212,6 +212,30 @@ def test_tags():
     assert operation == expected_update
 
 
+def test_string_series():
+    string_series = StringSeries(data={f"string{i}": f"value{i}" for i in range(1000)}, step=1)
+
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs={},
+        metrics=None,
+        string_series=string_series,
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=128,
+    )
+
+    result = list(builder)
+    assert len(result) > 1
+
+    # Gather all UpdateRunSnapshot.append data and compare against input
+    append_values = {key: value.string for op in result for key, value in op.append.items()}
+    assert len(append_values) == len(string_series.data)
+    assert append_values == string_series.data
+
+
 @freeze_time("2024-07-30 12:12:12.000022")
 def test_splitting():
     max_size = 2 * 1024 * 1024
