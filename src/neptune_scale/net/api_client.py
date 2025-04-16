@@ -20,11 +20,11 @@ __all__ = ("HostedApiClient", "ApiClient", "backend_factory", "with_api_errors_h
 import abc
 import functools
 import os
+import platform
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version as get_version
 from json import JSONDecodeError
-from sys import version as python_version
 from typing import Any
 
 import httpx
@@ -121,12 +121,21 @@ def create_auth_api_client(
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     )
-    client_version = get_version("neptune-scale")
-    api_version = get_version("neptune-api")
-    httpx_version = get_version("httpx")
-    version = f"neptune-scale/{client_version} neptune-api/{api_version} httpx/{httpx_version} python/{python_version}"
-    logger.debug(f"User-Agent: {version}")
-    client = client.with_headers({"User-Agent": version})
+
+    lib_name = "neptune-scale"
+    lib_version = get_version(lib_name)
+
+    additional_metadata = {
+        "neptune-api": get_version("neptune-api"),
+        "python": platform.python_version(),
+        "os": platform.system(),
+    }
+    metadata_str = "(" + "; ".join([f"{k}={v}" for k, v in additional_metadata.items()]) + ")"
+
+    user_agent = f"{lib_name}/{lib_version} {metadata_str}"
+    logger.debug(f"User-Agent: {user_agent}")
+
+    client = client.with_headers({"User-Agent": user_agent})
     return client
 
 
