@@ -20,6 +20,10 @@ from pytest import mark
 
 from neptune_scale.api.run import Run
 from neptune_scale.api.types import File
+from neptune_scale.exceptions import (
+    NeptuneAttributePathEmpty,
+    NeptuneAttributePathExceedsSizeLimit,
+)
 
 from .conftest import (
     random_series,
@@ -221,9 +225,11 @@ def test_async_lag_callback():
             "test_files/file_multiple2c": b"bytes content",
         },
         {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
-        {"test_files/file_path_length1-" + "a" * 46: "e2e/resources/file.txt"},  # just below file metadata limit
+        {"test_files/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
         {"test_files/file_large1": b"a" * (10 * 1024 * 1024)},
         {"test_files/file_empty1": "e2e/resources/empty_file"},
+        {"test_files/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
+        {"test_files/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
     ],
 )
 def test_assign_files(run, run_init_kwargs, temp_dir, files):
@@ -363,20 +369,21 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
 
 
 @pytest.mark.parametrize(
-    "files",
+    "files, error_type",
     [
-        {},
-        {"test_files/file_error1": ""},
-        {"": "tests/e2e/resources/text_file.txt"},
-        {"test_files/file_error3": "tests/e2e/resources"},  # a directory
-        {"test_files/file_error4": "tests/e2e/resources/does-not-exist"},
-        {"test_files/file_error5": pathlib.Path("tests/e2e/resources/does-not-exist")},
-        {"test_files/file_error6" + "a" * 100: "tests/e2e/resources/text_file.txt"},  # hit file metadata limit
-        {"test_files/file_error_link": "tests/e2e/resources/invalid_link_file"},
-        # {"test_files/file_error_large1": b"a" * (20 * 1024 * 1024)},  # is there a size limit for a file?
+        ({}, None),
+        ({"test_files/file_error1": ""}, None),
+        ({"": "e2e/resources/file.txt"}, NeptuneAttributePathEmpty),
+        ({"test_files/file_error3": "e2e/resources"}, None),  # tries to upload a directory
+        ({"test_files/file_error4": "e2e/resources/does-not-exist"}, None),
+        ({"test_files/file_error5": pathlib.Path("e2e/resources/does-not-exist")}, None),
+        ({"test_files/file_error6" + "a" * 1024: "e2e/resources/file.txt"}, NeptuneAttributePathExceedsSizeLimit),
+        ({"test_files/file_error7": "e2e/resources/invalid_link_file"}, None),
+        ({"test_files/file_error8": File("e2e/resources/file.txt", mime_type="a" * 129)}, None),
+        ({"test_files/file_error9": File("e2e/resources/file.txt", destination="a" * 801)}, None),
     ],
 )
-def test_assign_files_error(run, run_init_kwargs, temp_dir, files):
+def test_assign_files_error(run, run_init_kwargs, temp_dir, files, errors_queue, error_type):
     # given
     assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
     run_id = run_init_kwargs["run_id"]
@@ -389,12 +396,16 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, files):
     attributes = list(files.keys())
     runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
 
-    # check content
-    # TODO: would be nice to check the error
-
     for attribute_path, attribute_content in files.items():
         actual_path = temp_dir / run_id / attribute_path
         assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
+
+    if error_type is None:
+        assert errors_queue.empty()
+    else:
+        assert not errors_queue.empty()
+        actual_error = errors_queue.get()
+        assert isinstance(actual_error, error_type)
 
 
 def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
