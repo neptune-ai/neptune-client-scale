@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import pathlib
@@ -374,27 +375,63 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
 
 @pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
-    "files, error_type",
+    "files, error_type, warnings",
     [
-        ({}, None),
-        ({"test_files/file_error1": ""}, None),
-        ({"": "e2e/resources/file.txt"}, NeptuneAttributePathEmpty),
-        ({"test_files/file_error3": "e2e/resources"}, None),  # tries to upload a directory
-        ({"test_files/file_error4": "e2e/resources/does-not-exist"}, None),
-        ({"test_files/file_error5": pathlib.Path("e2e/resources/does-not-exist")}, None),
-        ({"test_files/file_error6" + "a" * 1024: "e2e/resources/file.txt"}, NeptuneAttributePathExceedsSizeLimit),
-        ({"test_files/file_error7": "e2e/resources/invalid_link_file"}, None),
-        ({"test_files/file_error8": File("e2e/resources/file.txt", mime_type="a" * 129)}, None),
-        ({"test_files/file_error9": File("e2e/resources/file.txt", destination="a" * 801)}, None),
+        ({}, None, []),
+        (
+            {"test_files/file_error1": ""},
+            None,
+            ["Skipping file attribute `test_files/file_error1`: Cannot determine mime type for file '.'"],
+        ),
+        ({"": "e2e/resources/file.txt"}, NeptuneAttributePathEmpty, []),
+        (
+            {"test_files/file_error3": "e2e/resources"},
+            None,
+            ["Skipping file attribute `test_files/file_error3`: Cannot determine mime type for file 'e2e/resources'"],
+        ),  # tries to upload a directory
+        (
+            {"test_files/file_error4": "e2e/resources/does-not-exist"},
+            None,
+            [
+                "Error determining mime type for e2e/resources/does-not-exist: [Errno 2] No such file or directory: 'e2e/resources/does-not-exist'"
+            ],
+        ),
+        (
+            {"test_files/file_error5": pathlib.Path("e2e/resources/does-not-exist")},
+            None,
+            [
+                "Error determining mime type for e2e/resources/does-not-exist: [Errno 2] No such file or directory: 'e2e/resources/does-not-exist'"
+            ],
+        ),
+        ({"test_files/file_error6" + "a" * 1024: "e2e/resources/file.txt"}, NeptuneAttributePathExceedsSizeLimit, []),
+        (
+            {"test_files/file_error7": "e2e/resources/invalid_link_file"},
+            None,
+            [
+                "Error determining mime type for e2e/resources/invalid_link_file: [Errno 62] Too many levels of symbolic links: 'e2e/resources/invalid_link_file'"
+            ],
+        ),
+        (
+            {"test_files/file_error8": File("e2e/resources/file.txt", mime_type="a" * 129)},
+            None,
+            ["Dropping value. File mime type must be a string of at most 128 characters"],
+        ),
+        (
+            {"test_files/file_error9": File("e2e/resources/file.txt", destination="a" * 801)},
+            None,
+            ["Dropping value. File destination must be a string of at most 800 characters"],
+        ),
     ],
 )
-def test_assign_files_error(run, run_init_kwargs, temp_dir, files, errors_queue, error_type):
+def test_assign_files_error(run, run_init_kwargs, temp_dir, errors_queue, caplog, files, error_type, warnings):
     # given
     ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
 
     # when
-    run.assign_files(files)
+    with caplog.at_level(logging.WARNING):
+        run.assign_files(files)
+
     run.wait_for_processing(SYNC_TIMEOUT)
 
     # then
@@ -411,6 +448,9 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, files, errors_queue,
         assert not errors_queue.empty()
         actual_error = errors_queue.get()
         assert isinstance(actual_error, error_type)
+
+    for warning in warnings:
+        assert any(warning in message for message in caplog.messages), f"Warning '{warning}' not found in logs"
 
 
 @pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
