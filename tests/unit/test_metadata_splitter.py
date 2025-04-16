@@ -373,12 +373,17 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
-@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics"))
+@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "files"))
 def test_invalid_path_types(caplog, action, invalid_path, param_name):
     data = {invalid_path: object()}
-
     kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files")}
-    kwargs[param_name] = data if param_name != "metrics" else Metrics(step=1, data=data)
+
+    if param_name == "metrics":
+        data = Metrics(step=1, data=data)
+    elif param_name == "files":
+        data = {invalid_path: FileRefData(destination="x", mime_type="text/plain", size_bytes=0)}
+
+    kwargs[param_name] = data
 
     splitter = MetadataSplitter(
         project="workspace/project",
