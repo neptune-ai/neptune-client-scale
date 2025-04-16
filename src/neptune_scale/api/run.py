@@ -7,17 +7,29 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import mimetypes
 import re
+import uuid
 from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.api.types import File
+from neptune_scale.sync.files import (
+    generate_destination,
+    guess_mime_type_from_bytes,
+    guess_mime_type_from_file,
+)
 from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
     MetadataSplitter,
     datetime_to_proto,
     make_step,
 )
-from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
+    OperationsRepository,
+)
 
 __all__ = ["Run"]
 
@@ -568,6 +580,22 @@ class Run(AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self._log(tags_remove={name: tags})
 
+    def assign_files(self, files: dict[str, Union[str, Path, bytes, File]]) -> None:
+        """
+        Assigns single file values to the specified attributes. Any existing values for these attributes will be
+        overwritten.
+
+        If the value is a simple source type (str, Path, bytes), it's used directly.
+        Mime type and size are determined from the provided source (file or bytes buffer).
+
+        If the value is a `File` object, its `source` field is used, along with the optional `destination`,
+        `mime_type`, and `size_bytes` fields. Any fields not provided will be determined from the provided source.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects
+        """
+        self._log(files=files)
+
     def log(
         self,
         step: Optional[Union[float, int]] = None,
@@ -599,6 +627,7 @@ class Run(AbstractContextManager):
         timestamp: Optional[datetime] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Metrics] = None,
+        files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -606,6 +635,7 @@ class Run(AbstractContextManager):
         verify_type("configs", configs, (dict, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
+        verify_type("files", files, (dict, type(None)))
 
         if metrics is not None:
             verify_type("metrics", metrics, Metrics)
@@ -641,20 +671,99 @@ class Run(AbstractContextManager):
         elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
+        file_upload_requests = self._prepare_files_for_upload(files) if files else None
+        file_data = (
+            {
+                attr_name: FileRefData(
+                    destination=req.destination,
+                    mime_type=req.mime_type,
+                    size_bytes=req.size_bytes,
+                )
+                for attr_name, req in file_upload_requests
+            }
+            if file_upload_requests
+            else None
+        )
+
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
+            files=file_data,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
         operations = list(splitter)
-        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
 
+        # Save file upload requests only after MetadataSplitter processed input
+        if file_upload_requests:
+            self._operations_repo.save_file_upload_requests([req[1] for req in file_upload_requests])
+
+        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
         self._sequence_tracker.update_sequence_id(sequence_id)
+
+    def _prepare_files_for_upload(
+        self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
+    ) -> list[tuple[str, FileUploadRequest]]:
+        """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
+
+        All buffers passed as arguments are saved to disk in the run's storage directory.
+        Mime types and file sizes are populated if not provided by the user.
+
+        Any errors during processing are logged with warning and the file is skipped.
+        """
+        if files is None:
+            return []
+
+        result = []
+        for attr_name, file in files.items():
+            try:
+                if isinstance(file, File):
+                    source, mime_type, destination, size = file.source, file.mime_type, file.destination, file.size
+                else:
+                    source = file
+                    mime_type = size = destination = None
+
+                if isinstance(source, bytes):
+                    size = size or len(source)
+                    mime_type = mime_type or guess_mime_type_from_bytes(source, destination)
+                    file_path = _save_buffer_to_disk(
+                        self._storage_directory_path,  # type: ignore
+                        source,
+                        mimetypes.guess_extension(mime_type) if mime_type else None,
+                    )
+                    logger.debug(f"Saved temporary file {file_path} for attribute `{attr_name}`")
+                elif isinstance(source, (str, Path)):
+                    file_path = Path(source)
+                    mime_type = mime_type or guess_mime_type_from_file(file_path, destination)
+                    if mime_type is None:
+                        raise Exception(f"Cannot determine mime type for file '{file_path}'")
+                    size = size or file_path.stat().st_size
+                else:
+                    logger.warning(f"Skipping file attribute `{attr_name}`: Unsupported type {type(file)}")
+                    continue
+
+                assert mime_type is not None
+                request = FileUploadRequest(
+                    source_path=str(file_path.absolute()),
+                    destination=(
+                        generate_destination(self._run_id, attr_name, file_path.name)
+                        if destination is None
+                        else str(destination)
+                    ),
+                    mime_type=str(mime_type),
+                    size_bytes=int(size),
+                    is_temporary=isinstance(source, bytes),
+                )
+                result.append((attr_name, request))
+            except Exception as e:
+                logger.warning(f"Skipping file attribute `{attr_name}`: {e}")
+                continue
+
+        return result
 
     def _wait(
         self,
@@ -924,3 +1033,17 @@ def _extract_api_url_from_token(api_token: str) -> str:
         return json_data["api_url"].rstrip("/")  # type: ignore
     except (binascii.Error, json.JSONDecodeError, KeyError):
         raise ValueError("Unable to extract Neptune URL from the provided API token")
+
+
+def _save_buffer_to_disk(directory_path: Path, buffer: bytes, extension: Optional[str]) -> Path:
+    """
+    Save the buffer to disk in the specified directory. Return the path to the saved file.
+    If provided, the extension must be in the format ".ext".
+    """
+    filename = f"{str(uuid.uuid4())}" + extension if extension else ""
+    file_path = directory_path / filename
+
+    with open(file_path, "wb") as file:
+        file.write(buffer)
+
+    return file_path

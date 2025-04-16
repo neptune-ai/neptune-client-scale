@@ -39,6 +39,7 @@ __all__ = (
     "NeptuneStringValueExceedsSizeLimit",
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
+    "NeptuneFileMetadataExceedsSizeLimit",
     "NeptuneAsyncLagThresholdExceeded",
     "NeptuneProjectNotProvided",
     "NeptuneApiTokenNotProvided",
@@ -289,11 +290,7 @@ class NeptuneFileUploadError(NeptuneScaleError):
 {h1}
 ----NeptuneFileUploadError: An unrecoverable error occurred during file upload
 {end}
-There was an error uploading the file {file_path}: {reason}
 """
-
-    def __init__(self, file_path: str, reason: str) -> None:
-        super().__init__(file_path=file_path, reason=reason)
 
 
 class NeptuneFileUploadTemporaryError(NeptuneRetryableError):
@@ -301,11 +298,7 @@ class NeptuneFileUploadTemporaryError(NeptuneRetryableError):
 {h1}
 ----NeptuneFileUploadTemporaryError: A temporary error occurred during file upload
 {end}
-There was an error uploading the file {file_path}: {reason}
 """
-
-    def __init__(self, file_path: str, reason: str) -> None:
-        super().__init__(file_path=file_path, reason=reason)
 
 
 class NeptuneProjectError(NeptuneScaleError):
@@ -493,6 +486,14 @@ class NeptuneStringSetExceedsSizeLimit(NeptuneScaleError):
     message = """
 {h1}
 NeptuneStringSetExceedsSizeLimit: String Set value is too long. Maximum length is 64KB.
+{end}
+"""
+
+
+class NeptuneFileMetadataExceedsSizeLimit(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneFileMetadataExceedsSizeLimit: File metadata is too long. Maximum length is 4KB.
 {end}
 """
 

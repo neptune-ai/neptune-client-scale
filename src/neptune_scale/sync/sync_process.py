@@ -52,6 +52,7 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
+    NeptuneFileMetadataExceedsSizeLimit,
     NeptuneFileUploadError,
     NeptuneFileUploadTemporaryError,
     NeptuneInternalServerError,
@@ -127,6 +128,7 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
+    IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
 }
 
 
@@ -406,7 +408,7 @@ class SenderThread(Daemon):
 
 
 def _raise_exception(status_code: int) -> None:
-    logger.error("HTTP response error: %s", status_code)
+    logger.warning("HTTP response error: %s", status_code)
     if status_code == 403:
         raise NeptuneUnauthorizedError()
     elif status_code == 408:
@@ -615,12 +617,12 @@ class FileUploaderThread(Daemon):
                 if not self._api_client:
                     self._api_client = backend_factory(self._neptune_api_token)
 
-                target_paths = [file.target_path for file in file_upload_requests]
-                storage_urls = fetch_file_storage_urls(self._api_client, self._project, target_paths)
+                destination_paths = [file.destination for file in file_upload_requests]
+                storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
 
                 for file in file_upload_requests:
                     try:
-                        upload_file(file.source_path, file.mime_type, file.size_bytes, storage_urls[file.target_path])
+                        upload_file(file.source_path, file.mime_type, storage_urls[file.destination])
                         if file.is_temporary:
                             logger.debug(f"Removing temporary file {file.source_path}")
                             pathlib.Path(file.source_path).unlink(missing_ok=True)
@@ -631,7 +633,7 @@ class FileUploaderThread(Daemon):
                     except Exception as e:
                         # Fatal failure. Do not retry the file, but keep it on disk.
                         logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
-                        self._errors_queue.put(NeptuneFileUploadError(file_path=file.source_path, reason=str(e)))
+                        self._errors_queue.put(NeptuneFileUploadError())
                         self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
@@ -644,11 +646,10 @@ class FileUploaderThread(Daemon):
 
 @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
 @with_api_errors_handling
-def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: list[str]) -> dict[str, str]:
+def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: list[str]) -> dict[str, str]:
     """Fetch Azure urls for storing files. Return a dict of target_path -> upload url"""
-
-    logger.debug(f"Fetch file storage URLs for {len(target_paths)} files")
-    response = client.fetch_file_storage_urls(paths=target_paths, project=project, mode="write")
+    logger.debug("Fetching file storage urls")
+    response = client.fetch_file_storage_urls(paths=destination_paths, project=project, mode="write")
     status_code = response.status_code
     if status_code != 200:
         _raise_exception(status_code)
@@ -659,10 +660,11 @@ def fetch_file_storage_urls(client: ApiClient, project: str, target_paths: list[
     return {file.path: file.url for file in response.parsed.files}
 
 
-def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: str) -> None:
+def upload_file(local_path: str, mime_type: str, storage_url: str) -> None:
     logger.debug(f"Start: upload file {local_path}")
 
     try:
+        size_bytes = Path(local_path).stat().st_size
         with open(local_path, "rb") as file:
             client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
 
@@ -674,7 +676,7 @@ def upload_file(local_path: str, mime_type: str, size_bytes: int, storage_url: s
             )
     except azure.core.exceptions.AzureError as e:
         logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
-        raise NeptuneFileUploadTemporaryError(file_path=local_path, reason=str(e)) from e
+        raise NeptuneFileUploadTemporaryError() from e
     except Exception as e:
         raise e
 

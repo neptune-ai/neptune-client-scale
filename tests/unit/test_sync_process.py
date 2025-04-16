@@ -743,13 +743,11 @@ def test_file_uploader_thread_successful_upload_flow(
         call(
             buffer_upload_request.source_path,
             buffer_upload_request.mime_type,
-            buffer_upload_request.size_bytes,
             "text-url",
         ),
         call(
             disk_upload_request.source_path,
             disk_upload_request.mime_type,
-            disk_upload_request.size_bytes,
             "image-url",
         ),
     ]
@@ -805,13 +803,11 @@ def test_file_uploader_thread_terminal_error(
         call(
             "no-such-file",
             "text/plain",
-            123,
             "text-url",
         ),
         call(
             disk_upload_request.source_path,
             disk_upload_request.mime_type,
-            disk_upload_request.size_bytes,
             "image-url",
         ),
     ]
@@ -860,7 +856,7 @@ def test_file_uploader_thread_non_terminal_error(
 
     # Signed urls should be requested for each attempt
     mock_fetch_file_storage_urls.assert_has_calls(
-        [call(uploader_thread._api_client, "workspace/project", [disk_upload_request.target_path])] * 3
+        [call(uploader_thread._api_client, "workspace/project", [disk_upload_request.destination])] * 3
     )
 
     # An upload attempt should be made for 2 failures and the final success
