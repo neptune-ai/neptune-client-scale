@@ -30,6 +30,7 @@ from .conftest import (
     unique_path,
 )
 
+FILE_API_ENABLED = os.getenv("NEPTUNE_FILE_API_ENABLED", "true").lower().strip() in ("true", "t", "yes", "y", "1")
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30
 
@@ -197,6 +198,7 @@ def test_async_lag_callback():
         assert event.is_set()
 
 
+@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files",
     [
@@ -234,7 +236,7 @@ def test_async_lag_callback():
 )
 def test_assign_files(run, run_init_kwargs, temp_dir, files):
     # given
-    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
 
     # when
@@ -250,6 +252,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
+@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files, expected",
     [
@@ -329,7 +332,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
 )
 def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
     # given
-    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
 
     # when
@@ -348,9 +351,10 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
                 assert df.loc[run_id][attribute, key] == value
 
 
+@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
     # given
-    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
     files = {"test_files/file_duplicate1": "e2e/resources/file.txt"}
 
@@ -368,6 +372,7 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
+@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files, error_type",
     [
@@ -385,7 +390,7 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
 )
 def test_assign_files_error(run, run_init_kwargs, temp_dir, files, errors_queue, error_type):
     # given
-    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
 
     # when
@@ -408,9 +413,10 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, files, errors_queue,
         assert isinstance(actual_error, error_type)
 
 
+@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
     # given
-    assert pathlib.Path.cwd().name == "tests", "test must be run from the tests directory"
+    ensure_test_directory()
     file_path = temp_dir / "file_no_access"
     with open(file_path, "w") as f:
         f.write("test content")
@@ -442,3 +448,12 @@ def compare_content(actual_path, expected_content):
             expected_content = f.read()
 
     assert actual_content == expected_content
+
+
+def ensure_test_directory():
+    if pathlib.Path.cwd().name == "tests":
+        return
+    elif pathlib.Path.cwd().name == "neptune-client-scale":
+        os.chdir("tests")
+    else:
+        assert False, "Test must be run from the tests directory"
