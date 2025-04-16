@@ -92,6 +92,7 @@ from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
 )
+from neptune_scale.util.timer import Timer
 
 logger = get_logger()
 
@@ -315,37 +316,38 @@ class Run(AbstractContextManager):
                 if self._errors_queue is not None:
                     self._errors_queue.put(NeptuneSynchronizationStopped())
 
-    def _close(self, *, wait: bool = True) -> None:
+    def _close(self, *, timeout: Optional[float] = None) -> None:
         with self._lock:
             if self._is_closing:
                 return
 
             self._is_closing = True
 
-            logger.debug(f"Run is closing, wait={wait}")
+            logger.debug(f"Run is closing, timeout={timeout}")
+
+        timer = Timer(timeout)
 
         if self._sync_process is not None and self._sync_process.is_alive():
-            if wait:
-                self.wait_for_processing()
+            self.wait_for_processing(timeout=timer.remaining_time())
 
             self._sync_process.terminate()
-            self._sync_process.join()
+            self._sync_process.join(timeout=timer.remaining_time())
 
         if self._sync_process_supervisor is not None:
             self._sync_process_supervisor.interrupt()
-            self._sync_process_supervisor.join()
+            self._sync_process_supervisor.join(timeout=timer.remaining_time())
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
-            self._lag_tracker.join()
+            self._lag_tracker.join(timeout=timer.remaining_time())
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(remaining_iterations=1 if wait else 0)
+            self._errors_monitor.interrupt(remaining_iterations=0 if timer.is_expired() else 1)
 
             # Don't call join() if being called from the error thread, as this will
             # result in a "cannot join current thread" exception.
             if threading.current_thread() != self._errors_monitor:
-                self._errors_monitor.join()
+                self._errors_monitor.join(timeout=timer.remaining_time())
 
         if self._operations_repo is not None:
             self._operations_repo.close(cleanup_files=True)
@@ -384,9 +386,9 @@ class Run(AbstractContextManager):
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
             self._exit_func = None
-        self._close(wait=False)
+        self._close(timeout=0)
 
-    def close(self) -> None:
+    def close(self, timeout: Optional[float] = None) -> None:
         """
         Closes the connection to Neptune and waits for data synchronization to be completed.
 
@@ -406,7 +408,7 @@ class Run(AbstractContextManager):
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
             self._exit_func = None
-        self._close(wait=True)
+        self._close(timeout=timeout)
 
     def __exit__(
         self,
@@ -773,14 +775,17 @@ class Run(AbstractContextManager):
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        begin_time = time.monotonic()
-        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        timer = Timer(timeout)
+        wait_time = sleep_time
         last_print_timestamp: Optional[float] = None
 
         while True:
@@ -798,9 +803,8 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
-                if timeout is not None:
-                    time_elapsed = time.monotonic() - begin_time
-                    wait_time = max(0, min(wait_time, timeout - time_elapsed))
+                if timer.is_finite():
+                    wait_time = min(wait_time, timer.remaining_time() or 0)
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -834,9 +838,8 @@ class Run(AbstractContextManager):
                         logger.info(f"All operations were {phrase}")
                     break
 
-                if timeout is not None:
-                    time_elapsed = time.monotonic() - begin_time
-                    if time_elapsed > timeout:
+                if timer.is_finite():
+                    if timer.is_expired():
                         if verbose:
                             logger.info("Waiting interrupted because timeout was reached")
                         break
@@ -856,17 +859,15 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
             wait_seq=self._last_queued_seq,
-            timeout=timeout,
+            timeout=timer.remaining_time(),
             verbose=verbose,
         )
-        time_elapsed = time.monotonic() - begin_time
-        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
-        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -878,23 +879,24 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
             wait_seq=self._last_ack_seq,
-            timeout=timeout,
+            timeout=timer.remaining_time(),
             verbose=verbose,
         )
-        time_elapsed = time.monotonic() - begin_time
-        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
-        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
 
     def _wait_for_file_upload(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
         if verbose:
             logger.info("Waiting for all files to be uploaded")
 
@@ -902,7 +904,7 @@ class Run(AbstractContextManager):
             logger.warning("No timeout specified. Waiting indefinitely")
 
         upload_count_limit = 1_000_000
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None
 
@@ -925,15 +927,14 @@ class Run(AbstractContextManager):
                         verbose=verbose,
                     )
 
-                    if timeout is not None:
-                        time_elapsed = time.monotonic() - begin_time
-                        if time_elapsed > timeout:
+                    if timer.is_finite():
+                        if timer.is_expired():
                             if verbose:
                                 logger.info("Waiting interrupted because timeout was reached")
                             break
-                        sleep_time = min(sleep_time, timeout - time_elapsed)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
+                        sleep_time = min(sleep_time, timer.remaining_time() or 0)
+
+                    time.sleep(sleep_time)
                 else:
                     if verbose:
                         logger.info("All files were uploaded")
