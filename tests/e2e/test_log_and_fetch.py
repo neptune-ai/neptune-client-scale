@@ -220,9 +220,7 @@ def test_async_lag_callback():
             "test_files/file_multiple2b": "e2e/resources/binary_file",
             "test_files/file_multiple2c": b"bytes content",
         },
-        {
-            "test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"
-        },  # todo: are there invalid characters? add an error case
+        {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_path_length1-" + "a" * 46: "e2e/resources/file.txt"},  # just below file metadata limit
         {"test_files/file_large1": b"a" * (10 * 1024 * 1024)},
         {"test_files/file_empty1": "e2e/resources/empty_file"},
@@ -252,7 +250,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination1": b"Hello world"},
             {
-                "path": re.compile("[^/]+/test_files/file_destination1/[^/.]+.bin"),
+                "path": re.compile("[^/]+/test_files_file_destination1-[^/]+/[^/.]+.bin"),
                 "size_bytes": 11,
                 "mime_type": "application/octet-stream",
             },
@@ -260,7 +258,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination2": "e2e/resources/file.txt"},
             {
-                "path": re.compile("[^/]+/test_files/file_destination2/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination2-[^/]+/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "text/plain",
             },
@@ -268,7 +266,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination3": File(source="e2e/resources/file.txt")},
             {
-                "path": re.compile("[^/]+/test_files/file_destination3/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination3-[^/]+/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "text/plain",
             },
@@ -284,7 +282,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination5": File(source="e2e/resources/file.txt", size=67)},
             {
-                "path": re.compile("[^/]+/test_files/file_destination5/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination5-[^/]+/file.txt"),
                 "size_bytes": 67,
                 "mime_type": "text/plain",
             },
@@ -292,7 +290,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination6": File(source="e2e/resources/file.txt", mime_type="application/json")},
             {
-                "path": re.compile("[^/]+/test_files/file_destination6/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination6-[^/]+/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "application/json",
             },
@@ -300,7 +298,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination7": File(source="e2e/resources/binary_file")},
             {
-                "path": re.compile("[^/]+/test_files/file_destination7/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination7-[^/]+/binary_file"),
                 "size_bytes": 1024,
                 "mime_type": "application/octet-stream",
             },
@@ -308,7 +306,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination8": File(source="e2e/resources/binary_file", mime_type="audio/mpeg")},
             {
-                "path": re.compile("[^/]+/test_files/file_destination8/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination8-[^/]+/binary_file"),
                 "size_bytes": 1024,
                 "mime_type": "audio/mpeg",
             },
@@ -316,7 +314,7 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         (
             {"test_files/file_destination9": File(source="e2e/resources/binary_file", size=123)},
             {
-                "path": re.compile("[^/]+/test_files/file_destination9/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination9-[^/]+/binary_file"),
                 "size_bytes": 123,
                 "mime_type": "application/octet-stream",
             },
