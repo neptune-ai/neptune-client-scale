@@ -746,9 +746,14 @@ class Run(AbstractContextManager):
                     logger.warning(f"Skipping file attribute `{attr_name}`: Unsupported type {type(file)}")
                     continue
 
+                assert mime_type is not None
                 request = FileUploadRequest(
                     source_path=str(file_path.absolute()),
-                    destination=str(destination) or generate_destination(self._run_id, attr_name, file_path.name),
+                    destination=(
+                        generate_destination(self._run_id, attr_name, file_path.name)
+                        if destination is None
+                        else str(destination)
+                    ),
                     mime_type=str(mime_type),
                     size_bytes=int(size),
                     is_temporary=isinstance(source, bytes),
