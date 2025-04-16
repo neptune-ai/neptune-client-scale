@@ -212,7 +212,42 @@ def test_tags():
     assert operation == expected_update
 
 
+def test_files():
+    files = {f"file{i}": FileRefData(f"dest{i}", mime_type=f"mime{i}", size_bytes=i) for i in range(1000)}
+
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs={},
+        metrics=None,
+        files=files,
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=512,
+    )
+
+    result = list(builder)
+    assert len(result) > 1
+
+    # Gather all generated FileRef assigns and check if output matches input
+    all_assigns = {}
+    for op in result:
+        all_assigns.update(op.assign)
+
+    assert len(all_assigns) == len(files)
+    assert sorted(all_assigns.keys()) == sorted(files.keys())
+    for key, value in all_assigns.items():
+        file_ref = value.file_ref
+        file = files[key]
+
+        assert file_ref.path == file.destination
+        assert file_ref.mime_type == file.mime_type
+        assert file_ref.size_bytes == file.size_bytes
+
+
 @freeze_time("2024-07-30 12:12:12.000022")
+@patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", "raise")
 def test_splitting():
     # given
     max_size = 1024
@@ -225,6 +260,7 @@ def test_splitting():
         data={f"metric{v}": 7 / 9.0 * v for v in range(1000)},
         preview=True,
     )
+    files = {f"file{v}": FileRefData(destination=f"file{v}", mime_type="text/plain", size_bytes=100) for v in range(25)}
 
     # and
     builder = MetadataSplitter(
@@ -233,7 +269,7 @@ def test_splitting():
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
-        files=None,
+        files=files,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -255,7 +291,12 @@ def test_splitting():
 
     # Check if all metrics, configs and tags are present in the result
     assert sorted([key for op in result for key in op.append.keys()]) == sorted(list(metrics.data.keys()))
-    assert sorted([key for op in result for key in op.assign.keys()]) == sorted(list(configs.keys()))
+    assert sorted([key for op in result for key in op.assign.keys() if key.startswith("config")]) == sorted(
+        list(configs.keys())
+    )
+    assert sorted([key for op in result for key in op.assign.keys() if key.startswith("file")]) == sorted(
+        list(files.keys())
+    )
     assert sorted([key for op in result for key in op.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
