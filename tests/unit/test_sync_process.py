@@ -309,7 +309,7 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
     assert last_queue_seq.value == last_sequence_id
 
 
-def test_sender_thread_processes_elements_with_multiple_operations_in_batches(operations_repo):
+def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
     status_tracking_queue = PeekableQueue()
     errors_queue = ErrorsQueue()
     last_queue_seq = SharedInt(initial_value=0)
@@ -379,6 +379,52 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
 
     tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)
     assert len(tracking) == 3
+    assert tracking[-1].sequence_id == last_sequence_id
+
+    assert operations_repo.get_sequence_id_range() == (1, last_sequence_id)
+    assert last_queue_seq.value == last_sequence_id
+
+
+def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_operations(operations_repo):
+    """Verify if we calculate protobuf overhead properly for multiple small operations,
+    so that the maximum message size is not exceeded."""
+    status_tracking_queue = PeekableQueue()
+    errors_queue = ErrorsQueue()
+    last_queue_seq = SharedInt(initial_value=0)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="a" * 10,
+        family="test-family",
+        operations_repository=operations_repo,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        last_queued_seq=last_queue_seq,
+    )
+    sender_thread._backend = backend
+
+    def mock_submit(operation, family):
+        assert len(operation.SerializeToString()) <= MAX_REQUEST_SIZE_BYTES
+        return response(["a"], status_code=200)
+
+    backend.submit.side_effect = mock_submit
+
+    # and
+    operations_repo.save_create_run(CreateRun(family="test-run-id", experiment_id="Test Run"))
+
+    # Generate multiple small operations that don't fit in a single request
+    small_op = UpdateRunSnapshot(assign={"small-operation": Value(int64=1)})
+    single_op_size = len(small_op.SerializeToString())
+    num_ops = 100 + MAX_REQUEST_SIZE_BYTES // single_op_size
+    last_sequence_id = operations_repo.save_update_run_snapshots([small_op for _ in range(num_ops)])
+
+    # when
+    sender_thread.work()
+
+    # then
+    assert backend.submit.call_count > 1
+
+    tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)
+    assert len(tracking) == backend.submit.call_count
     assert tracking[-1].sequence_id == last_sequence_id
 
     assert operations_repo.get_sequence_id_range() == (1, last_sequence_id)
