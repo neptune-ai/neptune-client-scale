@@ -14,6 +14,7 @@ __all__ = (
     "Metrics",
     "StringSeries",
     "string_series_to_update_run_snapshots",
+    "proto_encoded_bytes_field_size",
 )
 
 import math

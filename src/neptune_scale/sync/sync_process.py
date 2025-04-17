@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from neptune_scale.sync.metadata_splitter import proto_encoded_bytes_field_size
 from neptune_scale.sync.operations_repository import (
     Metadata,
     Operation,
@@ -394,9 +395,6 @@ def _partition_by_type_and_size(
     batch_type: Optional[OperationType] = None
     batch_size = 0
 
-    def op_size_with_overhead(_op: Operation) -> int:
-        return _op.operation_size_bytes + 5  # 1 byte for wire type, 4 bytes for size (2mb)
-
     for op in operations:
         reset_batch = (
             # we don't mix operation types in a single batch
@@ -404,7 +402,7 @@ def _partition_by_type_and_size(
             # only one CREATE_RUN per batch
             or batch_type == OperationType.CREATE_RUN
             # batch cannot be too big
-            or batch_size + op_size_with_overhead(op) > max_batch_size
+            or batch_size + proto_encoded_bytes_field_size(op.operation_size_bytes) > max_batch_size
         )
         if reset_batch:
             if batch:
@@ -414,7 +412,7 @@ def _partition_by_type_and_size(
             batch_size = 0
 
         batch.append(op)
-        batch_size += op_size_with_overhead(op)
+        batch_size += proto_encoded_bytes_field_size(op.operation_size_bytes)
 
     if batch:
         grouped.append(batch)
