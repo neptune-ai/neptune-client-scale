@@ -20,8 +20,10 @@ __all__ = ("HostedApiClient", "ApiClient", "backend_factory", "with_api_errors_h
 import abc
 import functools
 import os
+import platform
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import version as get_version
 from json import JSONDecodeError
 from typing import Any
 
@@ -109,7 +111,7 @@ def get_config_and_token_urls(
 def create_auth_api_client(
     *, credentials: Credentials, config: ClientConfig, token_refreshing_urls: TokenRefreshingURLs, verify_ssl: bool
 ) -> AuthenticatedClient:
-    return AuthenticatedClient(
+    client = AuthenticatedClient(
         base_url=credentials.base_url,
         credentials=credentials,
         client_id=config.security.client_id,
@@ -119,6 +121,22 @@ def create_auth_api_client(
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
     )
+
+    lib_name = "neptune-scale"
+    lib_version = get_version(lib_name)
+
+    additional_metadata = {
+        "neptune-api": get_version("neptune-api"),
+        "python": platform.python_version(),
+        "os": platform.system(),
+    }
+    metadata_str = "(" + "; ".join([f"{k}={v}" for k, v in additional_metadata.items()]) + ")"
+
+    user_agent = f"{lib_name}/{lib_version} {metadata_str}"
+    logger.debug(f"User-Agent: {user_agent}")
+
+    client = client.with_headers({"User-Agent": user_agent})
+    return client
 
 
 class ApiClient(abc.ABC):
