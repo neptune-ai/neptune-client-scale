@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import itertools
 import json
 import mimetypes
 import re
@@ -22,8 +23,11 @@ from neptune_scale.sync.files import (
 from neptune_scale.sync.metadata_splitter import (
     FileRefData,
     MetadataSplitter,
+    Metrics,
+    StringSeries,
     datetime_to_proto,
     make_step,
+    string_series_to_update_run_snapshots,
 )
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
@@ -50,7 +54,6 @@ from typing import (
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
-from neptune_scale.api.metrics import Metrics
 from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,
@@ -542,6 +545,48 @@ class Run(AbstractContextManager):
         """
         self._log(configs=data)
 
+    def log_string_series(
+        self,
+        data: dict[str, str],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
+    ) -> None:
+        """
+        Logs the specified string series to a Neptune run.
+
+        Pass the metadata as a dictionary {key: value} with:
+
+        - key: path to where the metadata should be stored in the run.
+        - value: a string value to append to the series
+
+        For example, {"series/log": "message"}.
+
+        In the attribute path, each forward slash "/" nests the attribute under a namespace.
+        Use namespaces to structure the metadata into meaningful categories.
+
+        Args:
+            data: Dictionary of strings to log.
+                Each string value is associated with a step. To log multiple strings at once, pass multiple key-value
+                pairs.
+            step: Index of the log entry. Must be increasing unless preview is set to True.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (optional): Time of logging the metadata. If not provided, the current time is used. If provided,
+                and `timestamp.tzinfo` is not set, the time is assumed to be in the local timezone.
+
+        Examples:
+            ```
+            from neptune_scale import Run
+
+            with Run(...) as run:
+                run.log_string_series(
+                    data={"messages/errors": "error message", "messages/info": "Training completed"},
+                    step=1.2,
+                )
+            ```
+        """
+        self._log(timestamp=timestamp, string_series=StringSeries(data=data, step=step))
+
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
@@ -628,6 +673,7 @@ class Run(AbstractContextManager):
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Metrics] = None,
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
+        string_series: Optional[StringSeries] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -653,6 +699,11 @@ class Run(AbstractContextManager):
                 metrics.preview_completion = None
             if metrics.preview_completion is not None:
                 verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
+
+        if string_series is not None:
+            verify_type("string_series", string_series, StringSeries)
+            verify_type("string_series", string_series.data, dict)
+            verify_type("step", string_series.step, (float, int, type(None)))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -696,7 +747,12 @@ class Run(AbstractContextManager):
             remove_tags=tags_remove,
         )
 
-        operations = list(splitter)
+        operations = list(
+            itertools.chain(
+                splitter,
+                string_series_to_update_run_snapshots(string_series, timestamp),
+            )
+        )
 
         # Save file upload requests only after MetadataSplitter processed input
         if file_upload_requests:

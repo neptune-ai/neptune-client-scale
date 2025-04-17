@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import pathlib
 from pathlib import Path
 
 import azure.core.exceptions
 from azure.storage.blob import BlobClient
 
+from neptune_scale.sync.metadata_splitter import proto_encoded_bytes_field_size
 from neptune_scale.sync.operations_repository import (
     Metadata,
     Operation,
@@ -256,7 +256,7 @@ class SyncProcess(Process):
                 t.interrupt()
             for t in threads:
                 t.join(timeout=SHUTDOWN_TIMEOUT)
-                t.close()  # type: ignore
+                t.close()
 
         for thread in threads:
             thread.start()
@@ -433,9 +433,6 @@ def _partition_by_type_and_size(
     batch_type: Optional[OperationType] = None
     batch_size = 0
 
-    def op_size_with_overhead(_op: Operation) -> int:
-        return _op.operation_size_bytes + 5  # 1 byte for wire type, 4 bytes for size (2mb)
-
     for op in operations:
         reset_batch = (
             # we don't mix operation types in a single batch
@@ -443,7 +440,7 @@ def _partition_by_type_and_size(
             # only one CREATE_RUN per batch
             or batch_type == OperationType.CREATE_RUN
             # batch cannot be too big
-            or batch_size + op_size_with_overhead(op) > max_batch_size
+            or batch_size + proto_encoded_bytes_field_size(op.operation_size_bytes) > max_batch_size
         )
         if reset_batch:
             if batch:
@@ -453,7 +450,7 @@ def _partition_by_type_and_size(
             batch_size = 0
 
         batch.append(op)
-        batch_size += op_size_with_overhead(op)
+        batch_size += proto_encoded_bytes_field_size(op.operation_size_bytes)
 
     if batch:
         grouped.append(batch)
@@ -629,7 +626,7 @@ class FileUploaderThread(Daemon):
                         upload_file(file.source_path, file.mime_type, storage_urls[file.destination])
                         if file.is_temporary:
                             logger.debug(f"Removing temporary file {file.source_path}")
-                            pathlib.Path(file.source_path).unlink(missing_ok=True)
+                            Path(file.source_path).unlink(missing_ok=True)
 
                         self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
                     except NeptuneRetryableError as e:
