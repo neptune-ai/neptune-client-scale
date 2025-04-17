@@ -14,7 +14,7 @@ from pytest import mark
 from neptune_scale.api.run import Run
 
 from .conftest import (
-    random_series,
+    random_metrics,
     unique_path,
 )
 
@@ -73,10 +73,10 @@ def test_atoms(run, ro_run):
         assert ro_run[key].fetch() == value, f"The updated value for {key} does not match"
 
 
-def test_series_no_prefetch(run, ro_run):
-    path = unique_path("test_series/series_no_prefetch")
+def test_metrics_no_prefetch(run, ro_run):
+    path = unique_path("test_metrics/metrics_no_prefetch")
 
-    steps, values = random_series()
+    steps, values = random_metrics()
 
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
@@ -88,10 +88,10 @@ def test_series_no_prefetch(run, ro_run):
     assert df["value"].tolist() == values
 
 
-def test_single_series_with_prefetch(run, ro_run):
-    path = unique_path("test_series/series_with_prefetch")
+def test_single_metric_with_prefetch(run, ro_run):
+    path = unique_path("test_metrics/metrics_with_prefetch")
 
-    steps, values = random_series()
+    steps, values = random_metrics()
 
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
@@ -105,8 +105,8 @@ def test_single_series_with_prefetch(run, ro_run):
     assert df["value"].tolist() == values
 
 
-def test_multiple_series_with_prefetch(run, ro_run):
-    path_base = unique_path("test_series/many_series_with_prefetch")
+def test_multiple_metrics_with_prefetch(run, ro_run):
+    path_base = unique_path("test_metrics/many_metrics_with_prefetch")
     data = {f"{path_base}-{i}": i for i in range(20)}
 
     run.log_metrics(data, step=1)
@@ -123,12 +123,12 @@ def test_multiple_series_with_prefetch(run, ro_run):
         assert df["value"].tolist() == [data[path]]
 
 
-def test_series_fetch_and_append(run, ro_run):
-    """Fetch a series, then append, then fetch again -- the new data points should be there"""
+def test_metrics_fetch_and_append(run, ro_run):
+    """Fetch a metric, then append, then fetch again -- the new data points should be there"""
 
-    path = unique_path("test_series/series_no_prefetch")
+    path = unique_path("test_metrics/metrics_no_prefetch")
 
-    steps, values = random_series()
+    steps, values = random_metrics()
 
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
@@ -139,7 +139,7 @@ def test_series_fetch_and_append(run, ro_run):
     assert df["step"].tolist() == steps
     assert df["value"].tolist() == values
 
-    steps2, values2 = random_series(length=5, start_step=len(steps))
+    steps2, values2 = random_metrics(length=5, start_step=len(steps))
 
     for step, value in zip(steps2, values2):
         run.log_metrics(data={path: value}, step=step)
@@ -153,7 +153,7 @@ def test_series_fetch_and_append(run, ro_run):
 
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_single_non_finite_metric(value, run, ro_run):
-    path = unique_path("test_series/non_finite")
+    path = unique_path("test_metrics/non_finite")
 
     run.log_metrics(data={path: value}, step=1)
     run.wait_for_processing(SYNC_TIMEOUT)
