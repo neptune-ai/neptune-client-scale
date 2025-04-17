@@ -87,7 +87,6 @@ from neptune_scale.sync.parameters import (
     SYNC_PROCESS_SLEEP_TIME,
     SYNC_THREAD_SLEEP_TIME,
 )
-from neptune_scale.sync.util import safe_signal_name
 from neptune_scale.util import (
     Daemon,
     SharedFloat,
@@ -264,7 +263,12 @@ class SyncProcess(Process):
 
     @staticmethod
     def _handle_stop_signal(stop_event: threading.Event, signum: int, frame: Optional[FrameType]) -> None:
-        logger.debug(f"Received signal {safe_signal_name(signum)}")
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:
+            signal_name = str(signum)
+
+        logger.debug(f"Received signal {signal_name}")
         stop_event.set()
 
 
