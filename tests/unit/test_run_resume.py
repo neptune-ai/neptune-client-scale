@@ -4,7 +4,7 @@ from neptune_scale import Run
 from neptune_scale.util.generate_run_id import generate_run_id
 
 
-def test_resume_false_with_matching_fork_point(api_token, caplog):
+def test_resume_false_with_matching_fork_point(api_token):
     project = "workspace/project"
     run_id = generate_run_id()
     fork_run_id = "parent-run"
