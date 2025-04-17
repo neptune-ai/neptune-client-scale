@@ -226,6 +226,8 @@ def test_async_lag_callback():
             "test_files/file_multiple2a": "e2e/resources/file.txt",
             "test_files/file_multiple2b": "e2e/resources/binary_file",
             "test_files/file_multiple2c": b"bytes content",
+            "test_files/file_multiple2d": File(source="e2e/resources/file.txt"),
+            "test_files/file_multiple2e": File(source=b"bytes content"),
         },
         {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
@@ -353,7 +355,8 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
 
 
 @pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
-def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
+@pytest.mark.parametrize("wait_after_first_upload", [True, False])
+def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, wait_after_first_upload):
     # given
     ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
@@ -361,6 +364,10 @@ def test_assign_files_duplicate(run, run_init_kwargs, temp_dir):
 
     # when
     run.assign_files(files)
+    if wait_after_first_upload:
+        run.wait_for_processing(SYNC_TIMEOUT)
+
+    files = {"test_files/file_duplicate1": "e2e/resources/binary_file"}
     run.assign_files(files)
     run.wait_for_processing(SYNC_TIMEOUT)
 
@@ -481,9 +488,10 @@ def compare_content(actual_path, expected_content):
     with open(actual_path, "rb") as f:
         actual_content = f.read()
 
+    if isinstance(expected_content, File):
+        expected_content = expected_content.source
+
     if not isinstance(expected_content, bytes):
-        if isinstance(expected_content, File):
-            expected_content = expected_content.source
         with open(expected_content, "rb") as f:
             expected_content = f.read()
 
