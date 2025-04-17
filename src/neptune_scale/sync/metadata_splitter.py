@@ -37,7 +37,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
@@ -101,13 +100,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._add_tags = peekable(self._stream_tags(add_tags)) if add_tags else None
         self._remove_tags = peekable(self._stream_tags(remove_tags)) if remove_tags else None
 
-        self._max_update_bytes_size = (
-            max_message_bytes_size
-            - RunOperation(
-                project=self._project,
-                run_id=self._run_id,
-            ).ByteSize()
-        )
+        self._max_update_bytes_size = max_message_bytes_size
         self._has_returned = False
 
     def __iter__(self) -> MetadataSplitter:
