@@ -31,7 +31,6 @@ from .conftest import (
     unique_path,
 )
 
-FILE_API_ENABLED = os.getenv("NEPTUNE_FILE_API_ENABLED", "true").lower().strip() in ("true", "t", "yes", "y", "1")
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30
 
@@ -199,7 +198,6 @@ def test_async_lag_callback():
         assert event.is_set()
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files",
     [
@@ -255,7 +253,6 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files, expected",
     [
@@ -354,7 +351,6 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
                 assert df.loc[run_id][attribute, key] == value
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize("wait_after_first_upload", [True, False])
 def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, wait_after_first_upload):
     # given
@@ -380,7 +376,6 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files, error_type, warnings",
     [
@@ -460,7 +455,6 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, capl
         assert any(warning in message for message in caplog.messages), f"Warning '{warning}' not found in logs"
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
     # given
     ensure_test_directory()
