@@ -1040,7 +1040,7 @@ def _save_buffer_to_disk(directory_path: Path, buffer: bytes, extension: Optiona
     Save the buffer to disk in the specified directory. Return the path to the saved file.
     If provided, the extension must be in the format ".ext".
     """
-    filename = f"{str(uuid.uuid4())}" + extension if extension else ""
+    filename = f"{str(uuid.uuid4())}" + (extension or "")
     file_path = directory_path / filename
 
     with open(file_path, "wb") as file:

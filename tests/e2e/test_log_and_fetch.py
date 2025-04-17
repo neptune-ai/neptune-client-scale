@@ -235,15 +235,21 @@ def test_async_lag_callback():
         {"test_files/file_empty1": "e2e/resources/empty_file"},
         {"test_files/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
         {"test_files/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
+        {"test_files/file_metadata1": File(b"from buffer", mime_type="a" * 128)},
+        {"test_files/file_metadata1": File(b"from buffer", destination="a")},
     ],
 )
-def test_assign_files(run, run_init_kwargs, temp_dir, files):
+def test_assign_files(caplog, run, run_init_kwargs, temp_dir, files):
     # given
     ensure_test_directory()
     run_id = run_init_kwargs["run_id"]
 
     # when
-    run.assign_files(files)
+    with caplog.at_level(logging.WARNING):
+        run.assign_files(files)
+
+    assert not caplog.records, "No warnings should be logged"
+
     run.wait_for_processing(SYNC_TIMEOUT)
 
     # then
