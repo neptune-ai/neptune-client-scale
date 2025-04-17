@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import threading
 import time
 from datetime import (
@@ -9,6 +10,7 @@ from datetime import (
 
 import numpy as np
 from neptune_fetcher import ReadOnlyRun
+from neptune_fetcher.alpha import fetch_series
 from pytest import mark
 
 from neptune_scale.api.run import Run
@@ -183,3 +185,47 @@ def test_async_lag_callback():
         # Second callback should be called after logging configs
         event.wait(timeout=60)
         assert event.is_set()
+
+
+def _assert_string_series_result_equal(retrieved_df, experiment_name, logged_data: list[dict]):
+    columns = retrieved_df.loc[experiment_name]
+    for step, values in enumerate(logged_data):
+        row = columns.iloc[step]
+        assert row.to_dict() == values, f"String series differ at step {step}"
+
+
+def test_string_series_log_multiple_in_single_call(run_init_kwargs, run):
+    path = unique_path("test_string_series/string_series")
+
+    data = [
+        {f"{path}/short": f"short-string={i}", f"{path}/long": f"long-string-{i}-" + "A" * 4096} for i in range(100)
+    ]
+
+    for step, series in enumerate(data):
+        run.log_string_series(data=series, step=step)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    experiment_name = run_init_kwargs["experiment_name"]
+    retrieved = fetch_series(experiment_name, f"{re.escape(path)}/.*")
+    _assert_string_series_result_equal(retrieved, experiment_name, data)
+
+
+def test_string_series_log_single_in_multiple_calls(run_init_kwargs, run):
+    path = unique_path("test_string_series/string_series")
+
+    data_short = [{f"{path}/short": f"short-string={i}"} for i in range(100)]
+    data_long = [{f"{path}/long": f"long-string-{i}-" + "A" * 4096} for i in range(100)]
+
+    for step, series in enumerate(data_short):
+        run.log_string_series(data=series, step=step)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    for step, series in enumerate(data_long):
+        run.log_string_series(data=series, step=step)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    experiment_name = run_init_kwargs["experiment_name"]
+    retrieved = fetch_series(experiment_name, f"{re.escape(path)}/.*")
+    _assert_string_series_result_equal(
+        retrieved, experiment_name, [short | long for short, long in zip(data_short, data_long)]
+    )
