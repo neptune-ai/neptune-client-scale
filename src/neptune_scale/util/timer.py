@@ -15,10 +15,11 @@ class Timer:
         return max(0.0, self.timeout - elapsed_time)
 
     def is_expired(self) -> bool:
-        remaining_time = self.remaining_time()
-        if remaining_time is None:
+        if self.timeout is None:
             return False
-        return remaining_time <= 0.0
+
+        elapsed_time = time.monotonic() - self.start_time
+        return elapsed_time >= self.timeout
 
     def is_finite(self) -> bool:
         return self.timeout is not None
