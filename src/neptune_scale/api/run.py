@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import itertools
 import json
 import re
 from pathlib import Path
@@ -18,6 +19,7 @@ from neptune_scale.sync.metadata_splitter import (
     StringSeries,
     datetime_to_proto,
     make_step,
+    string_series_to_update_run_snapshots,
 )
 from neptune_scale.sync.operations_repository import OperationsRepository
 
@@ -682,12 +684,16 @@ class Run(AbstractContextManager):
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
-            string_series=string_series,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
-        operations = list(splitter)
+        operations = list(
+            itertools.chain(
+                splitter,
+                string_series_to_update_run_snapshots(string_series, timestamp),
+            )
+        )
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
 
         self._sequence_tracker.update_sequence_id(sequence_id)
