@@ -106,8 +106,8 @@ def unique_path(prefix):
     return f"{prefix}__{datetime.now(timezone.utc).isoformat('-', 'seconds')}__{str(uuid.uuid4())[-4:]}"
 
 
-def random_series(length=10, start_step=0):
-    """Return a 2-tuple of step and value lists, both of length `length`"""
+def random_metrics(length=10, start_step=0):
+    """Return a 2-tuple of step and float metric value lists, both of length `length`"""
     assert length > 0
     assert start_step >= 0
 
