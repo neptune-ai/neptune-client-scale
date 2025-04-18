@@ -46,9 +46,17 @@ class Daemon(threading.Thread):
                         if self._remaining_iterations is None or self._remaining_iterations > 0:
                             self._wait_condition.wait(timeout=self._sleep_time)
                 else:
+                    self.close()
                     break
         finally:
             logger.debug(f"Thread {self.name} is finished.")
+
+    def close(self) -> None:
+        """
+        This method is called after the last iteration of the thread.
+        It is only called if the last work() iteration was successful (has not raised an exception).
+        """
+        pass
 
     @abc.abstractmethod
     def work(self) -> None: ...
