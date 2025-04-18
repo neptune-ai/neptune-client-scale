@@ -184,3 +184,44 @@ def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
     logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
     logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
     logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
+
+
+LINE_LIMIT = 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    "prints, expected",
+    [
+        (["Hello"], ["Hello"]),
+        (["Hello", "World"], ["Hello", "World"]),
+        (["Hello\nWorld"], ["Hello", "World"]),
+        (["Hello\rWorld"], ["World"]),
+        (["Hello\n"], ["Hello"]),
+        (["\nHello"], ["", "Hello"]),
+        (["Hello\r"], [""]),
+        (["\rHello"], ["Hello"]),
+        (["Hello\nWorld\n"], ["Hello", "World"]),
+        (["Hello\rWorld\r"], [""]),
+        (["Hello\rWorld\rNow"], ["Now"]),
+        (["Hello\r\nWorld\r\n"], ["", ""]),
+        (["Hello\n\rWorld\n\r"], ["Hello", "World"]),
+        (["." * (2 * LINE_LIMIT + 500)], ["." * LINE_LIMIT, "." * LINE_LIMIT, "." * 500]),
+        (["." * (2 * LINE_LIMIT) + "\rHello"], ["Hello"]),
+        (["." * 1024 + "\n" + "." * (LINE_LIMIT + 500)], ["." * 1024, "." * LINE_LIMIT, "." * 500]),
+    ],
+)
+def test_console_log_capture_thread_split_long_lines(no_capture, prints, expected):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=10, logs_sink=logs_sink)
+
+    # when
+    thread.start()
+    for line in prints:
+        print(line)
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    for idx, line in enumerate(expected):
+        logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)

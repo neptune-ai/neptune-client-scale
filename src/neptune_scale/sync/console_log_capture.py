@@ -256,6 +256,11 @@ def _captured_data_to_lines(
             chunk_processed_idx = lf_pos + 1  # skip over LF
 
         if chunk_processed_idx < len(chunk):
+            cr_pos = chunk.rfind("\r", chunk_processed_idx)
+            if cr_pos != -1:
+                partial_line.clear()
+                chunk_processed_idx = cr_pos + 1  # skip over CR
+
             partial_line.write(timestamp, chunk[chunk_processed_idx:])
 
     if partial_line.timestamp and datetime.now() - partial_line.timestamp > max_delay_before_flush:
