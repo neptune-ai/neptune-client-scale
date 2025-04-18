@@ -11,12 +11,14 @@ pattern = "default-unprefixed"
 [tool.poetry.dependencies]
 python = "^3.9"
 
-neptune-api = "^0.13.0"
+neptune-api = "^0.14.0"
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
 backoff = "^2.0.0"
 click = ">=7.0"
 tqdm = "^4.21.0"
+filetype = "^1.2.0"
+azure-storage-blob = "^12.7.0"
 
 [tool.poetry]
 name = "neptune-scale"

@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import random
 import sys
 import tempfile
@@ -71,11 +72,19 @@ def run_init_kwargs(project):
 
 
 @fixture(scope="module")
-def run(project, run_init_kwargs):
+def on_error_queue():
+    return queue.Queue()
+
+
+@fixture(scope="module")
+def run(project, run_init_kwargs, on_error_queue):
     """Plain neptune_scale.Run instance. We're scoping it to "module", as it seems to be a
     good compromise, mostly because of execution time."""
 
-    run = Run(**run_init_kwargs)
+    def error_callback(error, last_seen_at):
+        on_error_queue.put(error)
+
+    run = Run(on_error_callback=error_callback, **run_init_kwargs)
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})
     run.wait_for_processing()
 

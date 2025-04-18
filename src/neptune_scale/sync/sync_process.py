@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import logging
+import pathlib
 from pathlib import Path
+
+import azure.core.exceptions
+from azure.storage.blob import BlobClient
 
 from neptune_scale.sync.operations_repository import (
     Metadata,
@@ -48,6 +52,9 @@ from neptune_scale.exceptions import (
     NeptuneAttributeTypeMismatch,
     NeptuneAttributeTypeUnsupported,
     NeptuneConnectionLostError,
+    NeptuneFileMetadataExceedsSizeLimit,
+    NeptuneFileUploadError,
+    NeptuneFileUploadTemporaryError,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -120,6 +127,7 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.STRING_VALUE_EXCEEDS_SIZE_LIMIT: NeptuneStringValueExceedsSizeLimit,
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
+    IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
 }
 
 
@@ -211,45 +219,72 @@ class SyncProcess(Process):
             last_ack_seq=self._last_ack_seq,
             last_ack_timestamp=self._last_ack_timestamp,
         )
-        threads = [sender_thread, status_thread]
+        file_uploader_thread = FileUploaderThread(
+            api_token=self._api_token,
+            project=self._project,
+            operations_repository=operations_repository,
+            errors_queue=self._errors_queue,
+        )
+        threads = [sender_thread, status_thread, file_uploader_thread]
         parent_process = psutil.Process(os.getpid()).parent()
+
+        def metadata_sending_threads_died() -> bool:
+            return not sender_thread.is_alive() or not status_thread.is_alive()
+
+        def interrupt_metadata_sending_threads() -> None:
+            if sender_thread.is_alive():
+                sender_thread.interrupt()
+
+            # we're interrupting the status thread only if
+            # - it's alive, and
+            # - the status tracking queue is empty, and
+            # - we know it will stay empty (since sender_thread is dead)
+            elif status_thread.is_alive() and status_tracking_queue.peek(max_size=1) is None:
+                status_thread.interrupt()
+
+        def file_uploader_thread_died() -> bool:
+            return not file_uploader_thread.is_alive()
+
+        def interrupt_file_uploader_thread() -> None:
+            file_uploader_thread.interrupt()
+
+        def all_threads_died() -> bool:
+            return all(not t.is_alive() for t in threads)
+
+        def close_all_threads() -> None:
+            for t in threads:
+                t.interrupt()
+            for t in threads:
+                t.join(timeout=SHUTDOWN_TIMEOUT)
+                t.close()  # type: ignore
 
         for thread in threads:
             thread.start()
 
         try:
-            sender_thread_error_logged = False
             while not stop_event.is_set():
                 for thread in threads:
                     thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
+
+                if metadata_sending_threads_died():
+                    interrupt_file_uploader_thread()
+                    interrupt_metadata_sending_threads()
+
+                if file_uploader_thread_died():
+                    interrupt_metadata_sending_threads()
+
+                if all_threads_died():
+                    break
 
                 if not self._is_process_running(parent_process):
                     logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
                     break
 
-                if not sender_thread.is_alive():
-                    if status_tracking_queue.peek(max_size=1) is None:
-                        logger.error("SyncProcess: sender thread closed unexpectedly. Exiting")
-                        break
-                    elif not sender_thread_error_logged:
-                        logger.error(
-                            "SyncProcess: sender thread closed unexpectedly. Waiting for status tracking thread to finish"
-                        )
-                        sender_thread_error_logged = True
-
-                if not status_thread.is_alive():
-                    logger.error("SyncProcess: status tracking thread closed unexpectedly. Exiting")
-                    break
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
         finally:
             logger.info("Data synchronization stopping")
-            for thread in threads:
-                thread.interrupt()
-
-            for thread in threads:
-                thread.join(timeout=SHUTDOWN_TIMEOUT)
-                thread.close()  # type: ignore
+            close_all_threads()
             operations_repository.close(cleanup_files=False)
         logger.info("Data synchronization finished")
 
@@ -377,7 +412,7 @@ class SenderThread(Daemon):
 
 
 def _raise_exception(status_code: int) -> None:
-    logger.error("HTTP response error: %s", status_code)
+    logger.warning("HTTP response error: %s", status_code)
     if status_code == 403:
         raise NeptuneUnauthorizedError()
     elif status_code == 408:
@@ -559,3 +594,94 @@ class StatusTrackingThread(Daemon):
     @staticmethod
     def _is_fatal_error(ex: Exception) -> bool:
         return isinstance(ex, NeptuneProjectError) or isinstance(ex, NeptuneRunError)
+
+
+class FileUploaderThread(Daemon):
+    def __init__(
+        self, project: str, api_token: str, operations_repository: OperationsRepository, errors_queue: ErrorsQueue
+    ) -> None:
+        super().__init__(name="FileUploaderThread", sleep_time=1)
+
+        self._project = project
+        self._neptune_api_token = api_token
+        self._operations_repository = operations_repository
+        self._errors_queue = errors_queue
+
+        self._api_client: Optional[ApiClient] = None
+
+    def close(self) -> None:
+        if self._api_client is not None:
+            self._api_client.close()
+
+    def work(self) -> None:
+        try:
+            while file_upload_requests := self._operations_repository.get_file_upload_requests(10):
+                logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
+
+                if not self._api_client:
+                    self._api_client = backend_factory(self._neptune_api_token)
+
+                destination_paths = [file.destination for file in file_upload_requests]
+                storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
+
+                for file in file_upload_requests:
+                    try:
+                        upload_file(file.source_path, file.mime_type, storage_urls[file.destination])
+                        if file.is_temporary:
+                            logger.debug(f"Removing temporary file {file.source_path}")
+                            pathlib.Path(file.source_path).unlink(missing_ok=True)
+
+                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+                    except NeptuneRetryableError as e:
+                        self._errors_queue.put(e)
+                    except Exception as e:
+                        # Fatal failure. Do not retry the file, but keep it on disk.
+                        logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
+                        self._errors_queue.put(NeptuneFileUploadError())
+                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+        except NeptuneRetryableError as e:
+            self._errors_queue.put(e)
+        except Exception as e:
+            logger.error("Error in file uploader thread", exc_info=e)
+            self._errors_queue.put(e)
+            self.interrupt()
+            raise NeptuneSynchronizationStopped() from e
+
+
+@backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
+@with_api_errors_handling
+def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: list[str]) -> dict[str, str]:
+    """Fetch Azure urls for storing files. Return a dict of target_path -> upload url"""
+    logger.debug("Fetching file storage urls")
+    response = client.fetch_file_storage_urls(paths=destination_paths, project=project, mode="write")
+    status_code = response.status_code
+    if status_code != 200:
+        _raise_exception(status_code)
+
+    if response.parsed is None:
+        raise NeptuneUnexpectedResponseError("Server response is empty")
+
+    return {file.path: file.url for file in response.parsed.files}
+
+
+def upload_file(local_path: str, mime_type: str, storage_url: str) -> None:
+    logger.debug(f"Start: upload file {local_path}")
+
+    try:
+        size_bytes = Path(local_path).stat().st_size
+        with open(local_path, "rb") as file:
+            client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
+
+            client.upload_blob(
+                file,
+                content_type=mime_type,
+                overwrite=True,
+                length=size_bytes,
+            )
+    except azure.core.exceptions.AzureError as e:
+        logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
+        raise NeptuneFileUploadTemporaryError() from e
+    except Exception as e:
+        raise e
+
+    logger.debug(f"Done: upload file {local_path}")

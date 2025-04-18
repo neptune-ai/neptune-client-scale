@@ -7,17 +7,29 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import mimetypes
 import re
+import uuid
 from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.sync.files import (
+    generate_destination,
+    guess_mime_type_from_bytes,
+    guess_mime_type_from_file,
+)
 from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
     MetadataSplitter,
     datetime_to_proto,
     make_step,
 )
-from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
+    OperationsRepository,
+)
+from neptune_scale.types import File
 
 __all__ = ["Run"]
 
@@ -62,6 +74,7 @@ from neptune_scale.sync.parameters import (
     MAX_RUN_ID_LENGTH,
     MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
     MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
+    OPERATION_REPOSITORY_POLL_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.sequence_tracker import SequenceTracker
@@ -206,7 +219,12 @@ class Run(AbstractContextManager):
 
         if mode in ("offline", "async"):
             log_directory = log_directory or os.getenv(envs.LOG_DIRECTORY)
-            operations_repository_path = _resolve_run_db_path(self._project, self._run_id, log_directory)
+            self._storage_directory_path: Optional[Path] = _resolve_run_storage_directory_path(
+                self._project, self._run_id, log_directory
+            )
+            self._storage_directory_path.mkdir(parents=True, exist_ok=True)
+
+            operations_repository_path = self._storage_directory_path / "run_operations.sqlite3"
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
                 db_path=operations_repository_path,
             )
@@ -220,6 +238,7 @@ class Run(AbstractContextManager):
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._logging_enabled = True
         else:
+            self._storage_directory_path = None
             self._operations_repo = None
             self._sequence_tracker = None
             self._logging_enabled = False
@@ -333,6 +352,13 @@ class Run(AbstractContextManager):
 
         if self._errors_queue is not None:
             self._errors_queue.close()
+
+        if self._storage_directory_path is not None:
+            try:
+                logger.debug(f"Removing directory {self._storage_directory_path}")
+                self._storage_directory_path.rmdir()
+            except Exception as e:
+                logger.info(f"Kept directory {self._storage_directory_path}: {e}")
 
     def terminate(self) -> None:
         """
@@ -554,6 +580,22 @@ class Run(AbstractContextManager):
         name = "sys/tags" if not group_tags else "sys/group_tags"
         self._log(tags_remove={name: tags})
 
+    def assign_files(self, files: dict[str, Union[str, Path, bytes, File]]) -> None:
+        """
+        Assigns single file values to the specified attributes. Any existing values for these attributes will be
+        overwritten.
+
+        If the value is a simple source type (str, Path, bytes), it's used directly.
+        Mime type and size are determined from the provided source (file or bytes buffer).
+
+        If the value is a `File` object, its `source` field is used, along with the optional `destination`,
+        `mime_type`, and `size_bytes` fields. Any fields not provided will be determined from the provided source.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects
+        """
+        self._log(files=files)
+
     def log(
         self,
         step: Optional[Union[float, int]] = None,
@@ -585,6 +627,7 @@ class Run(AbstractContextManager):
         timestamp: Optional[datetime] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Metrics] = None,
+        files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -592,6 +635,7 @@ class Run(AbstractContextManager):
         verify_type("configs", configs, (dict, type(None)))
         verify_type("tags_add", tags_add, (dict, type(None)))
         verify_type("tags_remove", tags_remove, (dict, type(None)))
+        verify_type("files", files, (dict, type(None)))
 
         if metrics is not None:
             verify_type("metrics", metrics, Metrics)
@@ -627,20 +671,99 @@ class Run(AbstractContextManager):
         elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
+        file_upload_requests = self._prepare_files_for_upload(files) if files else None
+        file_data = (
+            {
+                attr_name: FileRefData(
+                    destination=req.destination,
+                    mime_type=req.mime_type,
+                    size_bytes=req.size_bytes,
+                )
+                for attr_name, req in file_upload_requests
+            }
+            if file_upload_requests
+            else None
+        )
+
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
             timestamp=timestamp,
             configs=configs,
             metrics=metrics,
+            files=file_data,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
 
         operations = list(splitter)
-        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
 
+        # Save file upload requests only after MetadataSplitter processed input
+        if file_upload_requests:
+            self._operations_repo.save_file_upload_requests([req[1] for req in file_upload_requests])
+
+        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
         self._sequence_tracker.update_sequence_id(sequence_id)
+
+    def _prepare_files_for_upload(
+        self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
+    ) -> list[tuple[str, FileUploadRequest]]:
+        """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
+
+        All buffers passed as arguments are saved to disk in the run's storage directory.
+        Mime types and file sizes are populated if not provided by the user.
+
+        Any errors during processing are logged with warning and the file is skipped.
+        """
+        if files is None:
+            return []
+
+        result = []
+        for attr_name, file in files.items():
+            try:
+                if isinstance(file, File):
+                    source, mime_type, destination, size = file.source, file.mime_type, file.destination, file.size
+                else:
+                    source = file
+                    mime_type = size = destination = None
+
+                if isinstance(source, bytes):
+                    size = size or len(source)
+                    mime_type = mime_type or guess_mime_type_from_bytes(source, destination)
+                    file_path = _save_buffer_to_disk(
+                        self._storage_directory_path,  # type: ignore
+                        source,
+                        mimetypes.guess_extension(mime_type) if mime_type else None,
+                    )
+                    logger.debug(f"Saved temporary file {file_path} for attribute `{attr_name}`")
+                elif isinstance(source, (str, Path)):
+                    file_path = Path(source)
+                    mime_type = mime_type or guess_mime_type_from_file(file_path, destination)
+                    if mime_type is None:
+                        raise Exception(f"Cannot determine mime type for file '{file_path}'")
+                    size = size or file_path.stat().st_size
+                else:
+                    logger.warning(f"Skipping file attribute `{attr_name}`: Unsupported type {type(file)}")
+                    continue
+
+                assert mime_type is not None
+                request = FileUploadRequest(
+                    source_path=str(file_path.absolute()),
+                    destination=(
+                        generate_destination(self._run_id, attr_name, file_path.name)
+                        if destination is None
+                        else str(destination)
+                    ),
+                    mime_type=str(mime_type),
+                    size_bytes=int(size),
+                    is_temporary=isinstance(source, bytes),
+                )
+                result.append((attr_name, request))
+            except Exception as e:
+                logger.warning(f"Skipping file attribute `{attr_name}`: {e}")
+                continue
+
+        return result
 
     def _wait(
         self,
@@ -656,7 +779,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        begin_time = time.time()
+        begin_time = time.monotonic()
         wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
         last_print_timestamp: Optional[float] = None
 
@@ -675,6 +798,9 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
+                if timeout is not None:
+                    time_elapsed = time.monotonic() - begin_time
+                    wait_time = max(0, min(wait_time, timeout - time_elapsed))
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -704,15 +830,20 @@ class Run(AbstractContextManager):
                     )
                 else:
                     # Reaching the last queued sequence ID means that all operations were submitted
-                    if value >= last_queued_sequence_id or (timeout is not None and time.time() - begin_time > timeout):
+                    if verbose:
+                        logger.info(f"All operations were {phrase}")
+                    break
+
+                if timeout is not None:
+                    time_elapsed = time.monotonic() - begin_time
+                    if time_elapsed > timeout:
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
                         break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
                 return
-
-        if verbose:
-            logger.info(f"All operations were {phrase}")
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -725,6 +856,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
@@ -732,6 +864,9 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -743,6 +878,7 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
+        begin_time = time.monotonic()
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
@@ -750,6 +886,62 @@ class Run(AbstractContextManager):
             timeout=timeout,
             verbose=verbose,
         )
+        time_elapsed = time.monotonic() - begin_time
+        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
+        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+
+    def _wait_for_file_upload(
+        self,
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+    ) -> None:
+        if verbose:
+            logger.info("Waiting for all files to be uploaded")
+
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        upload_count_limit = 1_000_000
+        begin_time = time.monotonic()
+        sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
+        last_print_timestamp: Optional[float] = None
+
+        while True:
+            try:
+                with self._lock:
+                    if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        return
+                assert self._operations_repo is not None
+
+                upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
+
+                if upload_count > 0:
+                    last_print_timestamp = print_message(
+                        "Waiting for remaining %d%s file(s) to be uploaded",
+                        upload_count,
+                        "" if upload_count < upload_count_limit else "+",
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+
+                    if timeout is not None:
+                        time_elapsed = time.monotonic() - begin_time
+                        if time_elapsed > timeout:
+                            if verbose:
+                                logger.info("Waiting interrupted because timeout was reached")
+                            break
+                        sleep_time = min(sleep_time, timeout - time_elapsed)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    if verbose:
+                        logger.info("All files were uploaded")
+                    break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
 
     def get_run_url(self) -> str:
         """
@@ -797,14 +989,18 @@ def _sanitize_path_component(component: str) -> str:
     return result[:64]
 
 
-def _resolve_run_db_path(project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]) -> Path:
+def _resolve_run_storage_directory_path(
+    project: str, run_id: str, user_provided_log_dir: Optional[Union[str, Path]]
+) -> Path:
+    """Return an absolute path to a directory where a Run should store its files."""
+
     sanitized_project = _sanitize_path_component(project)
     sanitized_run_id = _sanitize_path_component(run_id)
 
     timestamp_ns = int(time.time() * 1e9)
-    directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
+    base_directory = Path(os.getcwd()) / ".neptune" if user_provided_log_dir is None else Path(user_provided_log_dir)
 
-    return (directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}.sqlite3").absolute()
+    return (base_directory / f"{sanitized_project}_{sanitized_run_id}_{timestamp_ns}").absolute()
 
 
 def _get_run_url(
@@ -837,3 +1033,17 @@ def _extract_api_url_from_token(api_token: str) -> str:
         return json_data["api_url"].rstrip("/")  # type: ignore
     except (binascii.Error, json.JSONDecodeError, KeyError):
         raise ValueError("Unable to extract Neptune URL from the provided API token")
+
+
+def _save_buffer_to_disk(directory_path: Path, buffer: bytes, extension: Optional[str]) -> Path:
+    """
+    Save the buffer to disk in the specified directory. Return the path to the saved file.
+    If provided, the extension must be in the format ".ext".
+    """
+    filename = f"{str(uuid.uuid4())}" + (extension or "")
+    file_path = directory_path / filename
+
+    with open(file_path, "wb") as file:
+        file.write(buffer)
+
+    return file_path

@@ -23,7 +23,10 @@ from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneUnableToLogData,
 )
-from neptune_scale.sync.metadata_splitter import MetadataSplitter
+from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
+    MetadataSplitter,
+)
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -35,6 +38,7 @@ def test_empty():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -65,6 +69,7 @@ def test_configs():
             "some/tags": {"tag1", "tag2"},
         },
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -139,6 +144,7 @@ def test_metrics(preview, preview_completion, expected_preview_proto):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -169,6 +175,7 @@ def test_tags():
         timestamp=datetime.now(),
         configs={},
         metrics=None,
+        files=None,
         add_tags={
             "some/tags": {"tag1", "tag2"},
             "some/other_tags2": {"tag2", "tag3"},
@@ -205,7 +212,42 @@ def test_tags():
     assert operation == expected_update
 
 
+def test_files():
+    files = {f"file{i}": FileRefData(f"dest{i}", mime_type=f"mime{i}", size_bytes=i) for i in range(1000)}
+
+    builder = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs={},
+        metrics=None,
+        files=files,
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=512,
+    )
+
+    result = list(builder)
+    assert len(result) > 1
+
+    # Gather all generated FileRef assigns and check if output matches input
+    all_assigns = {}
+    for op in result:
+        all_assigns.update(op.assign)
+
+    assert len(all_assigns) == len(files)
+    assert sorted(all_assigns.keys()) == sorted(files.keys())
+    for key, value in all_assigns.items():
+        file_ref = value.file_ref
+        file = files[key]
+
+        assert file_ref.path == file.destination
+        assert file_ref.mime_type == file.mime_type
+        assert file_ref.size_bytes == file.size_bytes
+
+
 @freeze_time("2024-07-30 12:12:12.000022")
+@patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", "raise")
 def test_splitting():
     # given
     max_size = 1024
@@ -218,6 +260,7 @@ def test_splitting():
         data={f"metric{v}": 7 / 9.0 * v for v in range(1000)},
         preview=True,
     )
+    files = {f"file{v}": FileRefData(destination=f"file{v}", mime_type="text/plain", size_bytes=100) for v in range(25)}
 
     # and
     builder = MetadataSplitter(
@@ -226,6 +269,7 @@ def test_splitting():
         timestamp=timestamp,
         configs=configs,
         metrics=metrics,
+        files=files,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -247,7 +291,12 @@ def test_splitting():
 
     # Check if all metrics, configs and tags are present in the result
     assert sorted([key for op in result for key in op.append.keys()]) == sorted(list(metrics.data.keys()))
-    assert sorted([key for op in result for key in op.assign.keys()]) == sorted(list(configs.keys()))
+    assert sorted([key for op in result for key in op.assign.keys() if key.startswith("config")]) == sorted(
+        list(configs.keys())
+    )
+    assert sorted([key for op in result for key in op.assign.keys() if key.startswith("file")]) == sorted(
+        list(files.keys())
+    )
     assert sorted([key for op in result for key in op.modify_sets.keys()]) == sorted(
         list(add_tags.keys()) + list(remove_tags.keys())
     )
@@ -270,6 +319,7 @@ def test_split_large_tags():
         timestamp=timestamp,
         configs=fields,
         metrics=metrics,
+        files=None,
         add_tags=add_tags,
         remove_tags=remove_tags,
         max_message_bytes_size=max_size,
@@ -313,6 +363,7 @@ def test_raise_on_non_finite_float_metrics(value):
         timestamp=datetime.now(),
         configs={},
         metrics=metrics,
+        files=None,
         add_tags={},
         remove_tags={},
         max_message_bytes_size=1024,
@@ -344,6 +395,7 @@ def test_skip_non_finite_float_metrics(value, caplog):
             timestamp=datetime.now(),
             configs={},
             metrics=metrics,
+            files=None,
             add_tags={},
             remove_tags={},
             max_message_bytes_size=1024,
@@ -362,12 +414,17 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
-@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics"))
+@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "files"))
 def test_invalid_path_types(caplog, action, invalid_path, param_name):
     data = {invalid_path: object()}
+    kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files")}
 
-    kwargs = {name: None for name in ("configs", "metrics", "add_tags", "remove_tags")}
-    kwargs[param_name] = data if param_name != "metrics" else Metrics(step=1, data=data)
+    if param_name == "metrics":
+        data = Metrics(step=1, data=data)
+    elif param_name == "files":
+        data = {invalid_path: FileRefData(destination="x", mime_type="text/plain", size_bytes=0)}
+
+    kwargs[param_name] = data
 
     splitter = MetadataSplitter(
         project="workspace/project",
@@ -399,6 +456,7 @@ def test_invalid_metrics_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=Metrics(step=1, data=metrics),
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -428,6 +486,7 @@ def test_invalid_configs_values(caplog, action, invalid_value):
         timestamp=datetime.now(),
         configs=configs,
         metrics=None,
+        files=None,
         add_tags={},
         remove_tags={},
     )
@@ -458,6 +517,7 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
         timestamp=datetime.now(),
         configs=None,
         metrics=None,
+        files=None,
         add_tags=tags if operation == "add" else {},
         remove_tags=tags if operation == "remove" else {},
     )
@@ -473,3 +533,39 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
             assert len(result[0].modify_sets) == 1
             assert "ok" in result[0].modify_sets
             assert "Tags must be a" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize(
+    "invalid_value",
+    (
+        FileRefData(destination="D" * 1024, mime_type="M", size_bytes=0),
+        FileRefData(destination="D", mime_type="M" * 1024, size_bytes=0),
+    ),
+)
+def test_too_long_files_values(caplog, action, invalid_value):
+    # Always have one valid value under the key "ok- so we can check that the
+    # "drop" action does not drop valid values.
+    files = {"bad": invalid_value, "ok": FileRefData("destination", "mime_type", 0)}
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        configs=None,
+        metrics=None,
+        files=files,
+        add_tags={},
+        remove_tags={},
+    )
+
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(NeptuneUnableToLogData, match="must be a string of at most"):
+                next(splitter)
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(splitter)
+
+            assert len(result[0].assign) == 1
+            assert "ok" in result[0].assign
+            assert "must be a string of at most" in caplog.text
