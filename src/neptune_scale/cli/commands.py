@@ -46,13 +46,20 @@ def main() -> None:
     metavar="<api-token>",
     help="API token for authentication. Overrides NEPTUNE_API_TOKEN environment variable",
 )
+@click.option(
+    "--timeout",
+    type=float,
+    default=None,
+    help="Timeout for the sync operation in seconds. Default is None (no timeout).",
+)
 def sync(
     run_log_file: str,
     api_token: Optional[str],
+    timeout: Optional[float],
 ) -> None:
     if api_token is None:
         raise NeptuneApiTokenNotProvided()
 
     run_log_path = Path(run_log_file)
 
-    sync_all(run_log_path, api_token)
+    sync_all(run_log_path, api_token, timeout=timeout)
