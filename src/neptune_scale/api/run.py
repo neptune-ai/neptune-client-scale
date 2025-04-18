@@ -15,6 +15,7 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
+from neptune_scale.sync.console_log_capture import ConsoleLogCaptureThread
 from neptune_scale.sync.files import (
     generate_destination,
     guess_mime_type_from_bytes,
@@ -239,11 +240,19 @@ class Run(AbstractContextManager):
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
+            self._console_log_capture: Optional[ConsoleLogCaptureThread] = ConsoleLogCaptureThread(
+                run_id=run_id,
+                logs_flush_frequency_sec=1,
+                logs_sink=lambda data, step, timestamp: self._log(
+                    timestamp=timestamp, string_series=StringSeries(data, step)
+                ),
+            )
             self._logging_enabled = True
         else:
             self._storage_directory_path = None
             self._operations_repo = None
             self._sequence_tracker = None
+            self._console_log_capture = None
             self._logging_enabled = False
 
         if mode == "async":
@@ -312,6 +321,10 @@ class Run(AbstractContextManager):
                 fork_step=fork_step,
             )
 
+        # enable stdout / stderr logging at the end of the constructor, when everything is ready
+        if self._console_log_capture is not None:
+            self._console_log_capture.start()
+
     def _handle_sync_process_death(self) -> None:
         with self._lock:
             if not self._is_closing:
@@ -349,6 +362,10 @@ class Run(AbstractContextManager):
             # result in a "cannot join current thread" exception.
             if threading.current_thread() != self._errors_monitor:
                 self._errors_monitor.join()
+
+        if self._console_log_capture is not None:
+            self._console_log_capture.interrupt(remaining_iterations=1 if wait else 0)
+            self._console_log_capture.join()
 
         if self._operations_repo is not None:
             self._operations_repo.close(cleanup_files=True)
