@@ -12,7 +12,7 @@ from neptune_scale.cli import sync
 from neptune_scale.exceptions import NeptuneUnableToLogData
 
 from .conftest import (
-    random_series,
+    random_metrics,
     unique_path,
 )
 
@@ -74,7 +74,7 @@ def test_sync_series(run_init_kwargs, ro_run):
 
         path = unique_path("test_series/series_no_prefetch")
 
-        steps, values = random_series()
+        steps, values = random_metrics()
         for step, value in zip(steps, values):
             run.log_metrics(data={path: value}, step=step)
 
