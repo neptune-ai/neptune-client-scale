@@ -18,12 +18,16 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 )
 from pytest import mark
 
-from neptune_scale.api.metrics import Metrics
 from neptune_scale.exceptions import (
     NeptuneFloatValueNanInfUnsupported,
     NeptuneUnableToLogData,
 )
-from neptune_scale.sync.metadata_splitter import MetadataSplitter
+from neptune_scale.sync.metadata_splitter import (
+    MetadataSplitter,
+    Metrics,
+    StringSeries,
+    string_series_to_update_run_snapshots,
+)
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -473,3 +477,62 @@ def test_invalid_tags_values(caplog, action, operation, invalid_value):
             assert len(result[0].modify_sets) == 1
             assert "ok" in result[0].modify_sets
             assert "Tags must be a" in caplog.text
+
+
+@freeze_time("2024-07-30 12:12:12.000022")
+def test_string_series_to_operations():
+    max_size = 512
+    string_series = StringSeries(data={f"string{i}": f"value{i}" for i in range(1000)}, step=1)
+    timestamp = datetime.now()
+    updates = string_series_to_update_run_snapshots(string_series, timestamp=timestamp, max_size=max_size)
+
+    result = list(updates)
+    assert len(result) > 1
+
+    assert all(len(op.SerializeToString()) <= max_size for op in result)
+    assert all(op.step.whole == 1 for op in result)
+    assert all(op.timestamp == Timestamp(seconds=1722341532, nanos=21934) for op in result)
+
+    assert all(not op.HasField("preview") for op in result), "preview should not be present"
+    assert all(not op.assign for op in result), "no assigns should be set"
+    assert all(not op.modify_sets for op in result), "no modify_sets should be set"
+
+    # Gather all UpdateRunSnapshot.append data and compare against input
+    append_values = {key: value.string for op in result for key, value in op.append.items()}
+    assert append_values == string_series.data, "aggregated values are different"
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
+def test_string_series_invalid_paths(caplog, action, invalid_path):
+    data = StringSeries(data={invalid_path: object()}, step=1)
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(NeptuneUnableToLogData, match="paths must be"):
+                list(string_series_to_update_run_snapshots(data, datetime.now()))
+        else:
+            with caplog.at_level("WARNING"):
+                list(string_series_to_update_run_snapshots(data, datetime.now()))
+            assert "paths must be" in caplog.text
+
+
+@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize(
+    "invalid_value",
+    (1204 * 1024 + 1, None, {"a-dict": 1}, 1, 1.0, object(), [], set, tuple(), datetime.now()),
+    # Don't let pytest print large strings in case of failure
+    ids=lambda val: f"<{len(val)}-byte string>" if isinstance(val, str) else None,
+)
+def test_string_series_invalid_values(caplog, action, invalid_value):
+    data = StringSeries(data={"bad-value": invalid_value, "valid-value": "value-that-must-not-be-dropped"}, step=1)
+    with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
+        if action == "raise":
+            with pytest.raises(NeptuneUnableToLogData, match="values must be"):
+                list(string_series_to_update_run_snapshots(data, datetime.now()))
+        else:
+            with caplog.at_level("WARNING"):
+                result = list(string_series_to_update_run_snapshots(data, datetime.now()))
+
+            assert len(result[0].append) == 1
+            assert "valid-value" in result[0].append
+            assert "values must be" in caplog.text
