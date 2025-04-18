@@ -1,6 +1,7 @@
 # ruff: noqa: T201
 import importlib
 import sys
+import time
 from unittest.mock import (
     ANY,
     Mock,
@@ -210,7 +211,7 @@ LINE_LIMIT = 1024 * 1024
         (["." * 1024 + "\n" + "." * (LINE_LIMIT + 500)], ["." * 1024, "." * LINE_LIMIT, "." * 500]),
     ],
 )
-def test_console_log_capture_thread_split_long_lines(no_capture, prints, expected):
+def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=10, logs_sink=logs_sink)
@@ -219,6 +220,33 @@ def test_console_log_capture_thread_split_long_lines(no_capture, prints, expecte
     thread.start()
     for line in prints:
         print(line)
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    for idx, line in enumerate(expected):
+        logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+
+
+@pytest.mark.parametrize(
+    "prints, expected",
+    [
+        (["Hello"], ["Hello"]),
+        (["Hello", "World"], ["HelloWorld"]),
+        (["."] * 10, ["." * 10]),
+    ],
+)
+def test_console_log_capture_thread_merge_lines(no_capture, prints, expected):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=2, logs_sink=logs_sink)
+
+    # when
+    thread.start()
+    for line in prints:
+        print(line, end="")
+
+    time.sleep(4)
     thread.interrupt(remaining_iterations=1)
     thread.join()
 
