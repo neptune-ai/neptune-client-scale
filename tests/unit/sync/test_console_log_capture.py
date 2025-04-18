@@ -141,45 +141,46 @@ def test_console_log_capture_thread_captures_stdout(capsys):
         logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
 
 
-def test_console_log_capture_thread_captures_stderr(capsys):
+@pytest.fixture
+def no_capture(capsys):
     with capsys.disabled():
         importlib.reload(neptune_scale.sync.console_log_capture)
-
-        # given
-        logs_sink = Mock()
-        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
-
-        # when
-        thread.start()
-        print("Hello", file=sys.stderr)
-        print("World", file=sys.stderr)
-        thread.interrupt(remaining_iterations=1)
-        thread.join()
-
-        # then
-        logs_sink.assert_any_call({"monitoring/stderr": "Hello"}, 1, ANY)
-        logs_sink.assert_any_call({"monitoring/stderr": "World"}, 2, ANY)
+        yield
 
 
-def test_console_log_capture_thread_captures_both_stdout_and_stderr(capsys):
-    with capsys.disabled():
-        importlib.reload(neptune_scale.sync.console_log_capture)
+def test_console_log_capture_thread_captures_stderr(no_capture):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
 
-        # given
-        logs_sink = Mock()
-        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    # when
+    thread.start()
+    print("Hello", file=sys.stderr)
+    print("World", file=sys.stderr)
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
 
-        # when
-        thread.start()
-        print("Hello stdout")
-        print("Hello stderr", file=sys.stderr)
-        print("World stdout")
-        print("World stderr", file=sys.stderr)
-        thread.interrupt(remaining_iterations=1)
-        thread.join()
+    # then
+    logs_sink.assert_any_call({"monitoring/stderr": "Hello"}, 1, ANY)
+    logs_sink.assert_any_call({"monitoring/stderr": "World"}, 2, ANY)
 
-        # then
-        logs_sink.assert_any_call({"monitoring/stdout": "Hello stdout"}, 1, ANY)
-        logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
-        logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
-        logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
+
+def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+
+    # when
+    thread.start()
+    print("Hello stdout")
+    print("Hello stderr", file=sys.stderr)
+    print("World stdout")
+    print("World stderr", file=sys.stderr)
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    logs_sink.assert_any_call({"monitoring/stdout": "Hello stdout"}, 1, ANY)
+    logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
+    logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
+    logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
