@@ -1,11 +1,14 @@
 # ruff: noqa: T201
-
+import importlib
 import sys
 from unittest.mock import (
     ANY,
     Mock,
 )
 
+import pytest
+
+import neptune_scale.sync.console_log_capture
 from neptune_scale.sync.console_log_capture import (
     ConsoleLogCaptureThread,
     StreamWithMemory,
@@ -44,56 +47,139 @@ def test_stream_with_memory_passes_data_to_subscriber():
     assert [line for _, line in data] == ["Hello", "World"]
 
 
-def test_console_log_capture_thread_captures_stdout():
+def test_stream_with_memory_passes_data_to_subscriber_with_multiple_subscribers():
     # given
-    logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    original_stream = Mock()
+    original_stream.write = Mock(side_effect=lambda x: len(x))
+    stream = StreamWithMemory(original_stream)
+    subscriber_id_1 = "subscriber_id1"
+    subscriber_id_2 = "subscriber_id2"
 
     # when
-    thread.start()
-    print("Hello")
-    print("World")
-    thread.interrupt(remaining_iterations=1)
-    thread.join()
+    stream.register_subscriber(subscriber_id_1)
+    stream.register_subscriber(subscriber_id_2)
+    stream.write("Hello")
+    stream.write("World")
 
     # then
-    logs_sink.assert_any_call({"monitoring/stdout": "Hello"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
+    data_1 = stream.get_buffered_data(subscriber_id_1)
+    data_2 = stream.get_buffered_data(subscriber_id_2)
+
+    assert [line for _, line in data_1] == ["Hello", "World"]
+    assert [line for _, line in data_2] == ["Hello", "World"]
 
 
-def test_console_log_capture_thread_captures_stderr():
+def test_stream_with_memory_passes_data_to_subscriber_with_multiple_writes():
     # given
-    logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    original_stream = Mock()
+    original_stream.write = Mock(side_effect=lambda x: len(x))
+    stream = StreamWithMemory(original_stream)
+    subscriber_id = "subscriber_id"
 
     # when
-    thread.start()
-    print("Hello", file=sys.stderr)
-    print("World", file=sys.stderr)
-    thread.interrupt(remaining_iterations=1)
-    thread.join()
+    stream.register_subscriber(subscriber_id)
+    stream.write("Hello")
+    stream.write("World")
 
     # then
-    logs_sink.assert_any_call({"monitoring/stderr": "Hello"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "World"}, 2, ANY)
-
-
-def test_console_log_capture_thread_captures_both_stdout_and_stderr():
-    # given
-    logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    data = stream.get_buffered_data(subscriber_id)
+    assert [line for _, line in data] == ["Hello", "World"]
 
     # when
-    thread.start()
-    print("Hello stdout")
-    print("Hello stderr", file=sys.stderr)
-    print("World stdout")
-    print("World stderr", file=sys.stderr)
-    thread.interrupt(remaining_iterations=1)
-    thread.join()
+    stream.write("Hello 2")
+    stream.write("World 2")
 
     # then
-    logs_sink.assert_any_call({"monitoring/stdout": "Hello stdout"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
+    data = stream.get_buffered_data(subscriber_id)
+    assert [line for _, line in data] == ["Hello 2", "World 2"]
+
+
+def test_stream_with_memory_passes_data_to_subscriber_until_unsubscribe():
+    # given
+    original_stream = Mock()
+    original_stream.write = Mock(side_effect=lambda x: len(x))
+    stream = StreamWithMemory(original_stream)
+    subscriber_id = "subscriber_id"
+
+    # when
+    stream.register_subscriber(subscriber_id)
+    stream.write("Hello")
+    stream.write("World")
+
+    # then
+    data = stream.get_buffered_data(subscriber_id)
+    assert [line for _, line in data] == ["Hello", "World"]
+
+    # when
+    stream.unregister_subscriber(subscriber_id)
+    stream.write("Hello 2")
+    stream.write("World 2")
+
+    # then
+    with pytest.raises(KeyError):
+        stream.get_buffered_data(subscriber_id)
+
+
+def test_console_log_capture_thread_captures_stdout(capsys):
+    with capsys.disabled():
+        # reload the module so that it reassigns sys.stdout/stderr to the streams set by capsys
+        importlib.reload(neptune_scale.sync.console_log_capture)
+
+        # given
+        logs_sink = Mock()
+        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+
+        # when
+        thread.start()
+        print("Hello")
+        print("World")
+        thread.interrupt(remaining_iterations=1)
+        thread.join()
+
+        # then
+        logs_sink.assert_any_call({"monitoring/stdout": "Hello"}, 1, ANY)
+        logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
+
+
+def test_console_log_capture_thread_captures_stderr(capsys):
+    with capsys.disabled():
+        importlib.reload(neptune_scale.sync.console_log_capture)
+
+        # given
+        logs_sink = Mock()
+        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+
+        # when
+        thread.start()
+        print("Hello", file=sys.stderr)
+        print("World", file=sys.stderr)
+        thread.interrupt(remaining_iterations=1)
+        thread.join()
+
+        # then
+        logs_sink.assert_any_call({"monitoring/stderr": "Hello"}, 1, ANY)
+        logs_sink.assert_any_call({"monitoring/stderr": "World"}, 2, ANY)
+
+
+def test_console_log_capture_thread_captures_both_stdout_and_stderr(capsys):
+    with capsys.disabled():
+        importlib.reload(neptune_scale.sync.console_log_capture)
+
+        # given
+        logs_sink = Mock()
+        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+
+        # when
+        thread.start()
+        print("Hello stdout")
+        print("Hello stderr", file=sys.stderr)
+        print("World stdout")
+        print("World stderr", file=sys.stderr)
+        thread.interrupt(remaining_iterations=1)
+        thread.join()
+
+        # then
+        logs_sink.assert_any_call({"monitoring/stdout": "Hello stdout"}, 1, ANY)
+        logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
+        logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
+        logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
