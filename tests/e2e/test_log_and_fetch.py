@@ -20,11 +20,11 @@ from neptune_fetcher.alpha import (
 from pytest import mark
 
 from neptune_scale.api.run import Run
-from neptune_scale.api.types import File
 from neptune_scale.exceptions import (
     NeptuneAttributePathEmpty,
     NeptuneAttributePathExceedsSizeLimit,
 )
+from neptune_scale.types import File
 
 from .conftest import (
     random_series,

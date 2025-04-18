@@ -14,7 +14,6 @@ from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
 
-from neptune_scale.api.types import File
 from neptune_scale.sync.files import (
     generate_destination,
     guess_mime_type_from_bytes,
@@ -30,6 +29,7 @@ from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     OperationsRepository,
 )
+from neptune_scale.types import File
 
 __all__ = ["Run"]
 
