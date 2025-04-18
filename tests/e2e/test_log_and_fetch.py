@@ -31,7 +31,6 @@ from .conftest import (
     unique_path,
 )
 
-FILE_API_ENABLED = os.getenv("NEPTUNE_FILE_API_ENABLED", "true").lower().strip() in ("true", "t", "yes", "y", "1")
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30
 
@@ -199,20 +198,18 @@ def test_async_lag_callback():
         assert event.is_set()
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files",
     [
         {"test_files/file_txt1": b"bytes content"},
         {"test_files/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_txt3": pathlib.Path("e2e/resources/file.txt")},
-        {"test_files/file_txt4": pathlib.Path("e2e/resources/file.txt").absolute()},
-        {"test_files/file_txt5": File(source="e2e/resources/file.txt")},
-        {"test_files/file_txt6": File(source="e2e/resources/file.txt", mime_type="application/json")},
-        {"test_files/file_txt7": File(source=pathlib.Path("e2e/resources/file.txt"), mime_type="application/json")},
-        {"test_files/file_txt8": File(source="e2e/resources/file.txt", size=1024)},
-        {"test_files/file_txt9": File(source="e2e/resources/file.txt", destination="custom_destination.txt")},
-        {"test_files/file_txt10": "e2e/resources/link_file"},
+        {"test_files/file_txt4": File(source="e2e/resources/file.txt")},
+        {"test_files/file_txt5": File(source="e2e/resources/file.txt", mime_type="application/json")},
+        {"test_files/file_txt6": File(source=pathlib.Path("e2e/resources/file.txt"), mime_type="application/json")},
+        {"test_files/file_txt7": File(source="e2e/resources/file.txt", size=1024)},
+        {"test_files/file_txt8": File(source="e2e/resources/file.txt", destination="custom_destination.txt")},
+        {"test_files/file_txt9": "e2e/resources/link_file"},
         {"test_files/file_binary1": "e2e/resources/binary_file"},
         {"test_files/file_binary2": pathlib.Path("e2e/resources/binary_file")},
         {"test_files/file_binary3": File(source="e2e/resources/binary_file")},
@@ -255,7 +252,26 @@ def test_assign_files(run, run_init_kwargs, temp_dir, files):
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
+def test_assign_files_absolute(run, run_init_kwargs, temp_dir):
+    # given
+    ensure_test_directory()
+    run_id = run_init_kwargs["run_id"]
+    # resolve to absolute path only after executing ensure_test_directory
+    files = {"test_files/file_txt_absolute1": pathlib.Path("e2e/resources/file.txt").absolute()}
+
+    # when
+    run.assign_files(files)
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    attributes = list(files.keys())
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+
+    # check content
+    for attribute_path, attribute_content in files.items():
+        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
+
+
 @pytest.mark.parametrize(
     "files, expected",
     [
@@ -354,7 +370,6 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
                 assert df.loc[run_id][attribute, key] == value
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize("wait_after_first_upload", [True, False])
 def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, wait_after_first_upload):
     # given
@@ -380,7 +395,6 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
         compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 @pytest.mark.parametrize(
     "files, error_type, warnings",
     [
@@ -414,9 +428,7 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
         (
             {"test_files/file_error7": "e2e/resources/invalid_link_file"},
             None,
-            [
-                "Error determining mime type for e2e/resources/invalid_link_file: [Errno 62] Too many levels of symbolic links: 'e2e/resources/invalid_link_file'"
-            ],
+            ["Too many levels of symbolic links: 'e2e/resources/invalid_link_file'"],
         ),
         (
             {"test_files/file_error8": File("e2e/resources/file.txt", mime_type="a" * 129)},
@@ -457,10 +469,11 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, capl
         assert isinstance(actual_error, error_type)
 
     for warning in warnings:
-        assert any(warning in message for message in caplog.messages), f"Warning '{warning}' not found in logs"
+        assert any(
+            warning in message for message in caplog.messages
+        ), f"Warning '{warning}' not found in logs: {'; '.join(caplog.messages)}"
 
 
-@pytest.mark.skipif(not FILE_API_ENABLED, reason="File API is not enabled")
 def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
     # given
     ensure_test_directory()
