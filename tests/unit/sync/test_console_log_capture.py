@@ -121,32 +121,29 @@ def test_stream_with_memory_passes_data_to_subscriber_until_unsubscribe():
         stream.get_buffered_data(subscriber_id)
 
 
-def test_console_log_capture_thread_captures_stdout(capsys):
-    with capsys.disabled():
-        # reload the module so that it reassigns sys.stdout/stderr to the streams set by capsys
-        importlib.reload(neptune_scale.sync.console_log_capture)
-
-        # given
-        logs_sink = Mock()
-        thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
-
-        # when
-        thread.start()
-        print("Hello")
-        print("World")
-        thread.interrupt(remaining_iterations=1)
-        thread.join()
-
-        # then
-        logs_sink.assert_any_call({"monitoring/stdout": "Hello"}, 1, ANY)
-        logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
-
-
 @pytest.fixture
 def no_capture(capsys):
     with capsys.disabled():
+        # reload the module so that it reassigns sys.stdout/stderr to the streams set by capsys
         importlib.reload(neptune_scale.sync.console_log_capture)
         yield
+
+
+def test_console_log_capture_thread_captures_stdout(no_capture):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+
+    # when
+    thread.start()
+    print("Hello")
+    print("World")
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    logs_sink.assert_any_call({"monitoring/stdout": "Hello"}, 1, ANY)
+    logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
 
 
 def test_console_log_capture_thread_captures_stderr(no_capture):
