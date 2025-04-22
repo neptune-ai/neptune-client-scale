@@ -440,3 +440,14 @@ def test_run_with_ids_problematic_for_filesystems(api_token, project, run_id):
         mode="offline",
     ):
         ...
+
+
+@pytest.mark.parametrize("disable_console_log_capture", [True, False])
+def test_run_disable_console_log_capture(api_token, disable_console_log_capture):
+    with Run(
+        project="a/b", api_token=api_token, mode="offline", disable_console_log_capture=disable_console_log_capture
+    ) as run:
+        if disable_console_log_capture:
+            assert run._console_log_capture is None
+        else:
+            assert run._console_log_capture is not None
