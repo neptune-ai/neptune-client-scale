@@ -234,6 +234,7 @@ class Run(AbstractContextManager):
                     ),
                 )
             )
+            self._logging_enabled = True
         else:
             self._operations_repo = None
             self._sequence_tracker = None
