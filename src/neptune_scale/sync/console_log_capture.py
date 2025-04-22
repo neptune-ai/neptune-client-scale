@@ -137,6 +137,7 @@ class PartialLine:
     def __init__(self) -> None:
         self.buffer: io.StringIO = io.StringIO()
         self.timestamp: Optional[datetime] = None
+        self.last_flush_time: Optional[datetime] = None
 
     def write(self, ts: datetime, data: str) -> None:
         self.buffer.write(data)
@@ -146,6 +147,13 @@ class PartialLine:
         self.buffer.truncate(0)
         self.buffer.seek(0)
         self.timestamp = None
+
+    def flush(self) -> tuple[Optional[datetime], str]:
+        data = self.buffer.getvalue()
+        ts = self.timestamp
+        self.clear()
+        self.last_flush_time = datetime.now()
+        return ts, data
 
 
 class MutableInt:
@@ -177,7 +185,7 @@ class ConsoleLogCaptureThread(Daemon):
         self._stderr_step = MutableInt(1)
 
     def work(self) -> None:
-        self._process_captured_data(max_delay_before_flush=timedelta(seconds=1))
+        self._process_captured_data(max_delay_before_flush=timedelta(seconds=5))
 
     def close(self) -> None:
         self._process_captured_data(max_delay_before_flush=timedelta(seconds=0))
@@ -249,9 +257,9 @@ def _captured_data_to_lines(
                 chunk_processed_idx = cr_pos + 1  # skip over CR
 
             partial_line.write(timestamp, chunk[chunk_processed_idx:lf_pos])
-
-            yield timestamp, partial_line.buffer.getvalue()
-            partial_line.clear()
+            ts, line = partial_line.flush()
+            if ts and line:
+                yield ts, line
 
             chunk_processed_idx = lf_pos + 1  # skip over LF
 
@@ -263,10 +271,10 @@ def _captured_data_to_lines(
 
             partial_line.write(timestamp, chunk[chunk_processed_idx:])
 
-    if partial_line.timestamp and datetime.now() - partial_line.timestamp > max_delay_before_flush:
-        if line := partial_line.buffer.getvalue():
-            yield partial_line.timestamp, line
-            partial_line.clear()
+    if not partial_line.last_flush_time or datetime.now() - partial_line.last_flush_time > max_delay_before_flush:
+        ts, line = partial_line.flush()
+        if ts and line:
+            yield ts, line
 
 
 def _split_long_line(line: str, max_bytes: int) -> list[str]:
@@ -314,5 +322,5 @@ def _split_long_line(line: str, max_bytes: int) -> list[str]:
 
 def _print_to_original_stderr(message: str) -> None:
     original_stderr = getattr(sys, "__stderr__", sys.stderr)
-    original_stderr.write(message)
+    original_stderr.write(message + "\n")
     original_stderr.flush()
