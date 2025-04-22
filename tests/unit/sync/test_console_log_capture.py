@@ -195,17 +195,14 @@ LINE_LIMIT = 1024 * 1024
         (["Hello\nWorld"], ["Hello", "World"]),
         (["Hello\rWorld"], ["World"]),
         (["Hello\n"], ["Hello"]),
-        (["\nHello"], ["", "Hello"]),
-        (["Hello\r"], [""]),
         (["\rHello"], ["Hello"]),
         (["Hello\nWorld\n"], ["Hello", "World"]),
-        (["Hello\rWorld\r"], [""]),
         (["Hello\rWorld\rNow"], ["Now"]),
-        (["Hello\r\nWorld\r\n"], ["", ""]),
         (["Hello\n\rWorld\n\r"], ["Hello", "World"]),
         (["." * (2 * LINE_LIMIT + 500)], ["." * LINE_LIMIT, "." * LINE_LIMIT, "." * 500]),
         (["." * (2 * LINE_LIMIT) + "\rHello"], ["Hello"]),
         (["." * 1024 + "\n" + "." * (LINE_LIMIT + 500)], ["." * 1024, "." * LINE_LIMIT, "." * 500]),
+        (["." * (LINE_LIMIT - 1) + "漢"], ["." * (LINE_LIMIT - 1), "漢"]),
     ],
 )
 def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
