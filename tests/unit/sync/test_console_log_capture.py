@@ -195,7 +195,7 @@ LINE_LIMIT = 1024 * 1024
         (["Hello\nWorld"], ["Hello", "World"]),
         (["Hello\rWorld"], ["World"]),
         (["Hello\n"], ["Hello"]),
-        (["\nHello"], []),
+        (["\nHello"], ["Hello"]),
         (["Hello\r"], []),
         (["\rHello"], ["Hello"]),
         (["Hello\nWorld\n"], ["Hello", "World"]),
@@ -222,8 +222,11 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     thread.join()
 
     # then
-    for idx, line in enumerate(expected):
-        logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+    if expected:
+        for idx, line in enumerate(expected):
+            logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+    else:
+        logs_sink.assert_not_called()
 
 
 @pytest.mark.parametrize(
