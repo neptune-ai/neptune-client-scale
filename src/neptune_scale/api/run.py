@@ -112,6 +112,7 @@ class Run(AbstractContextManager):
         on_network_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
+        enable_console_log_capture: bool = True,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -222,12 +223,16 @@ class Run(AbstractContextManager):
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
-            self._console_log_capture: Optional[ConsoleLogCaptureThread] = ConsoleLogCaptureThread(
-                run_id=run_id,
-                logs_flush_frequency_sec=1,
-                logs_sink=lambda data, step, timestamp: self._log(
-                    timestamp=timestamp, string_series=StringSeries(data, step)
-                ),
+            self._console_log_capture: Optional[ConsoleLogCaptureThread] = (
+                None
+                if not enable_console_log_capture
+                else ConsoleLogCaptureThread(
+                    run_id=run_id,
+                    logs_flush_frequency_sec=1,
+                    logs_sink=lambda data, step, timestamp: self._log(
+                        timestamp=timestamp, string_series=StringSeries(data, step)
+                    ),
+                )
             )
             self._logging_enabled = True
         else:
