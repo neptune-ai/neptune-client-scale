@@ -24,13 +24,19 @@ from datetime import (
 from typing import Optional
 
 from neptune_scale import Run
-from neptune_scale.api.validation import verify_type
+from neptune_scale.api.validation import (
+    verify_max_length,
+    verify_type,
+)
 from neptune_scale.logging.logging_utils import (
     PartialLine,
     captured_data_to_lines,
     split_long_line,
 )
-from neptune_scale.sync.parameters import MAX_STRING_SERIES_DATA_POINT_LENGTH
+from neptune_scale.sync.parameters import (
+    MAX_ATTRIBUTE_PATH_LENGTH,
+    MAX_STRING_SERIES_DATA_POINT_LENGTH,
+)
 
 
 class NeptuneLoggingHandler(logging.Handler):
@@ -38,9 +44,11 @@ class NeptuneLoggingHandler(logging.Handler):
         verify_type("run", run, Run)
         verify_type("level", level, int)
         verify_type("attribute_path", attribute_path, (str, type(None)))
+        path = attribute_path if attribute_path else "monitoring/logs"
+        verify_max_length("attribute_path", path, MAX_ATTRIBUTE_PATH_LENGTH)
 
         super().__init__(level=level)
-        self._path = attribute_path if attribute_path else "monitoring/logs"
+        self._path = path
         self._run = run
         self._step = 1
         self._thread_local = threading.local()

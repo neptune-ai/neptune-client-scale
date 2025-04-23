@@ -7,6 +7,7 @@ from freezegun import freeze_time
 
 from neptune_scale import Run
 from neptune_scale.logging.logging_handler import NeptuneLoggingHandler
+from neptune_scale.sync.parameters import MAX_ATTRIBUTE_PATH_LENGTH
 
 LINE_LIMIT = 1024 * 1024
 
@@ -51,3 +52,9 @@ def test_splitting_lines(messages, expected):
 
         for i, expected_line in enumerate(expected):
             run.log_string_series.assert_any_call(data={"test/path": expected_line}, step=i + 1, timestamp=ts)
+
+
+def test_max_path_length():
+    with Run(project="workspace/project", mode="offline") as run:
+        with pytest.raises(ValueError):
+            NeptuneLoggingHandler(run=run, attribute_path="a" * (MAX_ATTRIBUTE_PATH_LENGTH + 1))
