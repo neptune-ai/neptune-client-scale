@@ -15,9 +15,16 @@ from typing import (
 
 from neptune_scale.exceptions import NeptuneUnableToLogData
 from neptune_scale.sync.parameters import MAX_STRING_SERIES_DATA_POINT_LENGTH
-from neptune_scale.util import Daemon
+from neptune_scale.util import (
+    Daemon,
+    get_logger,
+)
 
 STREAM_BUFFER_CHAR_CAPACITY = 100_000_000
+
+# Ensure that the Neptune logger is initialized before sys.stderr is switched to.
+# This is important, so that Neptune logs are emitted to the original stderr.
+_logger = get_logger()
 
 
 class StreamWithMemory:
