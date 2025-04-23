@@ -248,7 +248,8 @@ def test_assign_files(caplog, run, run_init_kwargs, temp_dir, files):
     assert not caplog.records, "No warnings should be logged"
 
     run.wait_for_processing(SYNC_TIMEOUT)
-    time.sleep(1)
+    # FIXME: We need to account for eventual consistency on the backend. This can be made cleaner.
+    time.sleep(10)
 
     # then
     attributes = list(files.keys())
