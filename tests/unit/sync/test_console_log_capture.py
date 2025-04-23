@@ -195,17 +195,18 @@ LINE_LIMIT = 1024 * 1024
         (["Hello\nWorld"], ["Hello", "World"]),
         (["Hello\rWorld"], ["World"]),
         (["Hello\n"], ["Hello"]),
-        (["\nHello"], ["", "Hello"]),
-        (["Hello\r"], [""]),
+        (["\nHello"], ["Hello"]),
+        (["Hello\r"], []),
         (["\rHello"], ["Hello"]),
         (["Hello\nWorld\n"], ["Hello", "World"]),
-        (["Hello\rWorld\r"], [""]),
+        (["Hello\rWorld\r"], []),
         (["Hello\rWorld\rNow"], ["Now"]),
-        (["Hello\r\nWorld\r\n"], ["", ""]),
+        (["Hello\r\nWorld\r\n"], []),
         (["Hello\n\rWorld\n\r"], ["Hello", "World"]),
         (["." * (2 * LINE_LIMIT + 500)], ["." * LINE_LIMIT, "." * LINE_LIMIT, "." * 500]),
         (["." * (2 * LINE_LIMIT) + "\rHello"], ["Hello"]),
         (["." * 1024 + "\n" + "." * (LINE_LIMIT + 500)], ["." * 1024, "." * LINE_LIMIT, "." * 500]),
+        (["." * (LINE_LIMIT - 1) + "漢"], ["." * (LINE_LIMIT - 1), "漢"]),
     ],
 )
 def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
@@ -221,8 +222,11 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     thread.join()
 
     # then
-    for idx, line in enumerate(expected):
-        logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+    if expected:
+        for idx, line in enumerate(expected):
+            logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+    else:
+        logs_sink.assert_not_called()
 
 
 @pytest.mark.parametrize(
