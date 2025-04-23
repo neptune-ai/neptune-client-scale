@@ -9,8 +9,8 @@ from unittest.mock import (
 
 import pytest
 
-import neptune_scale.sync.console_log_capture
-from neptune_scale.sync.console_log_capture import (
+import neptune_scale.logging.console_log_capture
+from neptune_scale.logging.console_log_capture import (
     ConsoleLogCaptureThread,
     StreamWithMemory,
 )
@@ -125,7 +125,7 @@ def test_stream_with_memory_passes_data_to_subscriber_until_unsubscribe():
 def no_capture(capsys):
     with capsys.disabled():
         # reload the module so that it reassigns sys.stdout/stderr to the streams set by capsys
-        importlib.reload(neptune_scale.sync.console_log_capture)
+        importlib.reload(neptune_scale.logging.console_log_capture)
         yield
 
 
@@ -187,6 +187,7 @@ def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
 LINE_LIMIT = 1024 * 1024
 
 
+# The test cases mirror the ones in test_neptune_logging_handler.py
 @pytest.mark.parametrize(
     "prints, expected",
     [
