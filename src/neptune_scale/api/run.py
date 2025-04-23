@@ -318,6 +318,12 @@ class Run(AbstractContextManager):
                     self._errors_queue.put(NeptuneSynchronizationStopped())
 
     def _close(self, *, wait: bool = True) -> None:
+        # Console log capture is actually a produced of logged data, so let's flush it before closing.
+        # This allows to log tracebacks of the potential exception that caused the run to fail.
+        if self._console_log_capture is not None:
+            self._console_log_capture.interrupt(remaining_iterations=1 if wait else 0)
+            self._console_log_capture.join()
+
         with self._lock:
             if self._is_closing:
                 return
@@ -348,10 +354,6 @@ class Run(AbstractContextManager):
             # result in a "cannot join current thread" exception.
             if threading.current_thread() != self._errors_monitor:
                 self._errors_monitor.join()
-
-        if self._console_log_capture is not None:
-            self._console_log_capture.interrupt(remaining_iterations=1 if wait else 0)
-            self._console_log_capture.join()
 
         if self._operations_repo is not None:
             self._operations_repo.close(cleanup_files=True)
