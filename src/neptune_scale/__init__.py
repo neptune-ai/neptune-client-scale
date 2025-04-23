@@ -7,6 +7,6 @@ import warnings
 
 from neptune_scale.api.run import Run
 from neptune_scale.exceptions import NeptuneScaleWarning
-from neptune_scale.logging import NeptuneLoggingHandler
+from neptune_scale.logging.logging_handler import NeptuneLoggingHandler
 
 warnings.simplefilter("once", category=NeptuneScaleWarning)
