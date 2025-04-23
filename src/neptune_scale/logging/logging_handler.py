@@ -37,7 +37,7 @@ class NeptuneLoggingHandler(logging.Handler):
     def __init__(self, *, run: Run, level: int = logging.NOTSET, attribute_path: Optional[str] = None) -> None:
         verify_type("run", run, Run)
         verify_type("level", level, int)
-        verify_type("path", attribute_path, (str, type(None)))
+        verify_type("attribute_path", attribute_path, (str, type(None)))
 
         super().__init__(level=level)
         self._path = attribute_path if attribute_path else "monitoring/logs"
@@ -65,5 +65,5 @@ class NeptuneLoggingHandler(logging.Handler):
             max_delay_before_flush=timedelta(seconds=0),  # we log synchronously, so no delay
         ):
             for short_line in split_long_line(line, MAX_STRING_SERIES_DATA_POINT_LENGTH):
-                self._run.log_string_series({self._path: short_line}, step=self._step, timestamp=ts)
+                self._run.log_string_series(data={self._path: short_line}, step=self._step, timestamp=ts)
                 self._step += 1

@@ -187,6 +187,7 @@ def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
 LINE_LIMIT = 1024 * 1024
 
 
+# The test cases mirror the ones in test_neptune_logging_handler.py
 @pytest.mark.parametrize(
     "prints, expected",
     [

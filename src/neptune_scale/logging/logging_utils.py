@@ -69,7 +69,7 @@ def captured_data_to_lines(
 
             partial_line.write(timestamp, chunk[chunk_processed_idx:])
 
-    if not partial_line.last_flush_time or datetime.now() - partial_line.last_flush_time > max_delay_before_flush:
+    if not partial_line.last_flush_time or datetime.now() - partial_line.last_flush_time >= max_delay_before_flush:
         ts, line = partial_line.flush()
         if ts and line:
             yield ts, line
