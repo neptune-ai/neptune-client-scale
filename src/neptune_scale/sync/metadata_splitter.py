@@ -419,10 +419,21 @@ def datetime_to_proto(dt: datetime) -> Timestamp:
     return Timestamp(seconds=int(dt_ts), nanos=int((dt_ts % 1) * 1e9))
 
 
-def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = False) -> Step:
+def decompose_step(step: Union[float, int]) -> tuple[int, int]:
+    """Decompose a number representing a step into whole and micro parts."""
+
+    m = 1e6
+    micro_total = int(round(step * m, 6))
+    whole = int(micro_total // m)
+    micro = int(micro_total % m)
+
+    return whole, micro
+
+
+def make_step(number: Union[float, int]) -> Step:
     """
     Converts a number to protobuf Step value. Example:
-    >>> assert make_step(7.654321, True) == Step(whole=7, micro=654321)
+    >>> assert make_step(7.654321) == Step(whole=7, micro=654321)
 
     Args:
         number: step expressed as number
@@ -431,14 +442,7 @@ def make_step(number: Union[float, int], raise_on_step_precision_loss: bool = Fa
 
     Returns: Step protobuf used in Neptune API.
     """
-    m = int(1e6)
-    micro: int = int(number * m)
-    if raise_on_step_precision_loss and number * m - micro != 0:
-        raise ValueError(f"step must not use more than 6-decimal points, got: {number}")
-
-    whole = micro // m
-    micro = micro % m
-
+    whole, micro = decompose_step(number)
     return Step(whole=whole, micro=micro)
 
 
