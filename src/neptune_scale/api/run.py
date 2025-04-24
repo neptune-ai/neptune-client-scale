@@ -252,6 +252,7 @@ class Run(AbstractContextManager):
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
                     system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
+                    initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
                         timestamp=timestamp, string_series=StringSeries(data, step)
