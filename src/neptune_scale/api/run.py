@@ -734,7 +734,7 @@ class Run(AbstractContextManager):
         if string_series is not None:
             verify_type("string_series", string_series, StringSeries)
             verify_type("string_series", string_series.data, dict)
-            verify_type("step", string_series.step, (float, int, type(None)))
+            verify_type("step", string_series.step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
