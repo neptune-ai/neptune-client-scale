@@ -464,10 +464,27 @@ def test_run_with_ids_problematic_for_filesystems(api_token, project, run_id):
 
 @pytest.mark.parametrize("enable_console_log_capture", [True, False])
 def test_run_disable_console_log_capture(api_token, enable_console_log_capture):
-    with Run(
-        project="a/b", api_token=api_token, mode="offline", enable_console_log_capture=enable_console_log_capture
-    ) as run:
+    with Run(project="a/b", mode="offline", enable_console_log_capture=enable_console_log_capture) as run:
         if enable_console_log_capture:
             assert run._console_log_capture is not None
         else:
             assert run._console_log_capture is None
+
+
+@pytest.mark.parametrize(
+    "monitoring_namespace, expected_path",
+    [
+        (None, "monitoring"),
+        ("custom/namespace", "custom/namespace"),
+        ("custom/namespace/", "custom/namespace"),
+    ],
+)
+def test_run_monitoring_namespace(monitoring_namespace, expected_path):
+    with Run(
+        project="workspace/project",
+        mode="offline",
+        enable_console_log_capture=True,
+        monitoring_namespace=monitoring_namespace,
+    ) as run:
+        assert run._console_log_capture._stdout_attribute == expected_path + "/stdout"
+        assert run._console_log_capture._stderr_attribute == expected_path + "/stderr"
