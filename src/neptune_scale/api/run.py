@@ -126,7 +126,7 @@ class Run(AbstractContextManager):
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
-        monitoring_namespace: Optional[str] = None,
+        system_namespace: Optional[str] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -157,7 +157,7 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
-            monitoring_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "monitoring".
+            system_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "system".
         """
 
         if run_id is None:
@@ -179,7 +179,7 @@ class Run(AbstractContextManager):
         verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
         verify_type("enable_console_log_capture", enable_console_log_capture, bool)
-        verify_type("monitoring_namespace", monitoring_namespace, (str, type(None)))
+        verify_type("system_namespace", system_namespace, (str, type(None)))
 
         if resume and creation_time is not None:
             logger.warning("`creation_time` is ignored when used together with `resume`.")
@@ -251,7 +251,7 @@ class Run(AbstractContextManager):
                 if not enable_console_log_capture
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
-                    monitoring_namespace=monitoring_namespace.rstrip("/") if monitoring_namespace else "monitoring",
+                    system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
                         timestamp=timestamp, string_series=StringSeries(data, step)

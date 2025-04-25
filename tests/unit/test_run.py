@@ -472,19 +472,19 @@ def test_run_disable_console_log_capture(api_token, enable_console_log_capture):
 
 
 @pytest.mark.parametrize(
-    "monitoring_namespace, expected_path",
+    "system_namespace, expected_path",
     [
-        (None, "monitoring"),
+        (None, "system"),
         ("custom/namespace", "custom/namespace"),
         ("custom/namespace/", "custom/namespace"),
     ],
 )
-def test_run_monitoring_namespace(monitoring_namespace, expected_path):
+def test_run_system_namespace(system_namespace, expected_path):
     with Run(
         project="workspace/project",
         mode="offline",
         enable_console_log_capture=True,
-        monitoring_namespace=monitoring_namespace,
+        system_namespace=system_namespace,
     ) as run:
         assert run._console_log_capture._stdout_attribute == f"{expected_path}/stdout"
         assert run._console_log_capture._stderr_attribute == f"{expected_path}/stderr"
