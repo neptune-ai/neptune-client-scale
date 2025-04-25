@@ -417,6 +417,26 @@ def test_absolute_run_log_directory(
     assert mock_repo.call_args[1]["db_path"].is_relative_to(temp_dir / expected_suffix)
 
 
+def test_run_cleans_up_empty_storage_directory(mock_repo, temp_dir, api_token):
+    with Run(log_directory=temp_dir, project="workspace/project", api_token=api_token, mode="offline") as run:
+        # Pretend all operations are completed, so that the DB is deleted on close,
+        # otherwise the dir will not be empty and will not be removed
+        run._operations_repo.delete_operations(100)
+
+    # temp_dir should be empty
+    assert not list(temp_dir.iterdir()), "Run directory was not removed"
+
+
+def test_run_does_not_clean_up_non_empty_storage_directory(mock_repo, temp_dir, api_token):
+    with Run(log_directory=temp_dir, project="workspace/project", api_token=api_token, mode="offline") as run:
+        with open(run._storage_directory_path / "file.txt", "w") as f:
+            f.write("test")
+
+    # A single directory should exist in temp_dir, one for the Run above
+    assert len(list(temp_dir.iterdir())) == 1
+    assert run._storage_directory_path.exists()
+
+
 @pytest.mark.parametrize(
     "project, run_id",
     [
@@ -440,3 +460,14 @@ def test_run_with_ids_problematic_for_filesystems(api_token, project, run_id):
         mode="offline",
     ):
         ...
+
+
+@pytest.mark.parametrize("enable_console_log_capture", [True, False])
+def test_run_disable_console_log_capture(api_token, enable_console_log_capture):
+    with Run(
+        project="a/b", api_token=api_token, mode="offline", enable_console_log_capture=enable_console_log_capture
+    ) as run:
+        if enable_console_log_capture:
+            assert run._console_log_capture is not None
+        else:
+            assert run._console_log_capture is None
