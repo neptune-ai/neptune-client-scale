@@ -89,6 +89,7 @@ class SyncRunner:
         self._last_ack_seq = SharedInt(-1)
         self._last_ack_timestamp = SharedFloat(-1)
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
+        self._file_upload_request_init_count: Optional[int] = None
         self._sync_process: Optional[SyncProcess] = None
         self._errors_monitor: Optional[ErrorsMonitor] = None
 
@@ -128,7 +129,7 @@ class SyncRunner:
             progress=0,
             max_progress=self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1 if self._log_seq_id_range else 0,
         )
-        file_progress = _ProgressStatus(progress=0, max_progress=self._file_upload_request_init_count)
+        file_progress = _ProgressStatus(progress=0, max_progress=self._file_upload_request_init_count or 0)
 
         if operation_progress.finished and file_progress.finished:
             return
@@ -162,13 +163,13 @@ class SyncRunner:
     def _wait_operation_submit(self, last_progress: _ProgressStatus, wait_time: float) -> _ProgressStatus:
         if last_progress.finished:
             return last_progress
+        assert self._log_seq_id_range is not None
 
         with self._last_ack_seq:
             self._last_ack_seq.wait(timeout=wait_time)
             last_ack_seq_id = self._last_ack_seq.value
 
         if last_ack_seq_id != -1:
-            assert self._log_seq_id_range is not None
             acked_count = last_ack_seq_id - self._log_seq_id_range[0] + 1
         else:
             acked_count = 0
@@ -178,6 +179,7 @@ class SyncRunner:
     def _wait_file_upload(self, last_progress: _ProgressStatus, wait_time: float) -> _ProgressStatus:
         if last_progress.finished:
             return last_progress
+        assert self._file_upload_request_init_count is not None
 
         upload_request_count = self._operations_repository.get_file_upload_requests_count()
         uploaded_count = self._file_upload_request_init_count - upload_request_count
