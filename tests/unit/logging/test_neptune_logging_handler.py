@@ -50,11 +50,36 @@ def test_splitting_lines(messages, expected):
         for message in messages:
             logger.info(message)
 
-        for i, expected_line in enumerate(expected):
-            run.log_string_series.assert_any_call(data={"test/path": expected_line}, step=i + 1, timestamp=ts)
+        for i, expected_line in enumerate(expected, start=1):
+            run.log_string_series.assert_any_call(
+                data={"test/path": expected_line}, step=round(i / 1e6, 6), timestamp=ts
+            )
 
 
 def test_max_path_length():
     with Run(project="workspace/project", mode="offline") as run:
         with pytest.raises(ValueError):
             NeptuneLoggingHandler(run=run, attribute_path="a" * (MAX_ATTRIBUTE_PATH_LENGTH + 1))
+
+
+@freeze_time("2025-04-23 00:00:00")
+@pytest.mark.parametrize("initial_step", (None, 0, 0.999999, 1, 1000))
+def test_initial_step(initial_step):
+    logger = logging.getLogger("test_logger")
+    logger.setLevel(logging.DEBUG)
+
+    ts = datetime(2025, 4, 23, 0, 0)
+
+    with Run(project="workspace/project", mode="offline") as run:
+        run.log_string_series = Mock()
+        logger.addHandler(NeptuneLoggingHandler(run=run, initial_step=initial_step))
+
+        for i in range(1, 11):
+            logger.info(f"{i}")
+
+    if initial_step is None:
+        initial_step = 0
+    for i in range(1, 11):
+        run.log_string_series.assert_any_call(
+            data={"system/logs": str(i)}, step=round(initial_step + i / 1e6, 6), timestamp=ts
+        )

@@ -21,13 +21,17 @@ from datetime import (
     datetime,
     timedelta,
 )
-from typing import Optional
+from typing import (
+    Optional,
+    Union,
+)
 
 from neptune_scale import Run
 from neptune_scale.api.validation import (
     verify_max_length,
     verify_type,
 )
+from neptune_scale.logging.console_log_capture import StepTracker
 from neptune_scale.logging.logging_utils import (
     PartialLine,
     captured_data_to_lines,
@@ -40,8 +44,16 @@ from neptune_scale.sync.parameters import (
 
 
 class NeptuneLoggingHandler(logging.Handler):
-    def __init__(self, *, run: Run, level: int = logging.NOTSET, attribute_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        *,
+        run: Run,
+        initial_step: Optional[Union[float, int]] = None,
+        level: int = logging.NOTSET,
+        attribute_path: Optional[str] = None,
+    ) -> None:
         verify_type("run", run, Run)
+        verify_type("initial_step", initial_step, (float, int, type(None)))
         verify_type("level", level, int)
         verify_type("attribute_path", attribute_path, (str, type(None)))
         path = attribute_path if attribute_path else "system/logs"
@@ -50,7 +62,7 @@ class NeptuneLoggingHandler(logging.Handler):
         super().__init__(level=level)
         self._path = path
         self._run = run
-        self._step = 1
+        self._step_tracker = StepTracker(initial_step if initial_step is not None else 0)
         self._thread_local = threading.local()
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -73,5 +85,5 @@ class NeptuneLoggingHandler(logging.Handler):
             max_delay_before_flush=timedelta(seconds=0),  # we log synchronously, so no delay
         ):
             for short_line in split_long_line(line, MAX_STRING_SERIES_DATA_POINT_LENGTH):
-                self._run.log_string_series(data={self._path: short_line}, step=self._step, timestamp=ts)
-                self._step += 1
+                self._run.log_string_series(data={self._path: short_line}, step=self._step_tracker.value, timestamp=ts)
+                self._step_tracker.increment()
