@@ -444,9 +444,11 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
-@pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
+@pytest.mark.parametrize(
+    "invalid_path", (None, "A" * 1025, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now())
+)
 @pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "files"))
-def test_invalid_path_types(caplog, action, invalid_path, param_name):
+def test_invalid_paths(caplog, action, invalid_path, param_name):
     data = {invalid_path: object()}
     kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files")}
 
@@ -626,7 +628,9 @@ def test_string_series_to_operations():
 
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
-@pytest.mark.parametrize("invalid_path", (None, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()))
+@pytest.mark.parametrize(
+    "invalid_path", (None, "A" * 1025, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now())
+)
 def test_string_series_invalid_paths(caplog, action, invalid_path):
     data = StringSeries(data={invalid_path: object()}, step=1)
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):

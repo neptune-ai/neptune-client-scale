@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neptune_scale.sync.parameters import (
+    MAX_ATTRIBUTE_PATH_LENGTH,
     MAX_FILE_DESTINATION_LENGTH,
     MAX_FILE_MIME_TYPE_LENGTH,
     MAX_SINGLE_OPERATION_SIZE_BYTES,
@@ -342,10 +343,20 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
 
 def _validate_paths(fields: dict[str, T]) -> Iterator[tuple[str, T]]:
-    _is_instance = isinstance  # local binding, faster in tight loops
+    # local bindings, faster in tight loops
+    _is_instance = isinstance
+    _is_over_utf8_bytes_limit = is_over_utf8_bytes_limit
+    _max_length = MAX_ATTRIBUTE_PATH_LENGTH
+
     for key, value in fields.items():
         if not _is_instance(key, str):
             _warn_or_raise_on_invalid_value(f"Field paths must be strings (got `{key}`)")
+            continue
+
+        if _is_over_utf8_bytes_limit(key, _max_length):
+            _warn_or_raise_on_invalid_value(
+                f"Field paths must be less than {_max_length} bytes when UTF-8 encoded (got `{key}`)"
+            )
             continue
 
         yield key, value
@@ -381,11 +392,11 @@ def string_series_to_update_run_snapshots(
         size = 0
         while size < max_size:
             try:
-                key, value, value_size = _peek_stream()
+                key, value = _peek_stream()
             except StopIteration:
                 break
 
-            new_size = size + _proto_string_size(key) + value_size + 6
+            new_size = size + _proto_string_size(key) + _proto_string_size(value) + 6
             if new_size > max_size:
                 break
 
@@ -395,23 +406,36 @@ def string_series_to_update_run_snapshots(
         yield update
 
 
-def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, str, int]]:
-    _is_instance = isinstance  # local binding, faster in tight loops
+def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, str]]:
+    # local bindings, faster in tight loops
+    _is_instance = isinstance
+    _is_over_utf8_bytes_limit = is_over_utf8_bytes_limit
+    _max_length = MAX_STRING_SERIES_DATA_POINT_LENGTH
+
     for key, value in _validate_paths(string_series):
-        if not isinstance(value, str):
+        if not _is_instance(value, str):
             _warn_or_raise_on_invalid_value(f"String series values must be strings (got `{key}`:`{value}`)")
             continue
 
-        data = value.encode("utf-8")
-        if len(data) > MAX_STRING_SERIES_DATA_POINT_LENGTH:
+        if _is_over_utf8_bytes_limit(value, _max_length):
             _warn_or_raise_on_invalid_value(
-                f"String series values must be less than {MAX_STRING_SERIES_DATA_POINT_LENGTH}"
-                " bytes when UTF-8 encoded"
+                f"String series values must be less than {_max_length} bytes when UTF-8 encoded"
             )
             continue
 
         # Pass the value along with its proto_bytes_size to avoid encoding multiple times for size calculation
-        yield key, value, proto_bytes_size(data)
+        yield key, value
+
+
+def is_over_utf8_bytes_limit(string: str, max_bytes: int) -> bool:
+    """Return True if a given string can NOT fit into `max_bytes` when encoded as UTF-8"""
+
+    # Don't encode the string if it is shorter than this value.
+    # A UTF8 encoded character can take up to 4 bytes, so if we know the string will fit,
+    # there's no need to encode to check length.
+    encode_length_threshold = max_bytes // 4
+
+    return len(string) > encode_length_threshold and len(string.encode("utf-8")) > max_bytes
 
 
 def datetime_to_proto(dt: datetime) -> Timestamp:
