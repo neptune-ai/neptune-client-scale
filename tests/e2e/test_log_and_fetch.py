@@ -20,10 +20,7 @@ from neptune_fetcher.alpha import (
 from pytest import mark
 
 from neptune_scale.api.run import Run
-from neptune_scale.exceptions import (
-    NeptuneAttributePathEmpty,
-    NeptuneAttributePathExceedsSizeLimit,
-)
+from neptune_scale.exceptions import NeptuneAttributePathEmpty
 from neptune_scale.types import File
 
 from .conftest import (
@@ -432,7 +429,7 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
                 "Error determining mime type for e2e/resources/does-not-exist: [Errno 2] No such file or directory: 'e2e/resources/does-not-exist'"
             ],
         ),
-        ({"test_files/file_error6" + "a" * 1024: "e2e/resources/file.txt"}, NeptuneAttributePathExceedsSizeLimit, []),
+        ({"test_files/file_error6" + "a" * 1024: "e2e/resources/file.txt"}, None, ["Field paths must be less than"]),
         (
             {"test_files/file_error7": "e2e/resources/invalid_link_file"},
             None,
