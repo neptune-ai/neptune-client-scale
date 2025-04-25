@@ -27,8 +27,37 @@ from neptune_scale.sync.metadata_splitter import (
     MetadataSplitter,
     Metrics,
     StringSeries,
+    decompose_step,
     string_series_to_update_run_snapshots,
 )
+
+
+@pytest.mark.parametrize(
+    "step, expect_whole, expect_micro",
+    (
+        (0, 0, 0),
+        (100_000_000.999999, 100_000_000, 999999),
+        (1.000001, 1, 1),
+        (0.123456, 0, 123456),
+        (0.9999999999, 0, 999999),
+        (0.000001, 0, 1),
+        (0.000012, 0, 12),
+        (0.000123, 0, 123),
+        (0.001234, 0, 1234),
+        (0.012345, 0, 12345),
+        (0.123456, 0, 123456),
+        (1.1, 1, 100000),
+        (1.12, 1, 120000),
+        (1.123, 1, 123000),
+        (1.1234, 1, 123400),
+        (1.12345, 1, 123450),
+        (1.123456, 1, 123456),
+    ),
+)
+def test_decompose_step(step, expect_whole, expect_micro):
+    whole, micro = decompose_step(step)
+    assert whole == expect_whole
+    assert micro == expect_micro
 
 
 @freeze_time("2024-07-30 12:12:12.000022")

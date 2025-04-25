@@ -19,6 +19,7 @@ from neptune_scale.logging.logging_utils import (
     print_to_original_stderr,
     split_long_line,
 )
+from neptune_scale.sync.metadata_splitter import decompose_step
 from neptune_scale.sync.parameters import MAX_STRING_SERIES_DATA_POINT_LENGTH
 from neptune_scale.util import Daemon
 
@@ -138,16 +139,35 @@ def _cancel_subscription(subscriber_id: str) -> None:
                 _stderr_with_memory = None
 
 
-class MutableInt:
-    def __init__(self, value: int) -> None:
-        self.value = value
+class StepTracker:
+    def __init__(self, initial_step: Union[int, float]) -> None:
+        """Track a float step value with a precision of 1e-6."""
+        self.whole, self.micro = decompose_step(initial_step)
+        # Always start with the subsequent step
+        self.increment()
+
+    @property
+    def value(self) -> float:
+        return self._value
+
+    def increment(self) -> float:
+        """Increment the step and return the new value."""
+        self.micro += 1
+        if self.micro >= 1_000_000:
+            self.micro = 0
+            self.whole += 1
+
+        self._value = self.whole + self.micro / 1_000_000
+        return self._value
 
 
 class ConsoleLogCaptureThread(Daemon):
     def __init__(
         self,
+        *,
         run_id: str,
         system_namespace: str,
+        initial_step: Union[int, float],
         logs_flush_frequency_sec: float,
         logs_sink: Callable[[dict[str, str], Union[float, int], Optional[datetime]], None],
     ) -> None:
@@ -160,11 +180,11 @@ class ConsoleLogCaptureThread(Daemon):
 
         self._stdout_partial_line = PartialLine()
         self._stdout_attribute = f"{system_namespace}/stdout"
-        self._stdout_step = MutableInt(1)
+        self._stdout_step = StepTracker(initial_step)
 
         self._stderr_partial_line = PartialLine()
         self._stderr_attribute = f"{system_namespace}/stderr"
-        self._stderr_step = MutableInt(1)
+        self._stderr_step = StepTracker(initial_step)
 
     def work(self) -> None:
         self._process_captured_data(max_delay_before_flush=timedelta(seconds=5))
@@ -205,11 +225,11 @@ class ConsoleLogCaptureThread(Daemon):
         self,
         attribute_name: str,
         partial_line: PartialLine,
-        step: MutableInt,
+        step: StepTracker,
         data: list[tuple[datetime, str]],
         max_delay_before_flush: timedelta,
     ) -> None:
         for ts, line in captured_data_to_lines(partial_line, data, max_delay_before_flush):
             for short_line in split_long_line(line, MAX_STRING_SERIES_DATA_POINT_LENGTH):
                 self._logs_sink({attribute_name: short_line}, step.value, ts)
-                step.value += 1
+                step.increment()

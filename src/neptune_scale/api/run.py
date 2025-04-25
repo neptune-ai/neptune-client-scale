@@ -252,6 +252,7 @@ class Run(AbstractContextManager):
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
                     system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
+                    initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
                         timestamp=timestamp, string_series=StringSeries(data, step)
@@ -733,7 +734,7 @@ class Run(AbstractContextManager):
         if string_series is not None:
             verify_type("string_series", string_series, StringSeries)
             verify_type("string_series", string_series.data, dict)
-            verify_type("step", string_series.step, (float, int, type(None)))
+            verify_type("step", string_series.step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
