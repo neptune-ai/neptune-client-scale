@@ -6,6 +6,10 @@ from datetime import (
 )
 
 import pytest
+from neptune_fetcher.alpha import (
+    filters,
+    runs,
+)
 
 from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
@@ -50,12 +54,12 @@ def test_sync_atoms(run_init_kwargs, ro_run):
         db_path = run._operations_repo._db_path
         now = time.time()
         data = {
-            "int-value": int(now),
-            "float-value": now,
-            "str-value": f"hello-{now}",
-            "true-value": True,
-            "false-value": False,
-            "datetime-value": datetime.now(timezone.utc).replace(microsecond=0),
+            "test_sync_atoms/int-value": int(now),
+            "test_sync_atoms/float-value": now,
+            "test_sync_atoms/str-value": f"hello-{now}",
+            "test_sync_atoms/true-value": True,
+            "test_sync_atoms/false-value": False,
+            "test_sync_atoms/datetime-value": datetime.now(timezone.utc).replace(microsecond=0),
         }
         run.log_configs(data)
 
@@ -63,6 +67,7 @@ def test_sync_atoms(run_init_kwargs, ro_run):
     sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
 
     # then
+    assert not db_path.exists()
     for key, value in data.items():
         assert ro_run[key].fetch() == value, f"Value for {key} does not match"
 
@@ -72,16 +77,67 @@ def test_sync_series(run_init_kwargs, ro_run):
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
 
-        path = unique_path("test_series/series_no_prefetch")
-
+        series_path = unique_path("test_sync_series/test_sync_series")
         steps, values = random_series()
         for step, value in zip(steps, values):
-            run.log_metrics(data={path: value}, step=step)
+            run.log_metrics(data={series_path: value}, step=step)
 
     # when
     sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
 
     # then
-    df = ro_run[path].fetch_values()
+    assert not db_path.exists()
+    df = ro_run[series_path].fetch_values()
     assert df["step"].tolist() == steps
     assert df["value"].tolist() == values
+
+
+def test_sync_files(run_init_kwargs, temp_dir):
+    # given
+    run_id = run_init_kwargs["run_id"]
+    with Run(**run_init_kwargs, mode="offline") as run:
+        db_path = run._operations_repo._db_path
+
+        path = "test_sync_files/file-value"
+        run.assign_files(files={path: b"test_sync_files file content"})
+
+    # when
+    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+
+    # then
+    assert not db_path.exists()
+    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=path), destination=temp_dir)
+    expected_path = temp_dir / run_id / path.replace(":", "_").replace("+", "_")
+    with open(expected_path, "rb") as file:
+        content = file.read()
+        assert content == b"test_sync_files file content"
+
+
+def test_sync_all_types_combined(run_init_kwargs, temp_dir):
+    # given
+    with Run(**run_init_kwargs, mode="offline") as run:
+        db_path = run._operations_repo._db_path
+
+        now = time.time()
+        data = {
+            "test_sync_all_types/int-value": int(now),
+            "test_sync_all_types/float-value": now,
+            "test_sync_all_types/str-value": f"hello-{now}",
+            "test_sync_all_types/true-value": True,
+            "test_sync_all_types/false-value": False,
+            "test_sync_all_types/datetime-value": datetime.now(timezone.utc).replace(microsecond=0),
+        }
+        run.log_configs(data)
+
+        series_path = unique_path("test_sync_all_types/test_sync_all_types")
+        steps, values = random_series()
+        for step, value in zip(steps, values):
+            run.log_metrics(data={series_path: value}, step=step)
+
+        run.assign_files(files={"test_sync_all_types/file-value": b"test_sync_all_types file content"})
+
+    # when
+    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+
+    # then
+    assert not db_path.exists()
