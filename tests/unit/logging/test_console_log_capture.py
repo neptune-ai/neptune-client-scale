@@ -74,18 +74,19 @@ def test_stream_with_memory_passes_data_to_subscriber_with_multiple_subscribers(
 @pytest.mark.parametrize(
     "initial, increment_count, expected",
     (
-        (0, 0, 0),
-        (1, 0, 1),
-        (1.000001, 0, 1.000001),
-        (0.123456, 0, 0.123456),
-        (0.9999999999, 0, 0.999999),
-        (0.999999, 0, 0.999999),
-        (1.123456789, 0, 1.123456),
-        (1.000001, 1, 1.000002),
-        (0.999999, 1, 1.000000),
-        (1, 1, 1.000001),
-        (1.123456888, 1_000_000, 2.123456),
-        (1, 2_500_001, 3.500001),
+        (0, 0, 0.000001),
+        (1, 0, 1.000001),
+        (1.000001, 0, 1.000002),
+        (0.123456, 0, 0.123457),
+        (0.9999999999, 0, 1),
+        (0.999999, 0, 1),
+        (1.123456789, 0, 1.123457),
+        (1.000001, 1, 1.000003),
+        (0.999999, 1, 1.000001),
+        (0.999998, 1, 1),
+        (1, 1, 1.000002),
+        (1.123456999, 1_000_000, 2.123457),
+        (1, 2_500_001, 3.500002),
     ),
 )
 def test_step_tracker(initial, increment_count, expected):
@@ -224,7 +225,7 @@ LINE_LIMIT = 1024 * 1024
 
 def _make_step(index: int, initial: float = 0) -> float:
     # Return a step value that can be compared against actual calls made,
-    return StepTracker(initial + round(index / 1e6, 6)).value
+    return round(initial + index / 1e6, 6)
 
 
 # The test cases mirror the ones in test_neptune_logging_handler.py

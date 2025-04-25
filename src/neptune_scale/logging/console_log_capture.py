@@ -143,7 +143,8 @@ class StepTracker:
     def __init__(self, initial_step: Union[int, float]) -> None:
         """Track a float step value with a precision of 1e-6."""
         self.whole, self.micro = decompose_step(initial_step)
-        self._value = self.whole + self.micro / 1_000_000
+        # Always start with the subsequent step
+        self.increment()
 
     @property
     def value(self) -> float:
@@ -184,10 +185,6 @@ class ConsoleLogCaptureThread(Daemon):
         self._stderr_partial_line = PartialLine()
         self._stderr_attribute = f"{system_namespace}/stderr"
         self._stderr_step = StepTracker(initial_step)
-
-        # Always start with the next step
-        self._stdout_step.increment()
-        self._stderr_step.increment()
 
     def work(self) -> None:
         self._process_captured_data(max_delay_before_flush=timedelta(seconds=5))
