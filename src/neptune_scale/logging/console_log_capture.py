@@ -144,12 +144,10 @@ class MutableInt:
 
 
 class ConsoleLogCaptureThread(Daemon):
-    STDOUT_ATTRIBUTE = "monitoring/stdout"
-    STDERR_ATTRIBUTE = "monitoring/stderr"
-
     def __init__(
         self,
         run_id: str,
+        system_namespace: str,
         logs_flush_frequency_sec: float,
         logs_sink: Callable[[dict[str, str], Union[float, int], Optional[datetime]], None],
     ) -> None:
@@ -161,9 +159,11 @@ class ConsoleLogCaptureThread(Daemon):
         _subscribe(run_id)
 
         self._stdout_partial_line = PartialLine()
+        self._stdout_attribute = f"{system_namespace}/stdout"
         self._stdout_step = MutableInt(1)
 
         self._stderr_partial_line = PartialLine()
+        self._stderr_attribute = f"{system_namespace}/stderr"
         self._stderr_step = MutableInt(1)
 
     def work(self) -> None:
@@ -179,7 +179,7 @@ class ConsoleLogCaptureThread(Daemon):
             assert _stderr_with_memory is not None
 
             self._process_captured_data_single_stream(
-                self.STDOUT_ATTRIBUTE,
+                self._stdout_attribute,
                 self._stdout_partial_line,
                 self._stdout_step,
                 _stdout_with_memory.get_buffered_data(self._run_id),
@@ -187,7 +187,7 @@ class ConsoleLogCaptureThread(Daemon):
             )
 
             self._process_captured_data_single_stream(
-                self.STDERR_ATTRIBUTE,
+                self._stderr_attribute,
                 self._stderr_partial_line,
                 self._stderr_step,
                 _stderr_with_memory.get_buffered_data(self._run_id),

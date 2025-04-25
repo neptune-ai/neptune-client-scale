@@ -44,7 +44,7 @@ class NeptuneLoggingHandler(logging.Handler):
         verify_type("run", run, Run)
         verify_type("level", level, int)
         verify_type("attribute_path", attribute_path, (str, type(None)))
-        path = attribute_path if attribute_path else "monitoring/logs"
+        path = attribute_path if attribute_path else "system/logs"
         verify_max_length("attribute_path", path, MAX_ATTRIBUTE_PATH_LENGTH)
 
         super().__init__(level=level)
