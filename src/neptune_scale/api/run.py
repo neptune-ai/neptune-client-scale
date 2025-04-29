@@ -163,6 +163,8 @@ class Run(AbstractContextManager):
         if run_id is None:
             run_id = generate_run_id()
 
+        self._fork_step = fork_step
+
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
         verify_type("project", project, (str, type(None)))
@@ -658,14 +660,18 @@ class Run(AbstractContextManager):
 
     def assign_files(self, files: dict[str, Union[str, Path, bytes, File]]) -> None:
         """
-        Assigns single file values to the specified attributes. Any existing values for these attributes will be
-        overwritten.
+        Assigns single file values to the specified attributes and uploads files' contents.
+        Existing values for are overwritten.
 
-        If the value is a simple source type (str, Path, bytes), it's used directly.
-        Mime type and size are determined from the provided source (file or bytes buffer).
+        If a value is a string or Path, it is treated as a file path.
+        If a value is bytes, it is treated as raw file content to save.
+        If a value is a `File` object, its `source` field is used (string and Path are treated as file paths,
+        bytes are treated as raw file content to save).
 
-        If the value is a `File` object, its `source` field is used, along with the optional `destination`,
-        `mime_type`, and `size_bytes` fields. Any fields not provided will be determined from the provided source.
+        The files are uploaded to the Neptune object storage and the attribute are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically,
+        but this mechanism can be overridden by providing `mime_type` and `size_bytes` fields in the `File` object.
 
         Args:
             files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects

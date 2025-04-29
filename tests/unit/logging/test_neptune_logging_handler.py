@@ -70,9 +70,14 @@ def test_initial_step(initial_step):
 
     ts = datetime(2025, 4, 23, 0, 0)
 
-    with Run(project="workspace/project", mode="offline") as run:
+    with Run(
+        project="workspace/project",
+        mode="offline",
+        fork_run_id=None if initial_step is None else "a",
+        fork_step=initial_step,
+    ) as run:
         run.log_string_series = Mock()
-        logger.addHandler(NeptuneLoggingHandler(run=run, initial_step=initial_step))
+        logger.addHandler(NeptuneLoggingHandler(run=run))
 
         for i in range(1, 11):
             logger.info(f"{i}")
