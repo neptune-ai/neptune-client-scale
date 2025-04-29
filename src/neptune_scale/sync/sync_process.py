@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
 import azure.core.exceptions
-from azure.storage.blob import BlobClient
+import requests
+from azure.core.pipeline.transport import AsyncioRequestsTransport
+from azure.storage.blob.aio import BlobClient
 
 from neptune_scale.sync.metadata_splitter import proto_encoded_bytes_field_size
 from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
     Metadata,
     Operation,
     OperationsRepository,
@@ -603,39 +607,38 @@ class FileUploaderThread(Daemon):
         self._neptune_api_token = api_token
         self._operations_repository = operations_repository
         self._errors_queue = errors_queue
+        # Process up to this many file uploads at once
+        self._upload_batch_size = 40
 
         self._api_client: Optional[ApiClient] = None
 
-    def close(self) -> None:
-        if self._api_client is not None:
-            self._api_client.close()
+        # AIO loop used for file uploads
+        self._aio_loop: Optional[asyncio.AbstractEventLoop] = None
+
+        self._aio_session: Optional[requests.Session] = None
+        self._aio_transport: Optional[AsyncioRequestsTransport] = None
 
     def work(self) -> None:
         try:
-            while file_upload_requests := self._operations_repository.get_file_upload_requests(10):
+            while file_upload_requests := self._operations_repository.get_file_upload_requests(self._upload_batch_size):
                 logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
                 if not self._api_client:
                     self._api_client = backend_factory(self._neptune_api_token)
+                    self._aio_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self._aio_loop)
+
+                    self._aio_session = requests.Session()
+                    self._aio_transport = AsyncioRequestsTransport(session=self._aio_session, session_owner=False)
 
                 destination_paths = [file.destination for file in file_upload_requests]
                 storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
 
-                for file in file_upload_requests:
-                    try:
-                        upload_file(file.source_path, file.mime_type, storage_urls[file.destination])
-                        if file.is_temporary:
-                            logger.debug(f"Removing temporary file {file.source_path}")
-                            Path(file.source_path).unlink(missing_ok=True)
+                assert self._aio_loop  # mypy
 
-                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
-                    except NeptuneRetryableError as e:
-                        self._errors_queue.put(e)
-                    except Exception as e:
-                        # Fatal failure. Do not retry the file, but keep it on disk.
-                        logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
-                        self._errors_queue.put(NeptuneFileUploadError())
-                        self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+                # Upload batches as a whole
+                tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
+                self._aio_loop.run_until_complete(asyncio.gather(*tasks))
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
         except Exception as e:
@@ -643,6 +646,32 @@ class FileUploaderThread(Daemon):
             self._errors_queue.put(e)
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
+
+    async def _upload_file(self, file: FileUploadRequest, storage_url: str) -> None:
+        try:
+            await upload_file(file.source_path, file.mime_type, storage_url, self._aio_transport)
+            if file.is_temporary:
+                logger.debug(f"Removing temporary file {file.source_path}")
+                Path(file.source_path).unlink(missing_ok=True)
+
+            self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+        except NeptuneRetryableError as e:
+            self._errors_queue.put(e)
+        except Exception as e:
+            # Fatal failure. Do not retry the file, but keep it on disk.
+            logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
+            self._errors_queue.put(NeptuneFileUploadError())
+            self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+
+    def close(self) -> None:
+        if self._api_client is not None:
+            self._api_client.close()
+
+        if self._aio_session is not None:
+            self._aio_session.close()
+
+        if self._aio_loop is not None:
+            self._aio_loop.close()
 
 
 @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
@@ -661,20 +690,23 @@ def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: 
     return {file.path: file.url for file in response.parsed.files}
 
 
-def upload_file(local_path: str, mime_type: str, storage_url: str) -> None:
+async def upload_file(local_path: str, mime_type: str, storage_url: str, transport: AsyncioRequestsTransport) -> None:
     logger.debug(f"Start: upload file {local_path}")
 
     try:
         size_bytes = Path(local_path).stat().st_size
         with open(local_path, "rb") as file:
-            client = BlobClient.from_blob_url(storage_url, initial_backoff=5, increment_base=3, retry_total=5)
-
-            client.upload_blob(
-                file,
-                content_type=mime_type,
-                overwrite=True,
-                length=size_bytes,
+            client = BlobClient.from_blob_url(
+                storage_url, initial_backoff=5, increment_base=3, retry_total=5, transport=transport
             )
+            async with client:
+                # Upload with default concurrency settings
+                await client.upload_blob(
+                    file,
+                    content_type=mime_type,
+                    overwrite=True,
+                    length=size_bytes,
+                )
     except azure.core.exceptions.AzureError as e:
         logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
         raise NeptuneFileUploadTemporaryError() from e
