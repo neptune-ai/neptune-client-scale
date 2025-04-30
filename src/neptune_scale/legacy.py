@@ -92,9 +92,9 @@ class Attribute:
 
         self._log(
             timestamp=timestamp,
+            step=step,
             metrics=Metrics(
                 data=accumulate_dict_values(value, self._path),
-                step=step,
                 preview=preview,
                 preview_completion=preview_completion,
             ),
