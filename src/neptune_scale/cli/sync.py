@@ -16,6 +16,7 @@
 
 __all__ = ["sync_all"]
 
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -148,28 +149,26 @@ class SyncRunner:
                 try:
                     if self._sync_process is None or not self._sync_process.is_alive():
                         logger.warning("Waiting interrupted because sync process is not running")
-                        return
+                        break
 
-                    if timer.is_finite():
-                        if timer.is_expired():
-                            logger.info("Waiting interrupted because timeout was reached")
-                            return
-                        wait_time = min(wait_time, timer.remaining_time() or 0)
+                    if timer.is_expired():
+                        logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    wait_time = min(wait_time, timer.remaining_time() or math.inf)
                     operation_progress = self._wait_operation_submit(
                         last_progress=operation_progress, wait_time=wait_time
                     )
 
-                    if timer.is_finite():
-                        if timer.is_expired():
-                            logger.info("Waiting interrupted because timeout was reached")
-                            return
-                        wait_time = min(wait_time, timer.remaining_time() or 0)
+                    if timer.is_expired():
+                        logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    wait_time = min(wait_time, timer.remaining_time() or math.inf)
                     file_progress = self._wait_file_upload(last_progress=file_progress, wait_time=wait_time)
 
                     progress_bar.update(operation_progress.progress + file_progress.progress - progress_bar.n)
 
                     if operation_progress.finished and file_progress.finished:
-                        return
+                        break
 
                 except KeyboardInterrupt:
                     logger.warning("Waiting interrupted by user")

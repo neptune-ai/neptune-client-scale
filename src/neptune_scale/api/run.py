@@ -8,6 +8,7 @@ import base64
 import binascii
 import itertools
 import json
+import math
 import mimetypes
 import re
 import uuid
@@ -886,7 +887,7 @@ class Run(AbstractContextManager):
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
                         logger.warning("Waiting interrupted because sync process is not running")
-                        return
+                        break
 
                     assert wait_seq is not None
                     assert self._sequence_tracker is not None
@@ -896,8 +897,7 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
-                if timer.is_finite():
-                    wait_time = min(wait_time, timer.remaining_time() or 0)
+                wait_time = min(wait_time, timer.remaining_time() or math.inf)
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -931,15 +931,16 @@ class Run(AbstractContextManager):
                         logger.info(f"All operations were {phrase}")
                     break
 
-                if timer.is_finite():
-                    if timer.is_expired():
-                        if verbose:
-                            logger.info("Waiting interrupted because timeout was reached")
-                        break
+                if timer.is_expired():
+                    if verbose:
+                        logger.info("Waiting interrupted because timeout was reached")
+                    break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
-                return
+            else:
+                if verbose:
+                    logger.info("Waiting interrupted because timeout was reached")
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -1020,12 +1021,11 @@ class Run(AbstractContextManager):
                         verbose=verbose,
                     )
 
-                    if timer.is_finite():
-                        if timer.is_expired():
-                            if verbose:
-                                logger.info("Waiting interrupted because timeout was reached")
-                            break
-                        sleep_time = min(sleep_time, timer.remaining_time() or 0)
+                    if timer.is_expired():
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    sleep_time = min(sleep_time, timer.remaining_time() or math.inf)
 
                     time.sleep(sleep_time)
                 else:
