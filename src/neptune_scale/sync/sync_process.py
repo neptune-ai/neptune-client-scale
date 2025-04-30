@@ -34,6 +34,7 @@ from typing import (
     NamedTuple,
     Optional,
     TypeVar,
+    cast,
 )
 
 import backoff
@@ -102,6 +103,7 @@ from neptune_scale.util import (
     Daemon,
     SharedFloat,
     SharedInt,
+    envs,
     get_logger,
 )
 
@@ -133,6 +135,12 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
     IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
 }
+
+MAX_CONCURRENT_FILE_UPLOADS = cast(int, envs.get_int(envs.MAX_CONCURRENT_FILE_UPLOADS, 50))
+if MAX_CONCURRENT_FILE_UPLOADS <= 0:
+    raise ValueError(
+        f"{envs.MAX_CONCURRENT_FILE_UPLOADS} must be a positive integer, got '{MAX_CONCURRENT_FILE_UPLOADS}'"
+    )
 
 
 class StatusTrackingElement(NamedTuple):
@@ -599,7 +607,12 @@ class StatusTrackingThread(Daemon):
 
 class FileUploaderThread(Daemon):
     def __init__(
-        self, project: str, api_token: str, operations_repository: OperationsRepository, errors_queue: ErrorsQueue
+        self,
+        project: str,
+        api_token: str,
+        operations_repository: OperationsRepository,
+        errors_queue: ErrorsQueue,
+        max_concurrent_uploads: int = MAX_CONCURRENT_FILE_UPLOADS,
     ) -> None:
         super().__init__(name="FileUploaderThread", sleep_time=1)
 
@@ -607,8 +620,7 @@ class FileUploaderThread(Daemon):
         self._neptune_api_token = api_token
         self._operations_repository = operations_repository
         self._errors_queue = errors_queue
-        # Process up to this many file uploads at once
-        self._upload_batch_size = 40
+        self._max_concurrent_uploads = max_concurrent_uploads
 
         self._api_client: Optional[ApiClient] = None
 
@@ -620,7 +632,9 @@ class FileUploaderThread(Daemon):
 
     def work(self) -> None:
         try:
-            while file_upload_requests := self._operations_repository.get_file_upload_requests(self._upload_batch_size):
+            while file_upload_requests := self._operations_repository.get_file_upload_requests(
+                self._max_concurrent_uploads
+            ):
                 logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
                 if not self._api_client:
