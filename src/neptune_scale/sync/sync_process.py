@@ -624,9 +624,10 @@ class FileUploaderThread(Daemon):
 
         self._api_client: Optional[ApiClient] = None
 
-        # AIO loop used for file uploads
+        # AIO loop used for file uploads. When created (lazily), it is set as this thread's event loop.
         self._aio_loop: Optional[asyncio.AbstractEventLoop] = None
 
+        # Shared transport and session to take advantage of connection pooling.
         self._aio_session: Optional[requests.Session] = None
         self._aio_transport: Optional[AsyncioRequestsTransport] = None
 
@@ -637,8 +638,10 @@ class FileUploaderThread(Daemon):
             ):
                 logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
+                # No networking was done yet - initialize lazily
                 if not self._api_client:
                     self._api_client = backend_factory(self._neptune_api_token)
+
                     self._aio_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(self._aio_loop)
 
@@ -650,9 +653,12 @@ class FileUploaderThread(Daemon):
 
                 assert self._aio_loop  # mypy
 
-                # Upload batches as a whole
+                # Fan out file uploads as async tasks, and block until all tasks are done.
+                # Passing `return_exceptions=True` to gather() will ensure that an exception
+                # in a single task will not interrupt waiting for the other tasks.
                 tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
-                self._aio_loop.run_until_complete(asyncio.gather(*tasks))
+                self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
         except Exception as e:
@@ -680,6 +686,9 @@ class FileUploaderThread(Daemon):
     def close(self) -> None:
         if self._api_client is not None:
             self._api_client.close()
+
+        if self._aio_transport is not None:
+            self._aio_transport.close()
 
         if self._aio_session is not None:
             self._aio_session.close()
