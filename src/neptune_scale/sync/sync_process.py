@@ -655,9 +655,11 @@ class FileUploaderThread(Daemon):
 
                 # Fan out file uploads as async tasks, and block until all tasks are done.
                 # Passing `return_exceptions=True` to gather() will ensure that an exception
-                # in a single task will not interrupt waiting for the other tasks.
+                # in a single task will not interrupt waiting for the other tasks: we're basically
+                # silencing any exceptions here.
                 tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
                 self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                logger.debug("Upload tasks completed for the current batch")
 
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)

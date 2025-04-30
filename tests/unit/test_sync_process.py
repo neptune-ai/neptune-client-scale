@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import itertools
 import os
@@ -7,6 +8,8 @@ import time
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import (
+    ANY,
+    AsyncMock,
     Mock,
     call,
     patch,
@@ -790,11 +793,13 @@ def test_file_uploader_thread_successful_upload_flow(
             buffer_upload_request.source_path,
             buffer_upload_request.mime_type,
             "text-url",
+            ANY,
         ),
         call(
             disk_upload_request.source_path,
             disk_upload_request.mime_type,
             "image-url",
+            ANY,
         ),
     ]
     # All files should be uploaded
@@ -811,6 +816,67 @@ def test_file_uploader_thread_successful_upload_flow(
 
     # No errors should be emitted
     mock_errors_queue.put.assert_not_called()
+
+
+def test_file_uploader_uploads_concurrently(
+    api_token,
+    mock_backend_factory,
+    mock_operations_repository,
+    mock_errors_queue,
+    mock_upload_file,
+    mock_fetch_file_storage_urls,
+):
+    """Verify that FileUploaderThread uploads concurrently, and respects the max_concurrent_uploads limit."""
+
+    thread = FileUploaderThread(
+        project="workspace/project",
+        api_token=api_token,
+        operations_repository=mock_operations_repository,
+        errors_queue=mock_errors_queue,
+        max_concurrent_uploads=3,
+    )
+
+    lock = asyncio.Lock()
+    concurrent_uploads = 0
+    peak_uploads = 0
+
+    async def _upload_file(local_path, mime_type, storage_url, transport):
+        """Track the number of concurrent uploads and the peak number of concurrent uploads."""
+        nonlocal peak_uploads, concurrent_uploads
+
+        async with lock:
+            concurrent_uploads += 1
+            peak_uploads = max(peak_uploads, concurrent_uploads)
+
+        await asyncio.sleep(0.5)
+
+        async with lock:
+            concurrent_uploads -= 1
+
+    mock_upload_file.side_effect = _upload_file
+
+    mock_operations_repository.get_file_upload_requests.side_effect = [
+        [FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(1))],
+        [
+            # This is the peak batch
+            FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(2)),
+            FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(3)),
+            FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(4)),
+        ],
+        [FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(5))],
+        [
+            FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(6)),
+            FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(7)),
+        ],
+        [],
+    ]
+
+    thread.start()
+    thread.interrupt(remaining_iterations=4)
+    thread.join()
+
+    assert peak_uploads == 3, f"Peak concurrent uploads should be 3, but was {peak_uploads}"
+    assert mock_upload_file.call_count == 7
 
 
 def test_file_uploader_thread_terminal_error(
@@ -846,16 +912,8 @@ def test_file_uploader_thread_terminal_error(
 
     # An upload attempt should be made for both files
     expected_calls = [
-        call(
-            "no-such-file",
-            "text/plain",
-            "text-url",
-        ),
-        call(
-            disk_upload_request.source_path,
-            disk_upload_request.mime_type,
-            "image-url",
-        ),
+        call("no-such-file", "text/plain", "text-url", ANY),
+        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", ANY),
     ]
     mock_upload_file.assert_has_calls(expected_calls)
 
@@ -873,7 +931,7 @@ def test_file_uploader_thread_terminal_error(
 @patch("neptune_scale.sync.sync_process.BlobClient")
 @pytest.mark.parametrize("upload_error", [AzureError(""), HttpResponseError, ClientAuthenticationError])
 def test_file_uploader_thread_non_terminal_error(
-    mock_blob_client,
+    mock_blob_client_cls,
     upload_error,
     temp_dir,
     uploader_thread,
@@ -883,6 +941,10 @@ def test_file_uploader_thread_non_terminal_error(
     disk_upload_request,
 ):
     """Uploader thread should retry uploads on any Azure errors."""
+
+    mock_blob_client = AsyncMock()
+    mock_blob_client.upload_blob.side_effect = upload_error
+    mock_blob_client_cls.from_blob_url.return_value = mock_blob_client
 
     # We will fail 2 times before succeeding
     mock_blob_client.from_blob_url.return_value = mock_blob_client
