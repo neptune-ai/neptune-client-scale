@@ -146,6 +146,6 @@ Created with :heart: by the [neptune.ai team &rarr;](https://neptune.ai/jobs#tea
 [docs]: https://docs.neptune.ai/setup
 [experiments]: https://docs.neptune.ai/experiments
 [log-metadata]: https://docs.neptune.ai/log_metadata
-[new-experiment]: https://docs.neptune.ai/new_experiment
+[new-experiment]: https://docs.neptune.ai/create_experiment
 [quickstart]: https://docs.neptune.ai/quickstart
 [demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/compare?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12&dash=dashboard&dashboardId=9e745b6c-2c98-4e23-abbc-9b56d8123fb8&compare=auto-5
