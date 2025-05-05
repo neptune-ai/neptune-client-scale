@@ -1,3 +1,4 @@
+import math
 import time
 from typing import Optional
 
@@ -13,6 +14,12 @@ class Timer:
 
         elapsed_time = time.monotonic() - self.start_time
         return max(0.0, self.timeout - elapsed_time)
+
+    def remaining_time_or_inf(self) -> float:
+        remaining_time = self.remaining_time()
+        if remaining_time is None:
+            return math.inf
+        return remaining_time
 
     def is_expired(self) -> bool:
         if self.timeout is None:

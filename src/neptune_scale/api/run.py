@@ -8,7 +8,6 @@ import base64
 import binascii
 import itertools
 import json
-import math
 import mimetypes
 import re
 import uuid
@@ -897,7 +896,7 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
-                wait_time = min(wait_time, timer.remaining_time() or math.inf)
+                wait_time = min(wait_time, timer.remaining_time_or_inf())
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -1022,7 +1021,7 @@ class Run(AbstractContextManager):
                         if verbose:
                             logger.info("Waiting interrupted because timeout was reached")
                         break
-                    sleep_time = min(sleep_time, timer.remaining_time() or math.inf)
+                    sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:

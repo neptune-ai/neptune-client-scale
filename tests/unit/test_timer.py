@@ -1,3 +1,4 @@
+import math
 import time
 
 import pytest
@@ -25,6 +26,28 @@ def test_timer_remaining_time(timeout, sleep, remaining_time):
         assert timer.remaining_time() is None
     else:
         assert timer.remaining_time() <= remaining_time
+
+
+@pytest.mark.parametrize(
+    "timeout, sleep, remaining_time",
+    (
+        (None, 0, None),
+        (None, 1, None),
+        (1, 0, 1),
+        (1, 0.5, 0.5),
+        (1, 1, 0),
+        (1, 2, 0),
+    ),
+)
+def test_timer_remaining_time_or_inf(timeout, sleep, remaining_time):
+    timer = Timer(timeout)
+
+    time.sleep(sleep)
+
+    if remaining_time is None:
+        assert timer.remaining_time_or_inf() == math.inf
+    else:
+        assert timer.remaining_time_or_inf() <= remaining_time
 
 
 @pytest.mark.parametrize(
