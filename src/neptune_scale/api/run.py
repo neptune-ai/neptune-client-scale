@@ -938,9 +938,6 @@ class Run(AbstractContextManager):
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
-            else:
-                if verbose:
-                    logger.info("Waiting interrupted because timeout was reached")
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
