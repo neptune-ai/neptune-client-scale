@@ -8,7 +8,6 @@ import time
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import (
-    ANY,
     AsyncMock,
     Mock,
     call,
@@ -789,18 +788,8 @@ def test_file_uploader_thread_successful_upload_flow(
     )
 
     expected_calls = [
-        call(
-            buffer_upload_request.source_path,
-            buffer_upload_request.mime_type,
-            "text-url",
-            ANY,
-        ),
-        call(
-            disk_upload_request.source_path,
-            disk_upload_request.mime_type,
-            "image-url",
-            ANY,
-        ),
+        call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url"),
+        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
     ]
     # All files should be uploaded
     mock_upload_file.assert_has_calls(expected_calls)
@@ -840,7 +829,7 @@ def test_file_uploader_uploads_concurrently(
     concurrent_uploads = 0
     peak_uploads = 0
 
-    async def _upload_file(local_path, mime_type, storage_url, transport):
+    async def _upload_file(local_path, mime_type, storage_url):
         """Track the number of concurrent uploads and the peak number of concurrent uploads."""
         nonlocal peak_uploads, concurrent_uploads
 
@@ -869,10 +858,11 @@ def test_file_uploader_uploads_concurrently(
             FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(7)),
         ],
         [],
+        [],
     ]
 
     thread.start()
-    thread.interrupt(remaining_iterations=4)
+    thread.interrupt(remaining_iterations=1)
     thread.join()
 
     # Assert that we only pull the max concurrent number of uploads from the repository
@@ -914,8 +904,8 @@ def test_file_uploader_thread_terminal_error(
 
     # An upload attempt should be made for both files
     expected_calls = [
-        call("no-such-file", "text/plain", "text-url", ANY),
-        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", ANY),
+        call("no-such-file", "text/plain", "text-url"),
+        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
     ]
     mock_upload_file.assert_has_calls(expected_calls)
 

@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 
 import azure.core.exceptions
-import requests
 from azure.core.pipeline.transport import AsyncioRequestsTransport
 from azure.storage.blob.aio import BlobClient
 
@@ -619,54 +618,43 @@ class FileUploaderThread(Daemon):
 
         self._api_client: Optional[ApiClient] = None
 
-        # AIO loop used for file uploads. When created (lazily), it is set as this thread's event loop.
-        self._aio_loop: Optional[asyncio.AbstractEventLoop] = None
-
-        # Shared transport and session to take advantage of connection pooling.
-        self._aio_session: Optional[requests.Session] = None
-        self._aio_transport: Optional[AsyncioRequestsTransport] = None
+        # AIO loop used for file uploads. It needs to be set as current event loop in the actual worker thread,
+        # so we do it in work() when also initializing the API client.
+        self._aio_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 
     def work(self) -> None:
         try:
+            if self._api_client is None:
+                self._api_client = backend_factory(api_token=self._neptune_api_token)
+                asyncio.set_event_loop(self._aio_loop)
+
             while file_upload_requests := self._operations_repository.get_file_upload_requests(
                 self._max_concurrent_uploads
             ):
                 logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
-                # No networking was done yet - initialize lazily
-                if not self._api_client:
-                    self._api_client = backend_factory(self._neptune_api_token)
-
-                    self._aio_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(self._aio_loop)
-
-                    self._aio_session = requests.Session()
-                    self._aio_transport = AsyncioRequestsTransport(session=self._aio_session, session_owner=False)
-
                 destination_paths = [file.destination for file in file_upload_requests]
                 storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
 
-                assert self._aio_loop  # mypy
-
                 # Fan out file uploads as async tasks, and block until all tasks are done.
-                # Passing `return_exceptions=True` to gather() will ensure that an exception
-                # in a single task will not interrupt waiting for the other tasks: we're basically
-                # silencing any exceptions here.
+                # Note that self._upload_file() should not raise an exception, as they are handled
+                # in the method itself. However, we still pass return_exceptions=True to make sure asyncio.gather()
+                # waits for all the tasks to finish regardless of any exceptions.
                 tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
                 self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-                logger.debug("Upload tasks completed for the current batch")
 
+                logger.debug("Upload tasks completed for the current batch")
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
         except Exception as e:
-            logger.error("Error in file uploader thread", exc_info=e)
+            logger.error("Fatal error in file uploader thread", exc_info=e)
             self._errors_queue.put(e)
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
     async def _upload_file(self, file: FileUploadRequest, storage_url: str) -> None:
         try:
-            await upload_file(file.source_path, file.mime_type, storage_url, self._aio_transport)
+            await upload_file(file.source_path, file.mime_type, storage_url)
             if file.is_temporary:
                 logger.debug(f"Removing temporary file {file.source_path}")
                 Path(file.source_path).unlink(missing_ok=True)
@@ -683,12 +671,6 @@ class FileUploaderThread(Daemon):
     def close(self) -> None:
         if self._api_client is not None:
             self._api_client.close()
-
-        if self._aio_transport is not None:
-            self._aio_transport.close()
-
-        if self._aio_session is not None:
-            self._aio_session.close()
 
         if self._aio_loop is not None:
             self._aio_loop.close()
@@ -710,14 +692,14 @@ def fetch_file_storage_urls(client: ApiClient, project: str, destination_paths: 
     return {file.path: file.url for file in response.parsed.files}
 
 
-async def upload_file(local_path: str, mime_type: str, storage_url: str, transport: AsyncioRequestsTransport) -> None:
+async def upload_file(local_path: str, mime_type: str, storage_url: str) -> None:
     logger.debug(f"Start: upload file {local_path}")
 
     try:
         size_bytes = Path(local_path).stat().st_size
         with open(local_path, "rb") as file:
             client = BlobClient.from_blob_url(
-                storage_url, initial_backoff=5, increment_base=3, retry_total=5, transport=transport
+                storage_url, initial_backoff=5, increment_base=3, retry_total=5, transport=AsyncioRequestsTransport()
             )
             async with client:
                 # Upload with default concurrency settings
