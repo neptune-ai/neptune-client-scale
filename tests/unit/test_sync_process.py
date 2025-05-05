@@ -875,6 +875,8 @@ def test_file_uploader_uploads_concurrently(
     thread.interrupt(remaining_iterations=4)
     thread.join()
 
+    # Assert that we only pull the max concurrent number of uploads from the repository
+    mock_operations_repository.get_file_upload_requests.assert_has_calls([call(3), call(3), call(3), call(3)])
     assert peak_uploads == 3, f"Peak concurrent uploads should be 3, but was {peak_uploads}"
     assert mock_upload_file.call_count == 7
 
