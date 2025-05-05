@@ -1,8 +1,5 @@
 import os
-from typing import (
-    Optional,
-    Union,
-)
+from typing import Union
 
 PROJECT_ENV_NAME = "NEPTUNE_PROJECT"
 
@@ -34,14 +31,17 @@ def get_bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).lower() in ("true", "1")
 
 
-def get_int(name: str, default: Optional[int] = None) -> Optional[int]:
+def get_positive_int(name: str, default: int) -> int:
     """Get int value from env, returning the default if not found. If the value is not an int, raise ValueError."""
 
     value = os.getenv(name)
     try:
-        return default if value is None else int(value)
+        int_value = default if value is None else int(value)
+        if int_value <= 0:
+            raise ValueError()
+        return int_value
     except ValueError:
-        raise ValueError(f"Environment variable {name} must be an integer, got '{value}'")
+        raise ValueError(f"{name} must be a positive integer, got '{value}'")
 
 
 def get_option(name: str, choices: Union[list[str], tuple[str, ...]], default: str) -> str:

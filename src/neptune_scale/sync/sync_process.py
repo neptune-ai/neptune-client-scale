@@ -34,7 +34,6 @@ from typing import (
     NamedTuple,
     Optional,
     TypeVar,
-    cast,
 )
 
 import backoff
@@ -135,12 +134,6 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
     IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
 }
-
-MAX_CONCURRENT_FILE_UPLOADS = cast(int, envs.get_int(envs.MAX_CONCURRENT_FILE_UPLOADS, 50))
-if MAX_CONCURRENT_FILE_UPLOADS <= 0:
-    raise ValueError(
-        f"{envs.MAX_CONCURRENT_FILE_UPLOADS} must be a positive integer, got '{MAX_CONCURRENT_FILE_UPLOADS}'"
-    )
 
 
 class StatusTrackingElement(NamedTuple):
@@ -612,7 +605,7 @@ class FileUploaderThread(Daemon):
         api_token: str,
         operations_repository: OperationsRepository,
         errors_queue: ErrorsQueue,
-        max_concurrent_uploads: int = MAX_CONCURRENT_FILE_UPLOADS,
+        max_concurrent_uploads: Optional[int] = None,
     ) -> None:
         super().__init__(name="FileUploaderThread", sleep_time=1)
 
@@ -620,7 +613,9 @@ class FileUploaderThread(Daemon):
         self._neptune_api_token = api_token
         self._operations_repository = operations_repository
         self._errors_queue = errors_queue
-        self._max_concurrent_uploads = max_concurrent_uploads
+        self._max_concurrent_uploads = max_concurrent_uploads or envs.get_positive_int(
+            envs.MAX_CONCURRENT_FILE_UPLOADS, 50
+        )
 
         self._api_client: Optional[ApiClient] = None
 
