@@ -24,7 +24,7 @@ With Neptune, you can monitor thousands of per-layer metrics—losses, gradients
 <a href="https://youtu.be/0J4dsEq8i08"><b>Watch a 3min explainer video →</b></a>
 &nbsp;
 
-<a href="https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/table?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12"><b>Play with a live example project in the Neptune app  →</b></a>
+<a href="https://scale.neptune.ai/o/examples/org/LLM-Pretraining/reports/9e6a2cad-77e7-42df-9d64-28f07d37e908"><b>Play with a live example project in the Neptune app  →</b></a>
 &nbsp;
 
 ## Get started
@@ -87,7 +87,7 @@ run = Run(experiment_name="MyExperimentName")
 
 Then, call logging methods on the run and pass the metadata as a dictionary.
 
-Log configuration or other simple values with `log_configs()`:
+Log configuration or other simple values with [`log_configs()`][log_configs]:
 
 ```python
 run.log_configs(
@@ -98,7 +98,7 @@ run.log_configs(
 )
 ```
 
-Inside a training loop or other iteration, use `log_metrics()` to append metric values:
+Inside a training loop or other iteration, use [`log_metrics()`][log_metrics] to append metric values:
 
 ```python
 # inside a loop
@@ -109,13 +109,24 @@ for step in range(100):
     )
 ```
 
-To help organize and group runs, you can apply tags:
+[Upload files][log-files]:
+
+```python
+run.assign_files(
+    {
+        "dataset/data_sample": "sample_data.csv",
+        "dataset/image_sample": "input/images/img1.png",
+    }
+)
+```
+
+To help organize and group runs, apply tags:
 
 ```python
 run.add_tags(tags=["testing", "data v1.0"])
 ```
 
-The run is stopped when exiting the context or the script finishes execution, but you can use [`close()`](#close) to stop it once logging is no longer needed:
+The run is stopped when exiting the context or the script finishes execution, but you can use [`close()`][close] to stop it once logging is no longer needed:
 
 ```python
 run.close()
@@ -143,9 +154,13 @@ Created with :heart: by the [neptune.ai team &rarr;](https://neptune.ai/jobs#tea
 
 
 [api-ref]: https://docs.neptune.ai/run
+[close]: https://docs.neptune.ai/run/close
 [docs]: https://docs.neptune.ai/setup
 [experiments]: https://docs.neptune.ai/experiments
+[log-files]: https://docs.neptune.ai/log_files
 [log-metadata]: https://docs.neptune.ai/log_metadata
+[log_configs]: https://docs.neptune.ai/run/log_configs
+[log_metrics]: https://docs.neptune.ai/run/log_metrics
 [new-experiment]: https://docs.neptune.ai/create_experiment
 [quickstart]: https://docs.neptune.ai/quickstart
-[demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/runs/compare?viewId=9e6a41f4-69a5-4d9f-951c-b1304f2acf12&dash=dashboard&dashboardId=9e745b6c-2c98-4e23-abbc-9b56d8123fb8&compare=auto-5
+[demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/reports/9e6a2cad-77e7-42df-9d64-28f07d37e908
