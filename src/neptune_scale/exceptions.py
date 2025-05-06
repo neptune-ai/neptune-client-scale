@@ -164,8 +164,12 @@ environment variable to `True`.
 For details, see https://docs.neptune.ai/log_configs
 """
 
-    def __init__(self) -> None:
+    def __init__(self, *_args: Any) -> None:
         # Because this class defines its own message, the argument values to super().__init__ don't matter here.
+        # However, we still need to accept *args, for unpickling to work properly. At the end of inheritance chain,
+        # NeptuneScaleError calls Exception.__init__() with the `message` argument. This gets saved by pickle
+        # and later used when unpickling the exception object, which would fail if __init__ didn't accept any
+        # positional args. Our message is fixed, so this works OK.
         super().__init__(metric="", step=None, value=None)
 
 
