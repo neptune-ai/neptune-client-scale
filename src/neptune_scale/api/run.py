@@ -245,7 +245,7 @@ class Run(AbstractContextManager):
 
             existing_metadata = self._operations_repo.get_metadata()
             if existing_metadata is not None:
-                raise NeptuneDatabaseConflict(path=operations_repository_path)
+                raise NeptuneDatabaseConflict(path=operations_repository_path.name)
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
