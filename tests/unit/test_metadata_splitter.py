@@ -31,6 +31,9 @@ from neptune_scale.sync.metadata_splitter import (
     string_series_to_update_run_snapshots,
 )
 
+# The character "𐍈" (U+10348) encodes to 4 bytes
+UTF_CHAR = "𐍈"
+
 
 @pytest.mark.parametrize(
     "step, expect_whole, expect_micro",
@@ -476,6 +479,36 @@ def test_invalid_paths(caplog, action, invalid_path, param_name):
             assert "paths must be" in caplog.text
 
 
+@pytest.mark.parametrize("path", ("A", "A" * 1024, UTF_CHAR * 256))
+@patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", "raise")
+@pytest.mark.parametrize(
+    "param_and_value",
+    (("add_tags", ["tag"]), ("remove_tags", ["tag"]), ("configs", "foo"), ("metrics", None), ("files", None)),
+)
+def test_valid_paths(caplog, path, param_and_value):
+    param_name, value = param_and_value
+    kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files")}
+
+    if param_name == "metrics":
+        data = Metrics(step=1, data={path: 1})
+    elif param_name == "files":
+        data = {path: FileRefData(destination="x", mime_type="text/plain", size_bytes=0)}
+    else:
+        data = {path: value}
+
+    kwargs[param_name] = data
+
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        **kwargs,
+    )
+
+    # Shouldn't fail
+    next(splitter)
+
+
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize("invalid_value", (None, "abc", {"nested": 1}, object(), [], set, tuple(), datetime.now()))
 def test_invalid_metrics_values(caplog, action, invalid_value):
@@ -629,7 +662,20 @@ def test_string_series_to_operations():
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize(
-    "invalid_path", (None, "A" * 1025, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now())
+    "invalid_path",
+    (
+        None,
+        "A" * 1025,
+        "A" + UTF_CHAR * 256,
+        UTF_CHAR * 257,
+        object(),
+        1,
+        1.0,
+        True,
+        frozenset(),
+        tuple(),
+        datetime.now(),
+    ),
 )
 def test_string_series_invalid_paths(caplog, action, invalid_path):
     data = StringSeries(data={invalid_path: object()}, step=1)
@@ -641,6 +687,13 @@ def test_string_series_invalid_paths(caplog, action, invalid_path):
             with caplog.at_level("WARNING"):
                 list(string_series_to_update_run_snapshots(data, datetime.now()))
             assert "paths must be" in caplog.text
+
+
+@pytest.mark.parametrize("path", ("A", "A" * 1024, UTF_CHAR * 256))
+@patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", "raise")
+def test_string_series_valid_paths(path):
+    data = StringSeries(data={path: "foo"}, step=1)
+    list(string_series_to_update_run_snapshots(data, datetime.now()))
 
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
