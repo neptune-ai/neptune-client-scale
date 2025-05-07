@@ -4,9 +4,16 @@ from dataclasses import (
 )
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Optional,
     Union,
 )
+
+if TYPE_CHECKING:
+    try:
+        import numpy as np  # noqa: F401
+    except ImportError:
+        np = None
 
 
 @dataclass
@@ -28,3 +35,17 @@ class File:
 
     # Optional destination path in object storage (relative to project namespace).
     destination: Optional[str] = field(default=None)
+
+
+ArrayLike = Union[list[Union[float, int]], "np.ndarray"]
+
+
+@dataclass
+class Histogram:
+    """Represents a histogram with explicit bin edges and counts/densities
+    falling into specific bins.
+    """
+
+    bin_edges: ArrayLike
+    counts: Optional[ArrayLike] = None
+    densities: Optional[ArrayLike] = None
