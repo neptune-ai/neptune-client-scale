@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pathlib
-
 __all__ = (
     "NeptuneScaleError",
     "NeptuneScaleWarning",
@@ -148,7 +146,7 @@ environment variable to `True`.
 For details, see https://docs.neptune.ai/log_configs
 """
 
-    def __init__(self, *, metric: str, step: Optional[float | int], value: Any) -> None:
+    def __init__(self, metric: str = "", step: Optional[float | int] = None, value: Any = None) -> None:
         super().__init__(metric=metric, step=step, value=value)
 
 
@@ -557,5 +555,5 @@ class NeptuneLocalStorageInUnsupportedVersion(NeptuneScaleError):
 class NeptuneDatabaseConflict(NeptuneScaleError):
     message = """NeptuneDatabaseConflict: Database with the same name `{name}` already exists."""
 
-    def __init__(self, path: pathlib.Path) -> None:
-        super().__init__(name=path.name)
+    def __init__(self, path: str = "") -> None:
+        super().__init__(name=path)
