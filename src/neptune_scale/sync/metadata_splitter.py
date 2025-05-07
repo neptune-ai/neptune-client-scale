@@ -40,13 +40,13 @@ from neptune_scale.sync.parameters import (
     MAX_SINGLE_OPERATION_SIZE_BYTES,
     MAX_STRING_SERIES_DATA_POINT_LENGTH,
 )
-from neptune_scale.types import (
-    ArrayLike,
-    Histogram,
-)
 from neptune_scale.sync.size_util import (
     SINGLE_FLOAT_VALUE_SIZE,
     proto_string_size,
+)
+from neptune_scale.types import (
+    ArrayLike,
+    Histogram,
 )
 from neptune_scale.util import (
     envs,
@@ -493,7 +493,6 @@ def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, 
         yield key, value
 
 
-def _is_over_utf8_bytes_limit(string: str, max_bytes: int) -> bool:
 def _has_non_numeric_values(arr: ArrayLike) -> bool:
     """
     Return true if the array contains non-numeric values or NaN.
