@@ -180,7 +180,7 @@ NeptuneUnauthorizedError: You don't have permission to access the given resource
         - Log in to Neptune and open the user menu.
         - If your workspace uses service accounts, ask the project owner to provide the token.
 
-    - Verify that the provided project name is correct.
+    - Verify that the provided project name is correct and the project exists.
       The correct project name should look like this: {correct}WORKSPACE_NAME/PROJECT_NAME{end}
       It has two parts:
           - {correct}WORKSPACE_NAME{end}: can be your username or your organization name
