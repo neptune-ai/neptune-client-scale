@@ -1,27 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from neptune_scale.sync.parameters import (
-    MAX_ATTRIBUTE_PATH_LENGTH,
-    MAX_FILE_DESTINATION_LENGTH,
-    MAX_FILE_MIME_TYPE_LENGTH,
-    MAX_SINGLE_OPERATION_SIZE_BYTES,
-    MAX_STRING_SERIES_DATA_POINT_LENGTH,
-)
-
-__all__ = (
-    "FileRefData",
-    "MetadataSplitter",
-    "datetime_to_proto",
-    "make_step",
-    "Metrics",
-    "string_series_to_update_run_snapshots",
-)
-
 import math
 import warnings
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     Any,
@@ -35,6 +17,9 @@ from more_itertools import peekable
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     FileRef,
+)
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Histogram as ProtobufHistogram
+from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Preview,
     Step,
     StringSet,
@@ -47,6 +32,18 @@ from neptune_scale.exceptions import (
     NeptuneScaleWarning,
     NeptuneUnableToLogData,
 )
+from neptune_scale.sync.parameters import (
+    MAX_ATTRIBUTE_PATH_LENGTH,
+    MAX_FILE_DESTINATION_LENGTH,
+    MAX_FILE_MIME_TYPE_LENGTH,
+    MAX_HISTOGRAM_BIN_EDGES,
+    MAX_SINGLE_OPERATION_SIZE_BYTES,
+    MAX_STRING_SERIES_DATA_POINT_LENGTH,
+)
+from neptune_scale.types import (
+    ArrayLike,
+    Histogram,
+)
 from neptune_scale.sync.size_util import (
     SINGLE_FLOAT_VALUE_SIZE,
     proto_string_size,
@@ -55,6 +52,39 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
+
+__all__ = (
+    "FileRefData",
+    "HistogramsData",
+    "MetadataSplitter",
+    "Metrics",
+    "datetime_to_proto",
+    "make_step",
+    "histograms_to_update_run_snapshots",
+    "string_series_to_update_run_snapshots",
+)
+
+
+# Check if numpy is available and define variables / functions accordingly.
+# We use this distinction in histograms to act based on numpy presence.
+try:
+    import numpy as np
+
+    _HAS_NUMPY = True
+    # What types we accept in ArrayLike fields in Histogram
+    _VALID_ARRAYLIKE_TYPES: tuple[Any, ...] = (list, np.ndarray)
+
+    # If necessary, convert np.ndarray to plain python list for protobuf serialization
+    def as_list(arr: ArrayLike) -> list[Union[float, int]]:
+        return arr.tolist() if isinstance(arr, np.ndarray) else arr
+
+except ImportError:
+    _HAS_NUMPY = False
+    _VALID_ARRAYLIKE_TYPES = (list,)
+
+    def as_list(arr: ArrayLike) -> list[Union[float, int]]:
+        return arr
+
 
 logger = get_logger()
 
@@ -75,6 +105,15 @@ class FileRefData:
     destination: str
     mime_type: str
     size_bytes: int
+
+
+@dataclass(frozen=True)
+class HistogramsData:
+    # py39 does not support slots=True on @dataclass
+    __slots__ = ("data", "step")
+
+    data: dict[str, Histogram]
+    step: Union[float, int]
 
 
 @dataclass
@@ -452,6 +491,132 @@ def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, 
             continue
 
         yield key, value
+
+
+def _is_over_utf8_bytes_limit(string: str, max_bytes: int) -> bool:
+def _has_non_numeric_values(arr: ArrayLike) -> bool:
+    """
+    Return true if the array contains non-numeric values or NaN.
+    A for-loop approach is ~3.5x faster than eg. `any(lambda x: isinstance(arr, (int, float) or math.isnan(x))`.
+    """
+    if _HAS_NUMPY and isinstance(arr, np.ndarray):
+        return not np.issubdtype(arr.dtype, np.number) or np.any(np.isnan(arr))
+
+    for v in arr:
+        try:
+            if math.isnan(float(v)):
+                return True
+        except (ValueError, TypeError):
+            return True
+    return False
+
+
+def histograms_to_update_run_snapshots(
+    histograms: Optional[HistogramsData],
+    timestamp: datetime,
+    max_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
+) -> Iterator[UpdateRunSnapshot]:
+    if not histograms:
+        return
+
+    stream = peekable(_stream_histograms(histograms.data))
+    step = make_step(histograms.step)
+    timestamp = datetime_to_proto(timestamp)
+
+    # Local bindings for faster name lookups
+    _proto_string_size = proto_string_size
+    _peek_stream = stream.peek
+    while stream:
+        update = UpdateRunSnapshot(step=step, timestamp=timestamp)
+
+        size = 0
+        while size < max_size:
+            try:
+                key, value = _peek_stream()
+            except StopIteration:
+                break
+
+            new_size = size + _proto_string_size(key) + value.ByteSize() + 6
+            if new_size > max_size:
+                break
+
+            update.append[key].MergeFrom(value)
+            size, _ = new_size, next(stream)
+
+        yield update
+
+
+def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, Value]]:
+    # local bindings, faster in tight loops
+    _is_instance = isinstance
+    _max_histogram_bin_edges = MAX_HISTOGRAM_BIN_EDGES
+    _valid_arraylike_types = _VALID_ARRAYLIKE_TYPES
+    _as_list = as_list
+
+    for key, value in _validate_paths(histograms):
+        if not _is_instance(value, Histogram):
+            _warn_or_raise_on_invalid_value(f"Histogram values must be of type Histogram (got `{key}`:`{value}`)")
+            continue
+
+        if not isinstance(value.bin_edges, _valid_arraylike_types):
+            _warn_or_raise_on_invalid_value(
+                f"Histogram bin_edges must be of type list or np.ndarray (got `{key}`:`{value.bin_edges}`)"
+            )
+            continue
+
+        has_counts, has_densities = value.counts is not None, value.densities is not None
+        values_field = value.counts if has_counts else value.densities
+
+        # Merge the check for 'either one but not both is set' into a single condition
+        if has_counts == has_densities:
+            _warn_or_raise_on_invalid_value(
+                f"One of Histogram counts and densities must be set, and they cannot be set together (at `{key}`)"
+            )
+            continue
+
+        if not isinstance(values_field, _valid_arraylike_types):
+            field_name = "counts" if has_counts else "densities"
+            _warn_or_raise_on_invalid_value(
+                f"Histogram {field_name} must be of type list or np.ndarray (got `{key}`:`{values_field}`)"
+            )
+            continue
+
+        if len(value.bin_edges) > _max_histogram_bin_edges:
+            _warn_or_raise_on_invalid_value(
+                f"Histogram bin_edges must be of length <= {_max_histogram_bin_edges} "
+                f"(got {len(value.bin_edges)} bin edges at `{key}`)"
+            )
+            continue
+
+        if len(values_field) != len(value.bin_edges) - 1:
+            field_name = "counts" if has_counts else "densities"
+            _warn_or_raise_on_invalid_value(
+                f"Histogram {field_name} must be of length equal to bin_edges - 1 "
+                f"(got {len(values_field)} {field_name} and {len(value.bin_edges)} bin edges at `{key}`)"
+            )
+            continue
+
+        if _has_non_numeric_values(value.bin_edges):
+            _warn_or_raise_on_invalid_value(
+                f"Histogram bin_edges must be of type int or float and not NaN (got `{key}`:`{value.bin_edges}`)"
+            )
+            continue
+
+        try:
+            histogram = ProtobufHistogram(
+                bin_edges=_as_list(value.bin_edges),
+                counts=ProtobufHistogram.Counts(values=_as_list(value.counts)) if has_counts else None,
+                densities=ProtobufHistogram.Densities(values=_as_list(value.densities)) if has_densities else None,
+            )
+        except (ValueError, TypeError):
+            # bin_edges are validated at this point, so any error should be in counts/densities
+            field_name = "counts" if has_counts else "densities"
+            _warn_or_raise_on_invalid_value(
+                f"Histogram {field_name} must be of type float or int (got `{key}`:`{values_field}`)"
+            )
+            continue
+
+        yield key, Value(histogram=histogram)
 
 
 def _is_over_utf8_bytes_limit(string: str, max_bytes: int) -> bool:
