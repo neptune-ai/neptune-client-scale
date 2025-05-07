@@ -7,4 +7,6 @@ pytest
 pytest-timeout
 pytest-xdist
 freezegun
+numpy
+neptune-api @ git+https://github.com/neptune-ai/neptune-api.git@dev/histograms
 neptune-fetcher @ git+https://github.com/neptune-ai/neptune-fetcher.git@main
