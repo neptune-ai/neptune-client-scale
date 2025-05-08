@@ -4,6 +4,7 @@ import queue
 import random
 import sys
 import tempfile
+import time
 import uuid
 from datetime import (
     datetime,
@@ -125,3 +126,11 @@ def project_name(request) -> str:
 @fixture(scope="session")
 def client() -> AuthenticatedClient:
     return create_client()
+
+
+def sleep_3s(**kwargs):
+    time.sleep(3)
+
+
+def sleep_10s(**kwargs):
+    time.sleep(10)
