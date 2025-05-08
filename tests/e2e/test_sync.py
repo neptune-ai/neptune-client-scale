@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import time
 from datetime import (
@@ -25,6 +26,8 @@ from .conftest import (
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 API_TOKEN = os.getenv("NEPTUNE_API_TOKEN")
+
+mp_context = multiprocessing.get_context("spawn")
 
 
 def test_sync_empty_file(run_init_kwargs):
@@ -154,8 +157,9 @@ def test_sync_wait_timeout(run_init_kwargs, ro_run, timeout):
         data = {"str-value": "hello-world"}
         run.log_configs(data)
     runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
+    # replace so that wait never sees the true progress and hangs
+    runner._last_ack_seq = SharedInt(multiprocessing_context=runner._spawn_mp_context, initial_value=1)
     runner.start()
-    runner._last_ack_seq = SharedInt(1)  # replace so that wait never sees the true progress and hangs
 
     # when
     start_time = time.monotonic()
@@ -177,7 +181,7 @@ def test_sync_wait_timeout(run_init_kwargs, ro_run, timeout):
 @pytest.mark.parametrize(
     "hung_method",
     [
-        "neptune_scale.sync.sync_process.SyncProcess.terminate",
+        "multiprocessing.context.SpawnProcess.terminate",
         "neptune_scale.sync.errors_tracking.ErrorsMonitor.interrupt",
     ],
 )

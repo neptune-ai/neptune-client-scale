@@ -1,4 +1,3 @@
-import multiprocessing
 import os
 import threading
 import time
@@ -16,10 +15,7 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
-from neptune_scale.util import (
-    SharedInt,
-    envs,
-)
+from neptune_scale.util import envs
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 
@@ -129,36 +125,19 @@ def test_sync_process_dies_after_sync_thread_dies():
     run.wait_for_processing()  # assert that it ends
 
 
-class MockSyncProcess(multiprocessing.Process):
-    """A SyncProcess mock that does nothing except:
-
-    * confirming only the 1st operation, which is CreateRun submitted
-      and waited for in Run.__init__()
-
-    We need it in test_run_wait_methods_after_sync_process_dies_during_wait(),
-    to achieve the "never send or confirm any operations" behaviour. Other tests
-    use the standard SyncProcess to minimize interference with regular operations.
+def sleep(**kwargs):
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(name="MockSyncProcess")
-
-        self._last_ack_seq: SharedInt = kwargs["last_ack_seq"]
-
-    def run(self):
-        # Confirm the first operation, which is Run creation, so Run.__init__() can complete
-        self._last_ack_seq.value = 1
-        self._last_ack_seq.notify_all()
-
-        while True:
-            time.sleep(1)
+    A sync process mock that does nothing.
+    In particular, it doesn't update the multiprocess variables shared with the main process.
+    """
+    time.sleep(120)
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 @pytest.mark.parametrize("wait_for_file_upload", (True, False))
-@patch("neptune_scale.api.run.SyncProcess", new=MockSyncProcess)
+@patch("neptune_scale.api.run.run_sync_process", new=sleep)
 def test_run_wait_methods_after_sync_process_dies_during_wait(
     wait_for_submission, wait_for_processing, wait_for_file_upload
 ):
