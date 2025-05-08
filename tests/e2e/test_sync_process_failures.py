@@ -1,6 +1,4 @@
-import multiprocessing
 import os
-import threading
 import time
 from unittest.mock import (
     Mock,
@@ -16,10 +14,8 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
-from neptune_scale.util import (
-    SharedInt,
-    envs,
-)
+from neptune_scale.util import envs
+from tests.e2e.conftest import sleep_3s
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 
@@ -33,69 +29,33 @@ NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 TEST_TIMEOUT = 30
 
 
-def _kill_sync_process(run, after=None):
-    if after is not None:
-        time.sleep(after)
-
-    run._sync_process.kill()
-    run._sync_process.join(timeout=5)
-
-    assert run._sync_process.exitcode is not None, "SyncProcess did not terminate"
-
-    # We need to delay here a bit. Even though process is now dead, the monitoring threads
-    # could still be processing that information buffered in queues, and we don't have
-    # other better means to wait for that.
-    time.sleep(1.0)
-
-
 @pytest.fixture(autouse=True)
 def use_temp_db_dir(temp_dir, monkeypatch):
     monkeypatch.setenv(envs.LOG_DIRECTORY, str(temp_dir))
     yield
 
 
+@pytest.mark.timeout(TEST_TIMEOUT)
+@patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
 def test_warning_callback_after_sync_process_dies():
     error_callback = Mock()
     run = Run(on_error_callback=error_callback)
-    _kill_sync_process(run)
+    run._sync_process.join()
+
+    time.sleep(1)  # give some time for the error callback to be called
 
     error_callback.assert_called_once()
     assert isinstance(error_callback.call_args.args[0], NeptuneSynchronizationStopped)
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)
-def test_run_can_log_after_sync_process_dies():
-    run = Run()
-    run.log_metrics({"metric": 2}, step=1)
-    run.wait_for_processing()
-
-    _kill_sync_process(run)
-
-    run.log_metrics({"metric": 4}, step=2)
-    run.log_metrics({"metric": 6}, step=3)
-    run.log_configs({"config": "foo"})
-    run.add_tags(["tag1", "tag2"])
-    run.close()
-
-    repo = OperationsRepository(run._operations_repo._db_path)
-    operations = repo.get_operations(MAX_SINGLE_OPERATION_SIZE_BYTES)
-
-    assert len(operations) == 4
-    assert operations[0].operation.append["metric"].float64 == 4.0
-    assert operations[1].operation.append["metric"].float64 == 6.0
-    assert operations[2].operation.assign["config"].string == "foo"
-    assert sorted(operations[3].operation.modify_sets["sys/tags"].string.values.keys()) == ["tag1", "tag2"]
-
-
-@pytest.mark.timeout(TEST_TIMEOUT)
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 @pytest.mark.parametrize("wait_for_file_upload", (True, False))
+@patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
 def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing, wait_for_file_upload):
     run = Run()
-    run.wait_for_processing()
-
-    _kill_sync_process(run)
+    run._sync_process.join()
 
     run.log_metrics({"metric": 2}, step=1)
     if wait_for_submission:
@@ -105,19 +65,11 @@ def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_
     if wait_for_processing:
         run.wait_for_processing()
 
+    run.assign_files(files={"a-file": b"content"})
     if wait_for_file_upload:
         run._wait_for_file_upload()
 
-    run.log_metrics({"metric": 6}, step=3)
     run.close()
-
-    repo = OperationsRepository(run._operations_repo._db_path)
-    operations = repo.get_operations(MAX_SINGLE_OPERATION_SIZE_BYTES)
-
-    assert len(operations) == 3
-    assert operations[0].operation.append["metric"].float64 == 2.0
-    assert operations[1].operation.append["metric"].float64 == 4.0
-    assert operations[2].operation.append["metric"].float64 == 6.0
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)
@@ -129,46 +81,20 @@ def test_sync_process_dies_after_sync_thread_dies():
     run.wait_for_processing()  # assert that it ends
 
 
-class MockSyncProcess(multiprocessing.Process):
-    """A SyncProcess mock that does nothing except:
-
-    * confirming only the 1st operation, which is CreateRun submitted
-      and waited for in Run.__init__()
-
-    We need it in test_run_wait_methods_after_sync_process_dies_during_wait(),
-    to achieve the "never send or confirm any operations" behaviour. Other tests
-    use the standard SyncProcess to minimize interference with regular operations.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(name="MockSyncProcess")
-
-        self._last_ack_seq: SharedInt = kwargs["last_ack_seq"]
-
-    def run(self):
-        # Confirm the first operation, which is Run creation, so Run.__init__() can complete
-        self._last_ack_seq.value = 1
-        self._last_ack_seq.notify_all()
-
-        while True:
-            time.sleep(1)
-
-
 @pytest.mark.timeout(TEST_TIMEOUT)
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 @pytest.mark.parametrize("wait_for_file_upload", (True, False))
-@patch("neptune_scale.api.run.SyncProcess", new=MockSyncProcess)
+@patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
 def test_run_wait_methods_after_sync_process_dies_during_wait(
     wait_for_submission, wait_for_processing, wait_for_file_upload
 ):
-    """Kill the child process during wait(), to make sure we're not blocked forever in this scenario."""
+    """Make sure we're not blocked forever if the sync process dies before completing all the work."""
 
     run = Run()
-    thread = threading.Thread(target=_kill_sync_process, args=(run, 3.0))
-    thread.start()
-
     run.log_metrics({"metric": 2}, step=1)
+    run.assign_files(files={"a-file": b"content"})
+
     if wait_for_submission:
         run.wait_for_submission()
 
@@ -178,27 +104,40 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(
     if wait_for_file_upload:
         run._wait_for_file_upload()
 
-    thread.join()
+    # only assert the process is dead if we did actually wait
+    if wait_for_processing or wait_for_submission or wait_for_file_upload:
+        assert not run._sync_process.is_alive()
 
-    # At this point the process should be dead
-    assert not run._sync_process.is_alive()
-
-    run.log_metrics({"metric": 4}, step=2)
     run.close()
+
+
+@pytest.mark.timeout(TEST_TIMEOUT)
+@patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
+def test_run_writable_after_sync_process_dies():
+    run = Run()
+    run._sync_process.join()
+
+    run.log_metrics({"metric": 2}, step=2)
+    run.log_configs({"config": "foo"})
+    run.add_tags(["tag1", "tag2"])
+    run.assign_files(files={"a-file": b"content"})
 
     repo = OperationsRepository(run._operations_repo._db_path)
     operations = repo.get_operations(MAX_SINGLE_OPERATION_SIZE_BYTES)
 
-    assert len(operations) == 3
+    assert len(operations) == 5
     assert operations[0].operation_type == OperationType.CREATE_RUN
     assert operations[1].operation.append["metric"].float64 == 2.0
-    assert operations[2].operation.append["metric"].float64 == 4.0
+    assert operations[2].operation.assign["config"].string == "foo"
+    assert sorted(operations[3].operation.modify_sets["sys/tags"].string.values.keys()) == ["tag1", "tag2"]
+    assert operations[4].operation.assign["a-file"].file_ref.size_bytes == len(b"content")
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)
+@patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
 def test_run_terminate_after_sync_process_dies():
     run = Run()
-    _kill_sync_process(run)
+    run._sync_process.join()
 
     # Should return quickly, otherwise the timeout will trigger
     run.terminate()

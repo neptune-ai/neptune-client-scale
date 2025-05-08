@@ -13,7 +13,7 @@ NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 @pytest.mark.parametrize(
     "skipped_method",
     [
-        "neptune_scale.sync.sync_process.SyncProcess.terminate",
+        "multiprocessing.context.SpawnProcess.terminate",
         "neptune_scale.sync.supervisor.ProcessSupervisor.interrupt",
         "neptune_scale.sync.errors_tracking.ErrorsMonitor.interrupt",
     ],

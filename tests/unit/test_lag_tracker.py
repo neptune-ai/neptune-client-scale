@@ -1,3 +1,4 @@
+import multiprocessing
 import time
 from threading import Event
 from unittest.mock import Mock
@@ -7,6 +8,8 @@ from freezegun import freeze_time
 from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.util import SharedFloat
+
+mp_context = multiprocessing.get_context("spawn")
 
 
 @freeze_time("2024-09-01 00:00:00")
@@ -18,7 +21,7 @@ def test__lag_tracker__callback_called():
     # and
     sequence_tracker = SequenceTracker()
     sequence_tracker.update_sequence_id(1)  # This will set last_timestamp
-    last_ack_timestamp = SharedFloat(time.time() - lag)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=time.time() - lag)
     callback = Mock()
 
     # Synchronization event
@@ -58,7 +61,7 @@ def test__lag_tracker__not_called():
     # and
     sequence_tracker = SequenceTracker()
     sequence_tracker.update_sequence_id(1)  # This will set last_timestamp to current time
-    last_ack_timestamp = SharedFloat(time.time() - lag)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=time.time() - lag)
     callback = Mock()
 
     # and

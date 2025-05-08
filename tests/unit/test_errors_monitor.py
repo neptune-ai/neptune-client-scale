@@ -1,3 +1,4 @@
+import multiprocessing
 from threading import Event
 from unittest.mock import Mock
 
@@ -17,6 +18,8 @@ from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+
+mp_context = multiprocessing.get_context("spawn")
 
 
 @pytest.mark.parametrize(
@@ -46,7 +49,7 @@ def test_errors_monitor_callbacks_called(error, callback_name):
         callback_called.set()
 
     # and
-    errors_queue = ErrorsQueue()
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
     errors_monitor = ErrorsMonitor(**{"errors_queue": errors_queue, callback_name: callback_with_event})
     errors_monitor.start()
 
