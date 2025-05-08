@@ -509,7 +509,8 @@ def test_skip_non_finite_float_metrics(value, caplog):
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize(
-    "invalid_path", (None, "A" * 1025, object(), 1, 1.0, True, frozenset(), tuple(), datetime.now())
+    "invalid_path",
+    (None, "A" * 1025, UTF_CHAR * 256 + "A", object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()),
 )
 @pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "files", "file_series"))
 def test_invalid_paths(caplog, action, invalid_path, param_name):
