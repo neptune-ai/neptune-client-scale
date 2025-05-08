@@ -9,8 +9,10 @@ import binascii
 import itertools
 import json
 import mimetypes
+import multiprocessing
 import re
 import uuid
+from multiprocessing.context import SpawnProcess
 from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
@@ -86,7 +88,7 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.sync.supervisor import ProcessSupervisor
-from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.sync.sync_process import run_sync_process
 from neptune_scale.util import envs
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
@@ -290,7 +292,9 @@ class Run(AbstractContextManager):
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
 
-            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue()
+            spawn_mp_context = multiprocessing.get_context("spawn")
+
+            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue(spawn_mp_context)
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
                 errors_queue=self._errors_queue,
                 on_queue_full_callback=on_queue_full_callback,
@@ -299,19 +303,23 @@ class Run(AbstractContextManager):
                 on_warning_callback=on_warning_callback,
             )
 
-            self._last_queued_seq: Optional[SharedInt] = SharedInt(-1)
-            self._last_ack_seq: Optional[SharedInt] = SharedInt(-1)
-            self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(-1)
+            self._last_queued_seq: Optional[SharedInt] = SharedInt(spawn_mp_context, -1)
+            self._last_ack_seq: Optional[SharedInt] = SharedInt(spawn_mp_context, -1)
+            self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(spawn_mp_context, -1)
 
-            self._sync_process: Optional[SyncProcess] = SyncProcess(
-                project=self._project,
-                family=self._run_id,
-                operations_repository_path=operations_repository_path,
-                errors_queue=self._errors_queue,
-                api_token=self._api_token,
-                last_queued_seq=self._last_queued_seq,
-                last_ack_seq=self._last_ack_seq,
-                last_ack_timestamp=self._last_ack_timestamp,
+            self._sync_process: Optional[SpawnProcess] = spawn_mp_context.Process(
+                name="SyncProcess",
+                target=run_sync_process,
+                kwargs={
+                    "project": self._project,
+                    "family": self._run_id,
+                    "operations_repository_path": operations_repository_path,
+                    "errors_queue": self._errors_queue,
+                    "api_token": self._api_token,
+                    "last_queued_seq": self._last_queued_seq,
+                    "last_ack_seq": self._last_ack_seq,
+                    "last_ack_timestamp": self._last_ack_timestamp,
+                },
             )
             self._sync_process_supervisor: Optional[ProcessSupervisor] = ProcessSupervisor(
                 self._sync_process, self._handle_sync_process_death

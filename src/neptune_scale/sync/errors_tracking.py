@@ -6,6 +6,7 @@ import multiprocessing
 import queue
 import time
 from collections.abc import Callable
+from multiprocessing.context import SpawnContext
 from typing import Optional
 
 from neptune_scale.exceptions import (
@@ -26,8 +27,8 @@ logger = get_logger()
 
 
 class ErrorsQueue:
-    def __init__(self) -> None:
-        self._errors_queue: multiprocessing.Queue[BaseException] = multiprocessing.Queue()
+    def __init__(self, multiprocessing_context: SpawnContext) -> None:
+        self._errors_queue: multiprocessing.Queue[BaseException] = multiprocessing_context.Queue()
 
     def put(self, error: BaseException) -> None:
         logger.debug("Put error: %s", type(error))
