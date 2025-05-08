@@ -11,13 +11,17 @@ from datetime import (
 )
 from pathlib import Path
 
-# from neptune_fetcher import (
-#     ReadOnlyProject,
-#     ReadOnlyRun,
-# )
+from neptune_api import AuthenticatedClient
+from neptune_fetcher import (
+    ReadOnlyProject,
+    ReadOnlyRun,
+)
 from pytest import fixture
 
 from neptune_scale import Run
+from neptune_scale.util.envs import PROJECT_ENV_NAME
+from tests.e2e.test_fetcher import identifiers
+from tests.e2e.test_fetcher.client import create_client
 
 
 @fixture(scope="session", autouse=True)
@@ -52,13 +56,13 @@ def project(request):
 
 
 @fixture(scope="module")
-def run_init_kwargs(project):
+def run_init_kwargs(project_name):
     """Arguments to initialize a neptune_scale.Run instance"""
 
     # TODO: if a test fails the run could be left in an indefinite state
     #       Maybe we should just have it scoped 'function' and require passing
     #       an existing run id
-    kwargs = {"project": project.project_identifier}
+    kwargs = {"project": str(project_name)}
     run_id = os.getenv("NEPTUNE_E2E_CUSTOM_RUN_ID")
     if not run_id:
         run_id = str(uuid.uuid4())
@@ -126,3 +130,24 @@ def random_series(length=10, start_step=0):
     values = [round((j + x) ** 3.0, 0) for x in range(len(steps))]
 
     return steps, values
+
+
+@fixture(scope="module")
+def project_name(request) -> identifiers.ProjectIdentifier:
+    # Assume the project name and API token are set in the environment using the standard
+    # NEPTUNE_PROJECT and NEPTUNE_API_TOKEN variables.
+    #
+    # Since ReadOnlyProject is essentially stateless, we can reuse the same
+    # instance across all tests in a module.
+    #
+    # We also allow overriding the project name per module by setting the
+    # module-level `NEPTUNE_PROJECT` variable.
+    project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
+    if project_name is None:
+        project_name = os.getenv(PROJECT_ENV_NAME)
+    return identifiers.ProjectIdentifier(project_name)
+
+
+@fixture(scope="session")
+def client() -> AuthenticatedClient:
+    return create_client()

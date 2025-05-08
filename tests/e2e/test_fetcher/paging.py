@@ -16,12 +16,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from typing import (
     Any,
     Callable,
-    Generator,
     Optional,
-    TypeVar, Iterable,
+    TypeVar,
 )
 
 from neptune_api import AuthenticatedClient
@@ -36,14 +36,13 @@ _Params = dict[str, Any]
 def fetch_pages(
     client: AuthenticatedClient,
     fetch_page: Callable[[AuthenticatedClient, _Params], R],
-    process_page: Callable[[R], Iterable[T]],
+    process_page: Callable[[R], T],
     make_new_page_params: Callable[[_Params, Optional[R]], Optional[_Params]],
     params: _Params,
-) -> Generator[Iterable[T], None, None]:
+) -> Generator[T, None, None]:
     page_params = make_new_page_params(params, None)
     while page_params is not None:
         data = fetch_page(client, page_params)
         page = process_page(data)
         page_params = make_new_page_params(page_params, data)
-
-        yield from page
+        yield page

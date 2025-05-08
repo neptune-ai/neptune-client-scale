@@ -12,11 +12,11 @@ from datetime import (
 
 import numpy as np
 import pytest
-# from neptune_fetcher import ReadOnlyRun
-# from neptune_fetcher.alpha import (
-#     filters,
-#     runs,
-# )
+from neptune_fetcher import ReadOnlyRun
+from neptune_fetcher.alpha import (
+    filters,
+    runs,
+)
 from pytest import mark
 
 from neptune_scale.api.run import Run

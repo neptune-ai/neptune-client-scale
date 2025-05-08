@@ -7,16 +7,17 @@ from datetime import (
 from unittest.mock import patch
 
 import pytest
-# from neptune_fetcher.alpha import (
-#     filters,
-#     runs,
-# )
+from neptune_fetcher.alpha import (
+    filters,
+    runs,
+)
 
 from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
 from neptune_scale.cli.sync import SyncRunner
 from neptune_scale.exceptions import NeptuneUnableToLogData
 from neptune_scale.util import SharedInt
+from tests.e2e.test_fetcher.attribute_values import fetch_attribute_values
 
 from .conftest import (
     random_series,
@@ -50,8 +51,9 @@ def test_sync_invalid_file(tmp_path):
         sync.sync_all(run_log_file=path, api_token=API_TOKEN)
 
 
-def test_sync_atoms(run_init_kwargs, ro_run):
+def test_sync_atoms(run_init_kwargs, client, project_name):
     # given
+    run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
         now = time.time()
@@ -70,8 +72,10 @@ def test_sync_atoms(run_init_kwargs, ro_run):
 
     # then
     assert not db_path.exists()
+    fetched = fetch_attribute_values(client=client, project=project_name, custom_run_id=run_id, attributes=data.keys())
+
     for key, value in data.items():
-        assert ro_run[key].fetch() == value, f"Value for {key} does not match"
+        assert fetched[key] == value, f"Value for {key} does not match"
 
 
 def test_sync_series(run_init_kwargs, ro_run):

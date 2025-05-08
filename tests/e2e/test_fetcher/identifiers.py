@@ -15,23 +15,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import (
-    NewType,
-)
-
+from typing import NewType
 
 ProjectIdentifier = NewType("ProjectIdentifier", str)  # e.g. "team/john.doe"
 SysId = NewType("SysId", str)  # e.g. "KEY-1234"
-SysName = NewType("SysName", str)  # e.g. "pye2e-fetcher-test-internal-attribute"
-CustomRunId = NewType("CustomRunId", str)  # an uuid
+# SysName = NewType("SysName", str)  # e.g. "pye2e-fetcher-test-internal-attribute"
+# CustomRunId = NewType("CustomRunId", str)  # an uuid
 AttributePath = NewType("AttributePath", str)  # an uuid
-
-
-@dataclass(frozen=True)
-class RunIdentifier:
-    project_identifier: ProjectIdentifier
-    sys_id: SysId
-
-    def __str__(self) -> str:
-        return f"{self.project_identifier}/{self.sys_id}"
