@@ -11,10 +11,10 @@ from datetime import (
 )
 from pathlib import Path
 
-from neptune_fetcher import (
-    ReadOnlyProject,
-    ReadOnlyRun,
-)
+# from neptune_fetcher import (
+#     ReadOnlyProject,
+#     ReadOnlyRun,
+# )
 from pytest import fixture
 
 from neptune_scale import Run

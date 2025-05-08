@@ -7,10 +7,10 @@ from datetime import (
 from unittest.mock import patch
 
 import pytest
-from neptune_fetcher.alpha import (
-    filters,
-    runs,
-)
+# from neptune_fetcher.alpha import (
+#     filters,
+#     runs,
+# )
 
 from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
