@@ -68,8 +68,8 @@ def metadata_splitter_module(request):
     (
         ([1, 2], [10], None),
         ([1, 2], None, [10]),
-        (list(float(i) for i in range(512)), list(range(511)), None),
-        (list(float(i) for i in range(512)), None, list(range(511))),
+        (list(range(513)), list(range(512)), None),
+        (list(range(513)), None, list(range(512))),
         ([-math.inf, 1, math.inf], [1, 2], None),
         ([-math.inf, 1, math.inf], None, [1, 2]),
         ([1, 2, 3], None, [1, math.nan]),
@@ -175,6 +175,7 @@ def test_histograms_valid_paths(path):
         ([1, 2], None, [1, 2], "densities must be of length equal to bin_edges - 1"),
         ([1, 2], None, list(range(100)), "densities must be of length equal to bin_edges - 1"),
         (list(range(514)), list(range(513)), None, "bin_edges must be of length"),
+        (list(range(1000)), list(range(999)), None, "bin_edges must be of length"),
         ([1, "s"], [1], None, "bin_edges must be of type"),
         ([1, 2, 3], [1, "s"], None, "counts must be of type"),
         ([1, 2], [math.nan], None, "counts must be of type"),  # counts are integers, so nan is not allowed

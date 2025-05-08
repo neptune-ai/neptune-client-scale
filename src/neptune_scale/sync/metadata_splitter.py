@@ -501,12 +501,13 @@ def _has_non_numeric_values(arr: ArrayLike) -> bool:
     if _HAS_NUMPY and isinstance(arr, np.ndarray):
         return not np.issubdtype(arr.dtype, np.number) or np.any(np.isnan(arr))
 
-    for v in arr:
-        try:
-            if math.isnan(float(v)):
+    isnan = math.isnan
+    try:
+        for v in arr:
+            if isnan(float(v)):
                 return True
-        except (ValueError, TypeError):
-            return True
+    except (ValueError, TypeError):
+        return True
     return False
 
 
