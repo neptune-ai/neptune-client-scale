@@ -58,6 +58,10 @@ from neptune_scale.exceptions import (
     NeptuneFileMetadataExceedsSizeLimit,
     NeptuneFileUploadError,
     NeptuneFileUploadTemporaryError,
+    NeptuneHistogramBinEdgesContainNaN,
+    NeptuneHistogramBinEdgesNotIncreasing,
+    NeptuneHistogramTooManyBins,
+    NeptuneHistogramValuesLengthMismatch,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -132,6 +136,10 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
     IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
+    IngestCode.HISTOGRAM_BIN_EDGES_CONTAINS_NAN: NeptuneHistogramBinEdgesContainNaN,
+    IngestCode.HISTOGRAM_TOO_MANY_BINS: NeptuneHistogramTooManyBins,
+    IngestCode.HISTOGRAM_BIN_EDGES_NOT_INCREASING: NeptuneHistogramBinEdgesNotIncreasing,
+    IngestCode.HISTOGRAM_VALUES_LENGTH_DOESNT_MATCH_BINS: NeptuneHistogramValuesLengthMismatch,
 }
 
 

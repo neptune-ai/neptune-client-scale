@@ -19,6 +19,10 @@ from neptune_scale.exceptions import (
     NeptuneFileUploadError,
     NeptuneFileUploadTemporaryError,
     NeptuneFloatValueNanInfUnsupported,
+    NeptuneHistogramBinEdgesContainNaN,
+    NeptuneHistogramBinEdgesNotIncreasing,
+    NeptuneHistogramTooManyBins,
+    NeptuneHistogramValuesLengthMismatch,
     NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
     NeptuneLocalStorageInUnsupportedVersion,
@@ -97,6 +101,10 @@ EXCEPTIONS = (
     NeptuneUnauthorizedError(),
     NeptuneUnexpectedError(reason="test"),
     NeptuneUnexpectedResponseError(),
+    NeptuneHistogramBinEdgesContainNaN(),
+    NeptuneHistogramTooManyBins(),
+    NeptuneHistogramBinEdgesNotIncreasing(),
+    NeptuneHistogramValuesLengthMismatch(),
 )
 
 
