@@ -86,5 +86,5 @@ def test_initial_step(initial_step):
         initial_step = 0
     for i in range(1, 11):
         run.log_string_series.assert_any_call(
-            data={"system/logs": str(i)}, step=round(initial_step + i / 1e6, 6), timestamp=ts
+            data={"runtime/logs": str(i)}, step=round(initial_step + i / 1e6, 6), timestamp=ts
         )
