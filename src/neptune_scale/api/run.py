@@ -23,9 +23,11 @@ from neptune_scale.sync.files import (
 )
 from neptune_scale.sync.metadata_splitter import (
     FileRefData,
+    HistogramsData,
     MetadataSplitter,
     Metrics,
     datetime_to_proto,
+    histograms_to_update_run_snapshots,
     make_step,
     string_series_to_update_run_snapshots,
 )
@@ -33,7 +35,10 @@ from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     OperationsRepository,
 )
-from neptune_scale.types import File
+from neptune_scale.types import (
+    File,
+    Histogram,
+)
 
 __all__ = ["Run"]
 
@@ -621,6 +626,41 @@ class Run(AbstractContextManager):
         """
         self._log(timestamp=timestamp, step=step, string_series=data)
 
+    def log_histograms(
+        self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
+    ) -> None:
+        """Logs the specified histograms at a particular step.
+
+        Args:
+            histograms (dict[str, Histogram]):
+                A dictionary with attribute names as keys and histogram objects as values.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the histograms data.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+
+        Example:
+            ```
+            from neptune_scale import Run
+            from neptune_scale.types import Histogram
+
+            my_histogram1 = Histogram(...)
+            my_histogram2 = Histogram(...)
+
+            run = Run(...)
+
+            run.log_histograms(
+                histograms={
+                    "layers/1/activations": my_histogram1,
+                    "layers/2/activations": my_histogram2,
+                },
+                step=1,
+            )
+            ```
+        """
+        self._log(timestamp=timestamp, histograms=HistogramsData(data=histograms, step=step))
+
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
@@ -686,6 +726,44 @@ class Run(AbstractContextManager):
         *,
         timestamp: Optional[datetime] = None,
     ) -> None:
+        """Appends a file value and uploads the file contents at a particular step.
+        
+        Pass the data as a dictionary {key: value} with:
+
+        - key: path to the attribute where the series is stored in the run.
+        - value: a file value to append to the series.
+
+        The files are uploaded to the Neptune object storage and the attributes are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically.
+        You can override this by providing `mime_type` and `size_bytes` fields in the `File` object.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects.
+                To log multiple file series for a step in a single function call, include multiple key-value pairs
+                in the dictionary.
+                If a value is a string or Path, it's treated as a file path.
+                If a value is bytes, it's treated as raw file content to save.
+                If a value is a `File` object, its `source` field is used.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the files.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+        
+        Example:
+            ```
+            from neptune_scale import Run
+
+            run = Run(...)
+            
+            # for step in training loop
+            run.log_files(
+                files={"predictions/train": "output/train/predictions.png"},
+                step=1,
+            )
+            ```
+        """
         self._log(timestamp=timestamp, step=step, file_series=files)
 
     def log(
@@ -724,6 +802,7 @@ class Run(AbstractContextManager):
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         string_series: Optional[dict[str, str]] = None,
         file_series: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
+        histograms: Optional[HistogramsData] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -757,6 +836,11 @@ class Run(AbstractContextManager):
         if file_series is not None:
             verify_type("step", step, (float, int))
             verify_type("file_series", file_series, dict)
+
+        if histograms is not None:
+            verify_type("histograms", histograms, HistogramsData)
+            verify_type("histograms", histograms.data, dict)
+            verify_type("step", histograms.step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -806,6 +890,7 @@ class Run(AbstractContextManager):
             itertools.chain(
                 splitter,
                 string_series_to_update_run_snapshots(string_series=string_series, step=step, timestamp=timestamp),
+                histograms_to_update_run_snapshots(histograms, timestamp),
             )
         )
 
