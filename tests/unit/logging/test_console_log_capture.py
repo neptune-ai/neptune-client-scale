@@ -163,7 +163,7 @@ def test_console_log_capture_thread_captures_stdout(no_capture):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
-        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+        run_id="run_id", runtime_namespace="runtime", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
     )
 
     # when
@@ -174,15 +174,15 @@ def test_console_log_capture_thread_captures_stdout(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"system/stdout": "Hello"}, _make_step(1), ANY)
-    logs_sink.assert_any_call({"system/stdout": "World"}, _make_step(2), ANY)
+    logs_sink.assert_any_call({"runtime/stdout": "Hello"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"runtime/stdout": "World"}, _make_step(2), ANY)
 
 
 def test_console_log_capture_thread_captures_stderr(no_capture):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
-        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+        run_id="run_id", runtime_namespace="runtime", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
     )
 
     # when
@@ -193,15 +193,15 @@ def test_console_log_capture_thread_captures_stderr(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"system/stderr": "Hello"}, _make_step(1), ANY)
-    logs_sink.assert_any_call({"system/stderr": "World"}, _make_step(2), ANY)
+    logs_sink.assert_any_call({"runtime/stderr": "Hello"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"runtime/stderr": "World"}, _make_step(2), ANY)
 
 
 def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
-        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+        run_id="run_id", runtime_namespace="runtime", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
     )
 
     # when
@@ -214,10 +214,10 @@ def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"system/stdout": "Hello stdout"}, _make_step(1), ANY)
-    logs_sink.assert_any_call({"system/stderr": "Hello stderr"}, _make_step(1), ANY)
-    logs_sink.assert_any_call({"system/stdout": "World stdout"}, _make_step(2), ANY)
-    logs_sink.assert_any_call({"system/stderr": "World stderr"}, _make_step(2), ANY)
+    logs_sink.assert_any_call({"runtime/stdout": "Hello stdout"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"runtime/stderr": "Hello stderr"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"runtime/stdout": "World stdout"}, _make_step(2), ANY)
+    logs_sink.assert_any_call({"runtime/stderr": "World stderr"}, _make_step(2), ANY)
 
 
 LINE_LIMIT = 1024 * 1024
@@ -255,7 +255,7 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
-        run_id="run_id", initial_step=0, system_namespace="system", logs_flush_frequency_sec=10, logs_sink=logs_sink
+        run_id="run_id", initial_step=0, runtime_namespace="runtime", logs_flush_frequency_sec=10, logs_sink=logs_sink
     )
 
     # when
@@ -268,7 +268,7 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     # then
     if expected:
         for idx, line in enumerate(expected):
-            logs_sink.assert_any_call({"system/stdout": line}, _make_step(idx + 1), ANY)
+            logs_sink.assert_any_call({"runtime/stdout": line}, _make_step(idx + 1), ANY)
     else:
         logs_sink.assert_not_called()
 
@@ -285,7 +285,7 @@ def test_console_log_capture_thread_merge_lines(no_capture, prints, expected):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
-        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=2, logs_sink=logs_sink
+        run_id="run_id", runtime_namespace="runtime", initial_step=0, logs_flush_frequency_sec=2, logs_sink=logs_sink
     )
 
     # when
@@ -299,7 +299,7 @@ def test_console_log_capture_thread_merge_lines(no_capture, prints, expected):
 
     # then
     for idx, line in enumerate(expected):
-        logs_sink.assert_any_call({"system/stdout": line}, _make_step(idx + 1), ANY)
+        logs_sink.assert_any_call({"runtime/stdout": line}, _make_step(idx + 1), ANY)
 
 
 @pytest.mark.parametrize("initial_step", (0, 1.0, 1.1, 1.12, 1.123, 1.1234, 1.12345, 1.123456))
@@ -309,7 +309,7 @@ def test_console_log_capture_thread_initial_step(no_capture, initial_step):
     thread = ConsoleLogCaptureThread(
         run_id="run_id",
         initial_step=initial_step,
-        system_namespace="system",
+        runtime_namespace="runtime",
         logs_flush_frequency_sec=0.1,
         logs_sink=logs_sink,
     )
@@ -324,15 +324,15 @@ def test_console_log_capture_thread_initial_step(no_capture, initial_step):
 
     # then
     for idx in range(10):
-        logs_sink.assert_any_call({"system/stdout": f"line-{idx}"}, _make_step(idx + 1, initial=initial_step), ANY)
+        logs_sink.assert_any_call({"runtime/stdout": f"line-{idx}"}, _make_step(idx + 1, initial=initial_step), ANY)
 
 
-def test_system_namespace(no_capture):
+def test_runtime_namespace(no_capture):
     # given
     logs_sink = Mock()
     thread = ConsoleLogCaptureThread(
         run_id="run_id",
-        system_namespace="custom/namespace",
+        runtime_namespace="custom/namespace",
         initial_step=0,
         logs_flush_frequency_sec=0.1,
         logs_sink=logs_sink,

@@ -128,6 +128,7 @@ class Run(AbstractContextManager):
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
         system_namespace: Optional[str] = None,
+        runtime_namespace: Optional[str] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -158,7 +159,9 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
-            system_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "system".
+            system_namespace: Deprecated.
+            runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
+
         """
 
         if run_id is None:
@@ -182,7 +185,16 @@ class Run(AbstractContextManager):
         verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
         verify_type("enable_console_log_capture", enable_console_log_capture, bool)
-        verify_type("system_namespace", system_namespace, (str, type(None)))
+        verify_type("runtime_namespace", runtime_namespace, (str, type(None)))
+
+        if system_namespace is not None:
+            logger.warning(
+                "`system_namespace` is deprecated and will be removed in a future version. "
+                "Use `runtime_namespace` instead."
+            )
+            verify_type("system_namespace", system_namespace, (str, type(None)))
+
+        runtime_namespace = system_namespace if runtime_namespace is None else runtime_namespace
 
         if resume and creation_time is not None:
             logger.warning("`creation_time` is ignored when used together with `resume`.")
@@ -254,7 +266,7 @@ class Run(AbstractContextManager):
                 if not enable_console_log_capture
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
-                    system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
+                    runtime_namespace=runtime_namespace.rstrip("/") if runtime_namespace else "runtime",
                     initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
