@@ -42,8 +42,38 @@ ArrayLike = Union[list[Union[float, int]], "np.ndarray"]
 
 @dataclass
 class Histogram:
-    """Represents a histogram with explicit bin edges and counts/densities
-    falling into specific bins.
+    """Represents a histogram with explicit bin edges.
+
+    You can specify the data distribution through either counts or densities.
+
+    Use the returned histogram as a value in the dictionary passed to `Run.log_histograms()`.
+
+    Args:
+        bin_edges (ArrayLike): The bin edges of the histogram.
+        counts (ArrayLike, optional): Number of data points that fall into each bin.
+        densities (ArrayLike, optional): Number of data points that fall into each bin. In the resulting histogram,
+            the counts are normalized into probability densities.
+
+    Examples:
+        ```
+        from neptune_scale import Run
+        from neptune_scale.types import Histogram
+
+        activations_1 = Histogram(
+            bin_edges=[0, 1, 40, 89, float(inf)],
+            densities=[5, 82, 44, 1],
+        )
+        activations_2 = Histogram(...)
+
+        run = Run(...)
+        run.log_histograms(
+            histograms={
+                "layers/1/activation": activations_1,
+                "layers/2/activation": activations_2,
+            },
+            step=1,
+        )
+        ```
     """
 
     bin_edges: ArrayLike
