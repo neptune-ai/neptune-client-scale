@@ -695,6 +695,44 @@ class Run(AbstractContextManager):
         *,
         timestamp: Optional[datetime] = None,
     ) -> None:
+        """Appends a file value and uploads the file contents at a particular step.
+        
+        Pass the data as a dictionary {key: value} with:
+
+        - key: path to the attribute where the series is stored in the run.
+        - value: a file value to append to the series.
+
+        The files are uploaded to the Neptune object storage and the attributes are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically.
+        You can override this by providing `mime_type` and `size_bytes` fields in the `File` object.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects.
+                To log multiple file series for a step in a single function call, include multiple key-value pairs
+                in the dictionary.
+                If a value is a string or Path, it's treated as a file path.
+                If a value is bytes, it's treated as raw file content to save.
+                If a value is a `File` object, its `source` field is used.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the files.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+        
+        Example:
+            ```
+            from neptune_scale import Run
+
+            run = Run(...)
+            
+            # for step in training loop
+            run.log_files(
+                files={"predictions/train": "output/train/predictions.png"},
+                step=1,
+            )
+            ```
+        """
         self._log(timestamp=timestamp, step=step, file_series=files)
 
     def log(
