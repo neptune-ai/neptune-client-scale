@@ -1,9 +1,8 @@
-from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
 
-def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+def stringify_unsupported(d: dict[str, Any]) -> dict[str, Any]:
     """
     A helper function that flattens a nested dictionary structure and casts unsupported values to strings to be logged in Neptune.
     Note:
@@ -12,7 +11,6 @@ def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
 
     Args:
         d: Dictionary to flatten
-        **kwargs: Additional arguments for backward compatibility
 
     Returns:
         dict: Flattened dictionary with string keys and cast values
@@ -31,8 +29,6 @@ def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
             new_key = f"{prefix}/{key}" if prefix else key
             if isinstance(value, dict):
                 _stringify_unsupported(d=value, prefix=new_key)
-            elif isinstance(value, Collection):
-                flattened[new_key] = str(value)
             elif type(value) in allowed_datatypes:
                 flattened[new_key] = value
             elif value is not None:
