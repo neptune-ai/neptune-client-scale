@@ -72,6 +72,7 @@ def _fetch_attribute_values(
         body=body,
         project_identifier=project,
     )
+    assert response.status_code == 200, f"Failed to fetch attribute values: {response.status_code} {response.content}"
     return ProtoQueryAttributesResultDTO.FromString(response.content)
 
 

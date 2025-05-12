@@ -25,7 +25,7 @@ from .conftest import (
 from .test_fetcher import (
     fetch_attribute_values,
     fetch_files,
-    fetch_metric_values,
+    fetch_metric_values, fetch_series_values,
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
@@ -497,6 +497,45 @@ def test_assign_files_error_no_access(run, client, project_name, temp_dir):
 
     expected_path = temp_dir / attributes[0]
     assert not os.path.exists(expected_path), f"File {expected_path} should not exist"
+
+
+def test_log_files(caplog, run, client, project_name, temp_dir):
+    # given
+    ensure_test_directory()
+    step = 13
+    files = {"test_file_series/file_txt1": b"bytes content"}
+
+    # when
+    with caplog.at_level(logging.WARNING):
+        run.log_files(files=files, step=step)
+
+    assert not caplog.records, "No warnings should be logged"
+
+    run.wait_for_processing(SYNC_TIMEOUT)
+
+    # then
+    attributes = list(files.keys())
+    fetched_series = fetch_series_values(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes=attributes
+    )
+    assert fetched_series.keys() == attributes
+    assert list(fetched_series["test_file_series/file_txt1"].keys()) == [step]
+    assert fetched_series["test_file_series/file_txt1"][step]['mime_type'] == "application/octet-stream"
+    assert fetched_series["test_file_series/file_txt1"][step]['size'] == len(b"bytes content")
+
+    # fetch_files(
+    #     client,
+    #     project_name,
+    #     custom_run_id=run._run_id,
+    #     attributes_targets={attr: temp_dir / str(i) for i, attr in enumerate(attributes)},
+    # )
+
+    # check content
+    # for i, (attribute_path, attribute_content) in enumerate(files.items()):
+    #     compare_content(actual_path=temp_dir / str(i), expected_content=attribute_content)
 
 
 def compare_content(actual_path, expected_content):

@@ -22,7 +22,10 @@ from typing import (
 from neptune_api.client import AuthenticatedClient
 from neptune_retrieval_api.api.default import get_series_values_proto
 from neptune_retrieval_api.models import SeriesValuesRequest
-from neptune_retrieval_api.proto.neptune_pb.api.v1.model.series_values_pb2 import ProtoSeriesValuesResponseDTO
+from neptune_retrieval_api.proto.neptune_pb.api.v1.model.series_values_pb2 import (
+    ProtoSeriesPointValueObjectDTO,
+    ProtoSeriesValuesResponseDTO,
+)
 
 from . import (
     fetch_attribute_values,
@@ -38,7 +41,7 @@ def fetch_series_values(
     custom_run_id: Optional[identifiers.CustomRunId] = None,
     run_id: Optional[identifiers.SysId] = None,
     step_range: tuple[Union[float, None], Union[float, None]] = (None, None),
-) -> dict[identifiers.AttributePath, dict[float, str]]:
+) -> dict[identifiers.AttributePath, dict[float, Any]]:
     attribute_set = set(attributes)
 
     if not attribute_set:
@@ -89,7 +92,7 @@ def _fetch_series(
 ) -> ProtoSeriesValuesResponseDTO:
     body = SeriesValuesRequest.from_dict(params)
 
-    response = get_series_values_proto.sync_detailed(client=client, body=body)
+    response = get_series_values_proto.sync_detailed(client=client, body=body, use_deprecated_string_fields=False)
 
     return ProtoSeriesValuesResponseDTO.FromString(response.content)
 
@@ -97,13 +100,38 @@ def _fetch_series(
 def _process_series_response(
     data: ProtoSeriesValuesResponseDTO,
     request_id_to_attribute: dict[str, identifiers.AttributePath],
-) -> dict[identifiers.AttributePath, dict[float, str]]:
-    items: dict[identifiers.AttributePath, dict[float, str]] = {}
+) -> dict[identifiers.AttributePath, dict[float, Any]]:
+    items: dict[identifiers.AttributePath, dict[float, Any]] = {}
 
     for series in data.series:
-        if series.string_series.values:
+        if series.seriesValues.values:
             attribute = request_id_to_attribute[series.requestId]
-            values = {float(value.step): value.value for value in series.string_series.values}
-            items.setdefault(attribute, {}).update(values)
+
+            attribute_items = items.setdefault(attribute, {})
+            for value in series.seriesValues.values:
+                step = float(value.step)
+                value = _extract_value(value.object)
+                attribute_items[step] = value
 
     return items
+
+
+def _extract_value(obj: ProtoSeriesPointValueObjectDTO) -> Union[str, dict[str, Any]]:
+    if obj.stringValue:
+        return str(obj.stringValue)
+    elif obj.fileRef:
+        file_ref = obj.fileRef
+        return dict(
+            path=file_ref.path,
+            mime_type=file_ref.mimeType,
+            size=file_ref.size,
+        )
+    elif obj.histogram:
+        histogram = obj.histogram
+        return dict(
+            bin_values=list(histogram.binValues),
+            bins_edges=list(histogram.binsEdges),
+            type=histogram.type,
+        )
+    else:
+        raise ValueError("Series has no valid value")
