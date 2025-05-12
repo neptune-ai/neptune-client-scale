@@ -11,12 +11,14 @@ pattern = "default-unprefixed"
 [tool.poetry.dependencies]
 python = "^3.9"
 
-neptune-api = "^0.13.0"
+neptune-api = ">=0.14.0,<0.16.0"
 more-itertools = "^10.0.0"
 psutil = "^5.0.0"
 backoff = "^2.0.0"
 click = ">=7.0"
 tqdm = "^4.21.0"
+filetype = "^1.2.0"
+azure-storage-blob = "^12.7.0"
 
 [tool.poetry]
 name = "neptune-scale"
@@ -79,7 +81,7 @@ line-length = 120
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["F", "UP"]
+select = ["F", "UP", "T201"]
 ignore = ["UP006", "UP007"]
 
 [tool.mypy]

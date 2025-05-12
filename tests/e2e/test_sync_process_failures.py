@@ -90,7 +90,8 @@ def test_run_can_log_after_sync_process_dies():
 @pytest.mark.timeout(TEST_TIMEOUT)
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
-def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing):
+@pytest.mark.parametrize("wait_for_file_upload", (True, False))
+def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing, wait_for_file_upload):
     run = Run()
     run.wait_for_processing()
 
@@ -103,6 +104,9 @@ def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_
     run.log_metrics({"metric": 4}, step=2)
     if wait_for_processing:
         run.wait_for_processing()
+
+    if wait_for_file_upload:
+        run._wait_for_file_upload()
 
     run.log_metrics({"metric": 6}, step=3)
     run.close()
@@ -153,8 +157,11 @@ class MockSyncProcess(multiprocessing.Process):
 @pytest.mark.timeout(TEST_TIMEOUT)
 @pytest.mark.parametrize("wait_for_submission", (True, False))
 @pytest.mark.parametrize("wait_for_processing", (True, False))
+@pytest.mark.parametrize("wait_for_file_upload", (True, False))
 @patch("neptune_scale.api.run.SyncProcess", new=MockSyncProcess)
-def test_run_wait_methods_after_sync_process_dies_during_wait(wait_for_submission, wait_for_processing):
+def test_run_wait_methods_after_sync_process_dies_during_wait(
+    wait_for_submission, wait_for_processing, wait_for_file_upload
+):
     """Kill the child process during wait(), to make sure we're not blocked forever in this scenario."""
 
     run = Run()
@@ -167,6 +174,9 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(wait_for_submissio
 
     if wait_for_processing:
         run.wait_for_processing()
+
+    if wait_for_file_upload:
+        run._wait_for_file_upload()
 
     thread.join()
 
