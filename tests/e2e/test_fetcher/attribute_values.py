@@ -42,14 +42,14 @@ def fetch_attribute_values(
         return {}
 
     if custom_run_id is not None:
-        experiment_id = f"CUSTOM/{project}/{custom_run_id}"
+        run_identifier = f"CUSTOM/{project}/{custom_run_id}"
     elif run_id is not None:
-        experiment_id = f"{project}/{run_id}"
+        run_identifier = f"{project}/{run_id}"
     else:
         raise ValueError("Either custom_run_id or run_id must be provided")
 
     params: dict[str, Any] = {
-        "experimentIdsFilter": [experiment_id],
+        "experimentIdsFilter": [run_identifier],
         "attributeNamesFilter": list(attribute_set),
         "nextPage": {"limit": 10_000},
     }

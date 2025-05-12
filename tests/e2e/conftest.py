@@ -17,7 +17,6 @@ from pytest import fixture
 from neptune_scale import Run
 from neptune_scale.util.envs import PROJECT_ENV_NAME
 
-from .test_fetcher import identifiers
 from .test_fetcher.client import create_client
 
 
@@ -110,19 +109,17 @@ def random_series(length=10, start_step=0):
 
 
 @fixture(scope="module")
-def project_name(request) -> identifiers.ProjectIdentifier:
+def project_name(request) -> str:
     # Assume the project name and API token are set in the environment using the standard
     # NEPTUNE_PROJECT and NEPTUNE_API_TOKEN variables.
     #
-    # Since ReadOnlyProject is essentially stateless, we can reuse the same
-    # instance across all tests in a module.
-    #
     # We also allow overriding the project name per module by setting the
     # module-level `NEPTUNE_PROJECT` variable.
+
     project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
     if project_name is None:
         project_name = os.getenv(PROJECT_ENV_NAME)
-    return identifiers.ProjectIdentifier(project_name)
+    return project_name
 
 
 @fixture(scope="session")
