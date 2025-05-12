@@ -16,8 +16,9 @@ from pytest import fixture
 
 from neptune_scale import Run
 from neptune_scale.util.envs import PROJECT_ENV_NAME
-from tests.e2e.test_fetcher import identifiers
-from tests.e2e.test_fetcher.client import create_client
+
+from .test_fetcher import identifiers
+from .test_fetcher.client import create_client
 
 
 @fixture(scope="session", autouse=True)
