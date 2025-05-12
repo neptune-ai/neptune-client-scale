@@ -13,11 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools as ft
+from collections.abc import Iterable
 from typing import (
     Any,
-    Iterable,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -26,10 +25,14 @@ from neptune_retrieval_api.api.default import get_multiple_float_series_values_p
 from neptune_retrieval_api.models import FloatTimeSeriesValuesRequest
 from neptune_retrieval_api.proto.neptune_pb.api.v1.model.series_values_pb2 import ProtoFloatSeriesValuesResponseDTO
 
-from . import identifiers, paging, fetch_attribute_values
-
+from . import (
+    fetch_attribute_values,
+    identifiers,
+    paging,
+)
 
 _TOTAL_POINT_LIMIT: int = 1_000_000
+
 
 def fetch_metric_values(
     client: AuthenticatedClient,
@@ -38,7 +41,7 @@ def fetch_metric_values(
     attributes: Iterable[identifiers.AttributePath],
     custom_run_id: Optional[identifiers.CustomRunId] = None,
     run_id: Optional[identifiers.SysId] = None,
-    step_range: Tuple[Union[float, None], Union[float, None]] = (None, None),
+    step_range: tuple[Union[float, None], Union[float, None]] = (None, None),
 ) -> dict[identifiers.AttributePath, dict[float, float]]:
     attribute_set = set(attributes)
 
@@ -49,7 +52,9 @@ def fetch_metric_values(
         holder_identifier = f"{project}/{run_id}"
     elif custom_run_id is not None:
         # CUSTOM/{project}/{custom_run_id} does not work for some reason
-        sys_attrs = fetch_attribute_values(client=client, project=project, custom_run_id=custom_run_id, attributes=["sys/id"])
+        sys_attrs = fetch_attribute_values(
+            client=client, project=project, custom_run_id=custom_run_id, attributes=["sys/id"]
+        )
         run_id = sys_attrs["sys/id"]
         holder_identifier = f"{project}/{run_id}"
     else:
@@ -75,7 +80,7 @@ def fetch_metric_values(
             for request_id, attribute in request_id_to_attribute.items()
         ],
         "stepRange": {"from": step_range[0], "to": step_range[1]},
-        "order": "ascending"
+        "order": "ascending",
     }
 
     result: dict[identifiers.AttributePath, dict[float, float]] = {}
@@ -113,10 +118,7 @@ def _process_metrics_page(
     for series in data.series:
         if series.series.values:
             attribute = request_id_to_attribute[series.requestId]
-            values = {
-                float(value.step): float(value.value)
-                for value in series.series.values
-            }
+            values = {float(value.step): float(value.value) for value in series.series.values}
             items.setdefault(attribute, {}).update(values)
 
     return items

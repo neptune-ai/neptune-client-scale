@@ -12,11 +12,6 @@ from datetime import (
 
 import numpy as np
 import pytest
-from neptune_fetcher import ReadOnlyRun
-from neptune_fetcher.alpha import (
-    filters,
-    runs,
-)
 from pytest import mark
 
 from neptune_scale.api.run import Run
@@ -29,22 +24,15 @@ from .conftest import (
 )
 from .test_fetcher import (
     fetch_attribute_values,
+    fetch_files,
     fetch_metric_values,
-    fetch_series_values,
-    fetch_files
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30
 
 
-def refresh(ro_run: ReadOnlyRun):
-    """Create a new ReadOnlyRun instance with the same project and custom_id,
-    which is basically a "refresh" operation"""
-    return ReadOnlyRun(read_only_project=ro_run.project, custom_id=ro_run["sys/custom_run_id"].fetch())
-
-
-def test_atoms(run, ro_run):
+def test_atoms(run, client, project_name):
     """Set atoms to a value, make sure it's equal when fetched"""
 
     now = time.time()
@@ -61,8 +49,9 @@ def test_atoms(run, ro_run):
     run.log_configs(data)
     run.wait_for_processing(SYNC_TIMEOUT)
 
+    fetched = fetch_attribute_values(client, project_name, custom_run_id=run._run_id, attributes=data.keys())
     for key, value in data.items():
-        assert ro_run[key].fetch() == value, f"Value for {key} does not match"
+        assert fetched[key] == value, f"Value for {key} does not match"
 
     # Replace the data and make sure the update is reflected AFTER we purge the cache for those items
     updated_data = {
@@ -77,35 +66,13 @@ def test_atoms(run, ro_run):
     run.log_configs(updated_data)
     run.wait_for_processing(SYNC_TIMEOUT)
 
-    # The data should stay the same, as we haven't purged the cache yet
-    for key, value in data.items():
-        assert ro_run[key].fetch() == value, f"The cached value for {key} does not match"
-
-    # Now purge the cache for the logged items, and fetch them again. They should now have the new values
-    for key in data.keys():
-        del ro_run[key]
-
+    fetched = fetch_attribute_values(client, project_name, custom_run_id=run._run_id, attributes=data.keys())
     for key, value in updated_data.items():
-        assert ro_run[key].fetch() == value, f"The updated value for {key} does not match"
+        assert fetched[key] == value, f"The updated value for {key} does not match"
 
 
-def test_series_no_prefetch(run, ro_run):
-    path = unique_path("test_series/series_no_prefetch")
-
-    steps, values = random_series()
-
-    for step, value in zip(steps, values):
-        run.log_metrics(data={path: value}, step=step)
-
-    run.wait_for_processing(SYNC_TIMEOUT)
-
-    df = ro_run[path].fetch_values()
-    assert df["step"].tolist() == steps
-    assert df["value"].tolist() == values
-
-
-def test_single_series_with_prefetch(run, ro_run):
-    path = unique_path("test_series/series_with_prefetch")
+def test_metric(run, client, project_name):
+    path = unique_path("test_metric/metric")
 
     steps, values = random_series()
 
@@ -114,32 +81,29 @@ def test_single_series_with_prefetch(run, ro_run):
 
     run.wait_for_processing(SYNC_TIMEOUT)
 
-    ro_run.prefetch_series_values([path], use_threads=True)
-    df = ro_run[path].fetch_values()
-
-    assert df["step"].tolist() == steps
-    assert df["value"].tolist() == values
+    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
+    assert list(fetched[path].keys()) == steps
+    assert list(fetched[path].values()) == values
 
 
-def test_multiple_series_with_prefetch(run, ro_run):
-    path_base = unique_path("test_series/many_series_with_prefetch")
+def test_multiple_metrics(run, client, project_name):
+    path_base = unique_path("test_metric/many_metrics")
     data = {f"{path_base}-{i}": i for i in range(20)}
 
     run.log_metrics(data, step=1)
     run.wait_for_processing(SYNC_TIMEOUT)
 
-    ro_run = refresh(ro_run)
-    paths = [p for p in ro_run.field_names if p.startswith(path_base)]
-    assert len(paths) == len(data), "Not all data was logged"
+    fetched = fetch_metric_values(
+        client=client, project=project_name, custom_run_id=run._run_id, attributes=data.keys()
+    )
+    assert len(fetched) == len(data), "Not all data was logged"
 
-    ro_run.prefetch_series_values(paths, use_threads=True)
-    for path in paths:
-        df = ro_run[path].fetch_values()
-        assert df["step"].tolist() == [1]
-        assert df["value"].tolist() == [data[path]]
+    for path, values in fetched.items():
+        assert list(fetched[path].keys()) == [1]
+        assert list(fetched[path].values()) == [data[path]]
 
 
-def test_series_fetch_and_append(run, ro_run):
+def test_metric_fetch_and_append(run, client, project_name):
     """Fetch a series, then append, then fetch again -- the new data points should be there"""
 
     path = unique_path("test_series/series_no_prefetch")
@@ -151,9 +115,9 @@ def test_series_fetch_and_append(run, ro_run):
 
     run.wait_for_processing(SYNC_TIMEOUT)
 
-    df = ro_run[path].fetch_values()
-    assert df["step"].tolist() == steps
-    assert df["value"].tolist() == values
+    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
+    assert list(fetched[path].keys()) == steps
+    assert list(fetched[path].values()) == values
 
     steps2, values2 = random_series(length=5, start_step=len(steps))
 
@@ -162,18 +126,20 @@ def test_series_fetch_and_append(run, ro_run):
 
     run.wait_for_processing(SYNC_TIMEOUT)
 
-    df = ro_run[path].fetch_values()
-    assert df["step"].tolist() == steps + steps2
-    assert df["value"].tolist() == values + values2
+    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
+    assert list(fetched[path].keys()) == steps + steps2
+    assert list(fetched[path].values()) == values + values2
 
 
 @mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
-def test_single_non_finite_metric(value, run, ro_run):
+def test_single_non_finite_metric(run, client, project_name, value):
     path = unique_path("test_series/non_finite")
 
     run.log_metrics(data={path: value}, step=1)
     run.wait_for_processing(SYNC_TIMEOUT)
-    assert path not in refresh(ro_run).field_names
+
+    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
+    assert path not in fetched
 
 
 def test_async_lag_callback():
@@ -239,10 +205,9 @@ def test_async_lag_callback():
         {"test_files/file_metadata1": File(b"from buffer", destination="a")},
     ],
 )
-def test_assign_files(caplog, run, run_init_kwargs, temp_dir, files):
+def test_assign_files(caplog, run, client, project_name, run_init_kwargs, temp_dir, files):
     # given
     ensure_test_directory()
-    run_id = run_init_kwargs["run_id"]
 
     # when
     with caplog.at_level(logging.WARNING):
@@ -256,17 +221,21 @@ def test_assign_files(caplog, run, run_init_kwargs, temp_dir, files):
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / str(i) for i, attr in enumerate(attributes)},
+    )
 
     # check content
-    for attribute_path, attribute_content in files.items():
-        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
+    for i, (attribute_path, attribute_content) in enumerate(files.items()):
+        compare_content(actual_path=temp_dir / str(i), expected_content=attribute_content)
 
 
-def test_assign_files_absolute(run, run_init_kwargs, temp_dir):
+def test_assign_files_absolute(run, client, project_name, temp_dir):
     # given
     ensure_test_directory()
-    run_id = run_init_kwargs["run_id"]
     # resolve to absolute path only after executing ensure_test_directory
     files = {"test_files/file_txt_absolute1": pathlib.Path("e2e/resources/file.txt").absolute()}
 
@@ -276,11 +245,16 @@ def test_assign_files_absolute(run, run_init_kwargs, temp_dir):
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
     # check content
     for attribute_path, attribute_content in files.items():
-        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
+        compare_content(actual_path=temp_dir / attribute_path, expected_content=attribute_content)
 
 
 @pytest.mark.parametrize(
@@ -360,10 +334,9 @@ def test_assign_files_absolute(run, run_init_kwargs, temp_dir):
         ),
     ],
 )
-def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
+def test_assign_files_metadata(run, client, project_name, temp_dir, files, expected):
     # given
     ensure_test_directory()
-    run_id = run_init_kwargs["run_id"]
 
     # when
     run.assign_files(files)
@@ -371,21 +344,20 @@ def test_assign_files_metadata(run, run_init_kwargs, temp_dir, files, expected):
 
     # then
     attributes = list(files.keys())
-    df = runs.fetch_runs_table(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes))
+    metadata = fetch_attribute_values(client, project_name, custom_run_id=run._run_id, attributes=attributes)
 
     for attribute in attributes:
         for key, value in expected.items():
             if isinstance(value, re.Pattern):
-                assert re.match(value, df.loc[run_id][attribute, key])
+                assert re.match(value, metadata[attribute][key])
             else:
-                assert df.loc[run_id][attribute, key] == value
+                assert metadata[attribute][key] == value
 
 
 @pytest.mark.parametrize("wait_after_first_upload", [True, False])
-def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, wait_after_first_upload):
+def test_assign_files_duplicate_attribute_path(run, client, project_name, temp_dir, wait_after_first_upload):
     # given
     ensure_test_directory()
-    run_id = run_init_kwargs["run_id"]
     files = {"test_files/file_duplicate1": "e2e/resources/file.txt"}
 
     # when
@@ -399,11 +371,16 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
     # check content
     for attribute_path, attribute_content in files.items():
-        compare_content(actual_path=temp_dir / run_id / attribute_path, expected_content=attribute_content)
+        compare_content(actual_path=temp_dir / attribute_path, expected_content=attribute_content)
 
 
 @pytest.mark.parametrize(
@@ -453,10 +430,9 @@ def test_assign_files_duplicate_attribute_path(run, run_init_kwargs, temp_dir, w
         ),
     ],
 )
-def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, caplog, files, error_type, warnings):
+def test_assign_files_error(run, client, project_name, temp_dir, on_error_queue, caplog, files, error_type, warnings):
     # given
     ensure_test_directory()
-    run_id = run_init_kwargs["run_id"]
 
     # when
     with caplog.at_level(logging.WARNING):
@@ -466,10 +442,15 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, capl
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
     for attribute_path, attribute_content in files.items():
-        actual_path = temp_dir / run_id / attribute_path
+        actual_path = temp_dir / attribute_path
         assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
 
     if error_type is None:
@@ -485,7 +466,7 @@ def test_assign_files_error(run, run_init_kwargs, temp_dir, on_error_queue, capl
         ), f"Warning '{warning}' not found in logs: {'; '.join(caplog.messages)}"
 
 
-def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
+def test_assign_files_error_no_access(run, client, project_name, temp_dir):
     # given
     ensure_test_directory()
     file_path = temp_dir / "file_no_access"
@@ -493,16 +474,20 @@ def test_assign_files_error_no_access(run, run_init_kwargs, temp_dir):
         f.write("test content")
     os.chmod(file_path, 0o000)  # remove read access
     files = {"test_files/file_no_access": file_path}
-    run_id = run_init_kwargs["run_id"]
 
     # when
     run.assign_files(files)  # emit a warning and skip only
 
     # then
     attributes = list(files.keys())
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=attributes), destination=temp_dir)
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
-    expected_path = temp_dir / run_id / attributes[0]
+    expected_path = temp_dir / attributes[0]
     assert not os.path.exists(expected_path), f"File {expected_path} should not exist"
 
 

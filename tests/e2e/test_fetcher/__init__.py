@@ -6,6 +6,6 @@ __all__ = [
 ]
 
 from .attribute_values import fetch_attribute_values
+from .files import fetch_files
 from .metric import fetch_metric_values
 from .series import fetch_series_values
-from .files import fetch_files

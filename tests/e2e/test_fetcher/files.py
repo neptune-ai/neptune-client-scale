@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pathlib
+from collections.abc import Iterable
 from typing import (
     Literal,
-    Iterable, Optional,
+    Optional,
 )
 
 from azure.storage.blob import BlobClient
@@ -28,7 +29,10 @@ from neptune_storage_api.models import (
     Permission,
 )
 
-from . import identifiers, fetch_attribute_values
+from . import (
+    fetch_attribute_values,
+    identifiers,
+)
 
 
 def fetch_files(
@@ -37,7 +41,7 @@ def fetch_files(
     *,
     attributes_targets: dict[identifiers.AttributePath, pathlib.Path],
     custom_run_id: Optional[identifiers.CustomRunId] = None,
-    run_id: Optional[identifiers.SysId] = None
+    run_id: Optional[identifiers.SysId] = None,
 ) -> None:
     file_refs = fetch_attribute_values(
         client=client,
@@ -47,10 +51,7 @@ def fetch_files(
         attributes=list(attributes_targets.keys()),
     )
 
-    source_targets = {
-        file_ref['path']: attributes_targets[attribute]
-        for attribute, file_ref in file_refs.items()
-    }
+    source_targets = {file_ref["path"]: attributes_targets[attribute] for attribute, file_ref in file_refs.items()}
 
     if not source_targets:
         return
@@ -88,8 +89,7 @@ def _fetch_signed_urls(
 ) -> list[str]:
     body = CreateSignedUrlsRequest(
         files=[
-            FileToSign(project_identifier=project, path=path, permission=Permission(permission))
-            for path in file_paths
+            FileToSign(project_identifier=project, path=path, permission=Permission(permission)) for path in file_paths
         ]
     )
 

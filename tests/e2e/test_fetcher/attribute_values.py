@@ -24,17 +24,13 @@ from neptune_api.client import AuthenticatedClient
 from neptune_retrieval_api.api.default import query_attributes_within_project_proto
 from neptune_retrieval_api.models import QueryAttributesBodyDTO
 from neptune_retrieval_api.proto.neptune_pb.api.v1.model.attributes_pb2 import ProtoQueryAttributesResultDTO
-from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2 import (
-    ProtoAttributeDTO,
-    ProtoFileRefAttributeDTO,
-    ProtoFloatSeriesAttributeDTO,
-    ProtoStringSeriesAttributeDTO,
-)
+from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2 import ProtoAttributeDTO
 
 from . import (
     identifiers,
     paging,
 )
+
 
 def fetch_attribute_values(
     client: AuthenticatedClient,
@@ -42,7 +38,7 @@ def fetch_attribute_values(
     *,
     attributes: Iterable[identifiers.AttributePath],
     custom_run_id: Optional[identifiers.CustomRunId] = None,
-    run_id: Optional[identifiers.SysId] = None
+    run_id: Optional[identifiers.SysId] = None,
 ) -> dict[identifiers.AttributePath, Any]:
     attribute_set: set[identifiers.AttributePath] = set(attributes)
 
@@ -79,7 +75,7 @@ def fetch_attribute_values(
             for attribute_path, value in attributes.items():
                 result[sys_id][attribute_path] = value
 
-    assert len(result) == 1, "Expected only one run in the result"
+    assert len(result) == 1, f"Expected one run in the result, got {len(result)}"
     return next(iter(result.values()))
 
 

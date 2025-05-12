@@ -20,9 +20,9 @@ from .conftest import (
 )
 from .test_fetcher import (
     fetch_attribute_values,
+    fetch_files,
     fetch_metric_values,
     fetch_series_values,
-    fetch_files,
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
@@ -135,7 +135,9 @@ def test_sync_files(run_init_kwargs, client, project_name, temp_dir):
 
     # then
     assert not db_path.exists()
-    fetch_files(client=client, project=project_name, custom_run_id=run_id, attributes_targets={path: temp_dir / "file-value"})
+    fetch_files(
+        client=client, project=project_name, custom_run_id=run_id, attributes_targets={path: temp_dir / "file-value"}
+    )
     with open(temp_dir / "file-value", "rb") as file:
         content = file.read()
         assert content == b"test_sync_files file content"

@@ -15,9 +15,7 @@
 
 from __future__ import annotations
 
-from typing import NewType
-
 ProjectIdentifier = str  # e.g. "team/john.doe"
-CustomRunId = str        # an uuid
-SysId = str              # KEY-number
+CustomRunId = str  # an uuid
+SysId = str  # KEY-number
 AttributePath = str

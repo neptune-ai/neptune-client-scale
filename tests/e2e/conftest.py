@@ -12,10 +12,6 @@ from datetime import (
 from pathlib import Path
 
 from neptune_api import AuthenticatedClient
-from neptune_fetcher import (
-    ReadOnlyProject,
-    ReadOnlyRun,
-)
 from pytest import fixture
 
 from neptune_scale import Run
@@ -39,20 +35,6 @@ def cleanup_logging_handlers():
     finally:
         logger = logging.getLogger("neptune")
         logger.handlers.clear()
-
-
-@fixture(scope="module")
-def project(request):
-    # Assume the project name and API token are set in the environment using the standard
-    # NEPTUNE_PROJECT and NEPTUNE_API_TOKEN variables.
-    #
-    # Since ReadOnlyProject is essentially stateless, we can reuse the same
-    # instance across all tests in a module.
-    #
-    # We also allow overriding the project name per module by setting the
-    # module-level `NEPTUNE_PROJECT` variable.
-    project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
-    return ReadOnlyProject(project=project_name)
 
 
 @fixture(scope="module")
@@ -81,7 +63,7 @@ def on_error_queue():
 
 
 @fixture(scope="module")
-def run(project, run_init_kwargs, on_error_queue):
+def run(run_init_kwargs, on_error_queue):
     """Plain neptune_scale.Run instance. We're scoping it to "module", as it seems to be a
     good compromise, mostly because of execution time."""
 
@@ -95,12 +77,6 @@ def run(project, run_init_kwargs, on_error_queue):
     yield run
 
     run.terminate()
-
-
-@fixture
-def ro_run(project, run, run_init_kwargs):
-    """ReadOnlyRun pointing to the same run as the neptune_scale.Run"""
-    return ReadOnlyRun(read_only_project=project, custom_id=run_init_kwargs["run_id"])
 
 
 @fixture
