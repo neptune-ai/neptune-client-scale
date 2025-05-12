@@ -12,6 +12,7 @@ import pytest
 import neptune_scale.logging.console_log_capture
 from neptune_scale.logging.console_log_capture import (
     ConsoleLogCaptureThread,
+    StepTracker,
     StreamWithMemory,
 )
 
@@ -68,6 +69,35 @@ def test_stream_with_memory_passes_data_to_subscriber_with_multiple_subscribers(
 
     assert [line for _, line in data_1] == ["Hello", "World"]
     assert [line for _, line in data_2] == ["Hello", "World"]
+
+
+@pytest.mark.parametrize(
+    "initial, increment_count, expected",
+    (
+        (0, 0, 0.000001),
+        (1, 0, 1.000001),
+        (1.000001, 0, 1.000002),
+        (0.123456, 0, 0.123457),
+        (0.9999999999, 0, 1),
+        (0.999999, 0, 1),
+        (1.123456789, 0, 1.123457),
+        (1.000001, 1, 1.000003),
+        (0.999999, 1, 1.000001),
+        (0.999998, 1, 1),
+        (1, 1, 1.000002),
+        (1.123456999, 1_000_000, 2.123457),
+        (1, 2_500_001, 3.500002),
+    ),
+)
+def test_step_tracker(initial, increment_count, expected):
+    tracker = StepTracker(initial)
+
+    last_value = tracker.value
+    for _ in range(increment_count):
+        last_value = tracker.increment()
+
+    assert last_value == expected
+    assert tracker.value == expected
 
 
 def test_stream_with_memory_passes_data_to_subscriber_with_multiple_writes():
@@ -132,7 +162,9 @@ def no_capture(capsys):
 def test_console_log_capture_thread_captures_stdout(no_capture):
     # given
     logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+    )
 
     # when
     thread.start()
@@ -142,14 +174,16 @@ def test_console_log_capture_thread_captures_stdout(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"monitoring/stdout": "Hello"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stdout": "World"}, 2, ANY)
+    logs_sink.assert_any_call({"system/stdout": "Hello"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"system/stdout": "World"}, _make_step(2), ANY)
 
 
 def test_console_log_capture_thread_captures_stderr(no_capture):
     # given
     logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+    )
 
     # when
     thread.start()
@@ -159,14 +193,16 @@ def test_console_log_capture_thread_captures_stderr(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"monitoring/stderr": "Hello"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "World"}, 2, ANY)
+    logs_sink.assert_any_call({"system/stderr": "Hello"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"system/stderr": "World"}, _make_step(2), ANY)
 
 
 def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
     # given
     logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=0.1, logs_sink=logs_sink)
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=0.1, logs_sink=logs_sink
+    )
 
     # when
     thread.start()
@@ -178,13 +214,18 @@ def test_console_log_capture_thread_captures_both_stdout_and_stderr(no_capture):
     thread.join()
 
     # then
-    logs_sink.assert_any_call({"monitoring/stdout": "Hello stdout"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "Hello stderr"}, 1, ANY)
-    logs_sink.assert_any_call({"monitoring/stdout": "World stdout"}, 2, ANY)
-    logs_sink.assert_any_call({"monitoring/stderr": "World stderr"}, 2, ANY)
+    logs_sink.assert_any_call({"system/stdout": "Hello stdout"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"system/stderr": "Hello stderr"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"system/stdout": "World stdout"}, _make_step(2), ANY)
+    logs_sink.assert_any_call({"system/stderr": "World stderr"}, _make_step(2), ANY)
 
 
 LINE_LIMIT = 1024 * 1024
+
+
+def _make_step(index: int, initial: float = 0) -> float:
+    # Return a step value that can be compared against actual calls made,
+    return round(initial + index / 1e6, 6)
 
 
 # The test cases mirror the ones in test_neptune_logging_handler.py
@@ -213,7 +254,9 @@ LINE_LIMIT = 1024 * 1024
 def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     # given
     logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=10, logs_sink=logs_sink)
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id", initial_step=0, system_namespace="system", logs_flush_frequency_sec=10, logs_sink=logs_sink
+    )
 
     # when
     thread.start()
@@ -225,7 +268,7 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
     # then
     if expected:
         for idx, line in enumerate(expected):
-            logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+            logs_sink.assert_any_call({"system/stdout": line}, _make_step(idx + 1), ANY)
     else:
         logs_sink.assert_not_called()
 
@@ -241,7 +284,9 @@ def test_console_log_capture_thread_split_lines(no_capture, prints, expected):
 def test_console_log_capture_thread_merge_lines(no_capture, prints, expected):
     # given
     logs_sink = Mock()
-    thread = ConsoleLogCaptureThread(run_id="run_id", logs_flush_frequency_sec=2, logs_sink=logs_sink)
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id", system_namespace="system", initial_step=0, logs_flush_frequency_sec=2, logs_sink=logs_sink
+    )
 
     # when
     thread.start()
@@ -254,4 +299,52 @@ def test_console_log_capture_thread_merge_lines(no_capture, prints, expected):
 
     # then
     for idx, line in enumerate(expected):
-        logs_sink.assert_any_call({"monitoring/stdout": line}, idx + 1, ANY)
+        logs_sink.assert_any_call({"system/stdout": line}, _make_step(idx + 1), ANY)
+
+
+@pytest.mark.parametrize("initial_step", (0, 1.0, 1.1, 1.12, 1.123, 1.1234, 1.12345, 1.123456))
+def test_console_log_capture_thread_initial_step(no_capture, initial_step):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id",
+        initial_step=initial_step,
+        system_namespace="system",
+        logs_flush_frequency_sec=0.1,
+        logs_sink=logs_sink,
+    )
+
+    # when
+    thread.start()
+    for line in range(10):
+        print(f"line-{line}")
+
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    for idx in range(10):
+        logs_sink.assert_any_call({"system/stdout": f"line-{idx}"}, _make_step(idx + 1, initial=initial_step), ANY)
+
+
+def test_system_namespace(no_capture):
+    # given
+    logs_sink = Mock()
+    thread = ConsoleLogCaptureThread(
+        run_id="run_id",
+        system_namespace="custom/namespace",
+        initial_step=0,
+        logs_flush_frequency_sec=0.1,
+        logs_sink=logs_sink,
+    )
+
+    # when
+    thread.start()
+    print("Hello")
+    print("World")
+    thread.interrupt(remaining_iterations=1)
+    thread.join()
+
+    # then
+    logs_sink.assert_any_call({"custom/namespace/stdout": "Hello"}, _make_step(1), ANY)
+    logs_sink.assert_any_call({"custom/namespace/stdout": "World"}, _make_step(2), ANY)

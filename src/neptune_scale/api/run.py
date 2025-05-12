@@ -96,6 +96,7 @@ from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
 )
+from neptune_scale.util.timer import Timer
 
 logger = get_logger()
 
@@ -126,6 +127,7 @@ class Run(AbstractContextManager):
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
+        system_namespace: Optional[str] = None,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -155,10 +157,14 @@ class Run(AbstractContextManager):
             on_error_callback: The default callback function triggered when error occurs. It applies if an error
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
+            enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
+            system_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "system".
         """
 
         if run_id is None:
             run_id = generate_run_id()
+
+        self._fork_step = fork_step
 
         verify_type("run_id", run_id, str)
         verify_type("resume", resume, bool)
@@ -175,6 +181,8 @@ class Run(AbstractContextManager):
         verify_type("on_network_error_callback", on_network_error_callback, (Callable, type(None)))
         verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
+        verify_type("enable_console_log_capture", enable_console_log_capture, bool)
+        verify_type("system_namespace", system_namespace, (str, type(None)))
 
         if resume and creation_time is not None:
             logger.warning("`creation_time` is ignored when used together with `resume`.")
@@ -237,7 +245,7 @@ class Run(AbstractContextManager):
 
             existing_metadata = self._operations_repo.get_metadata()
             if existing_metadata is not None:
-                raise NeptuneDatabaseConflict(path=operations_repository_path)
+                raise NeptuneDatabaseConflict(path=operations_repository_path.name)
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
@@ -246,6 +254,8 @@ class Run(AbstractContextManager):
                 if not enable_console_log_capture
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
+                    system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
+                    initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
                         timestamp=timestamp, string_series=StringSeries(data, step)
@@ -336,11 +346,13 @@ class Run(AbstractContextManager):
                 if self._errors_queue is not None:
                     self._errors_queue.put(NeptuneSynchronizationStopped())
 
-    def _close(self, *, wait: bool = True) -> None:
+    def _close(self, *, timeout: Optional[float] = None) -> None:
+        timer = Timer(timeout)
+
         # Console log capture is actually a produced of logged data, so let's flush it before closing.
         # This allows to log tracebacks of the potential exception that caused the run to fail.
         if self._console_log_capture is not None:
-            self._console_log_capture.interrupt(remaining_iterations=1 if wait else 0)
+            self._console_log_capture.interrupt(remaining_iterations=0 if timer.is_expired() else 1)
             self._console_log_capture.join()
 
         with self._lock:
@@ -349,30 +361,29 @@ class Run(AbstractContextManager):
 
             self._is_closing = True
 
-            logger.debug(f"Run is closing, wait={wait}")
+            logger.debug(f"Run is closing, timeout={timeout}")
 
         if self._sync_process is not None and self._sync_process.is_alive():
-            if wait:
-                self.wait_for_processing()
+            self.wait_for_processing(timeout=timer.remaining_time())
 
             self._sync_process.terminate()
-            self._sync_process.join()
+            self._sync_process.join(timeout=timer.remaining_time())
 
         if self._sync_process_supervisor is not None:
             self._sync_process_supervisor.interrupt()
-            self._sync_process_supervisor.join()
+            self._sync_process_supervisor.join(timeout=timer.remaining_time())
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
-            self._lag_tracker.join()
+            self._lag_tracker.join(timeout=timer.remaining_time())
 
         if self._errors_monitor is not None:
-            self._errors_monitor.interrupt(remaining_iterations=1 if wait else 0)
+            self._errors_monitor.interrupt(remaining_iterations=0 if timer.is_expired() else 1)
 
             # Don't call join() if being called from the error thread, as this will
             # result in a "cannot join current thread" exception.
             if threading.current_thread() != self._errors_monitor:
-                self._errors_monitor.join()
+                self._errors_monitor.join(timeout=timer.remaining_time())
 
         if self._operations_repo is not None:
             self._operations_repo.close(cleanup_files=True)
@@ -411,9 +422,9 @@ class Run(AbstractContextManager):
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
             self._exit_func = None
-        self._close(wait=False)
+        self._close(timeout=0)
 
-    def close(self) -> None:
+    def close(self, timeout: Optional[float] = None) -> None:
         """
         Closes the connection to Neptune and waits for data synchronization to be completed.
 
@@ -433,7 +444,7 @@ class Run(AbstractContextManager):
         if self._exit_func is not None:
             atexit.unregister(self._exit_func)
             self._exit_func = None
-        self._close(wait=True)
+        self._close(timeout=timeout)
 
     def __exit__(
         self,
@@ -651,14 +662,18 @@ class Run(AbstractContextManager):
 
     def assign_files(self, files: dict[str, Union[str, Path, bytes, File]]) -> None:
         """
-        Assigns single file values to the specified attributes. Any existing values for these attributes will be
-        overwritten.
+        Assigns single file values to the specified attributes and uploads files' contents.
+        Existing values for are overwritten.
 
-        If the value is a simple source type (str, Path, bytes), it's used directly.
-        Mime type and size are determined from the provided source (file or bytes buffer).
+        If a value is a string or Path, it is treated as a file path.
+        If a value is bytes, it is treated as raw file content to save.
+        If a value is a `File` object, its `source` field is used (string and Path are treated as file paths,
+        bytes are treated as raw file content to save).
 
-        If the value is a `File` object, its `source` field is used, along with the optional `destination`,
-        `mime_type`, and `size_bytes` fields. Any fields not provided will be determined from the provided source.
+        The files are uploaded to the Neptune object storage and the attribute are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically,
+        but this mechanism can be overridden by providing `mime_type` and `size_bytes` fields in the `File` object.
 
         Args:
             files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects
@@ -727,7 +742,7 @@ class Run(AbstractContextManager):
         if string_series is not None:
             verify_type("string_series", string_series, StringSeries)
             verify_type("string_series", string_series.data, dict)
-            verify_type("step", string_series.step, (float, int, type(None)))
+            verify_type("step", string_series.step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -853,14 +868,17 @@ class Run(AbstractContextManager):
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
         if verbose:
             logger.info(f"Waiting for all operations to be {phrase}")
 
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        begin_time = time.monotonic()
-        wait_time = min(sleep_time, timeout) if timeout is not None else sleep_time
+        timer = Timer(timeout)
+        wait_time = sleep_time
         last_print_timestamp: Optional[float] = None
 
         while True:
@@ -868,7 +886,7 @@ class Run(AbstractContextManager):
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
                         logger.warning("Waiting interrupted because sync process is not running")
-                        return
+                        break
 
                     assert wait_seq is not None
                     assert self._sequence_tracker is not None
@@ -878,9 +896,7 @@ class Run(AbstractContextManager):
                     if wait_seq.value >= self._sequence_tracker.last_sequence_id:
                         break
 
-                if timeout is not None:
-                    time_elapsed = time.monotonic() - begin_time
-                    wait_time = max(0, min(wait_time, timeout - time_elapsed))
+                wait_time = min(wait_time, timer.remaining_time_or_inf())
                 with wait_seq:
                     wait_seq.wait(timeout=wait_time)
                     value = wait_seq.value
@@ -914,16 +930,13 @@ class Run(AbstractContextManager):
                         logger.info(f"All operations were {phrase}")
                     break
 
-                if timeout is not None:
-                    time_elapsed = time.monotonic() - begin_time
-                    if time_elapsed > timeout:
-                        if verbose:
-                            logger.info("Waiting interrupted because timeout was reached")
-                        break
+                if timer.is_expired():
+                    if verbose:
+                        logger.info("Waiting interrupted because timeout was reached")
+                    break
             except KeyboardInterrupt:
                 if verbose:
                     logger.warning("Waiting interrupted by user")
-                return
 
     def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -936,17 +949,15 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for submission.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         self._wait(
             phrase="submitted",
             sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
             wait_seq=self._last_queued_seq,
-            timeout=timeout,
+            timeout=timer.remaining_time(),
             verbose=verbose,
         )
-        time_elapsed = time.monotonic() - begin_time
-        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
-        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
@@ -958,23 +969,24 @@ class Run(AbstractContextManager):
             timeout (float, optional): In seconds, the maximum time to wait for processing.
             verbose (bool): If True (default), prints messages about the waiting process.
         """
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         self._wait(
             phrase="processed",
             sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
             wait_seq=self._last_ack_seq,
-            timeout=timeout,
+            timeout=timer.remaining_time(),
             verbose=verbose,
         )
-        time_elapsed = time.monotonic() - begin_time
-        remaining_timeout = None if timeout is None else max(0.0, timeout - time_elapsed)
-        self._wait_for_file_upload(timeout=remaining_timeout, verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
 
     def _wait_for_file_upload(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
         if verbose:
             logger.info("Waiting for all files to be uploaded")
 
@@ -982,7 +994,7 @@ class Run(AbstractContextManager):
             logger.warning("No timeout specified. Waiting indefinitely")
 
         upload_count_limit = 1_000_000
-        begin_time = time.monotonic()
+        timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None
 
@@ -1005,15 +1017,13 @@ class Run(AbstractContextManager):
                         verbose=verbose,
                     )
 
-                    if timeout is not None:
-                        time_elapsed = time.monotonic() - begin_time
-                        if time_elapsed > timeout:
-                            if verbose:
-                                logger.info("Waiting interrupted because timeout was reached")
-                            break
-                        sleep_time = min(sleep_time, timeout - time_elapsed)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
+                    if timer.is_expired():
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    sleep_time = min(sleep_time, timer.remaining_time_or_inf())
+
+                    time.sleep(sleep_time)
                 else:
                     if verbose:
                         logger.info("All files were uploaded")
