@@ -27,6 +27,12 @@ from .conftest import (
     random_series,
     unique_path,
 )
+from .test_fetcher import (
+    fetch_attribute_values,
+    fetch_metric_values,
+    fetch_series_values,
+    fetch_files
+)
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30

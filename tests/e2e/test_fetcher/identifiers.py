@@ -17,8 +17,7 @@ from __future__ import annotations
 
 from typing import NewType
 
-ProjectIdentifier = NewType("ProjectIdentifier", str)  # e.g. "team/john.doe"
-SysId = NewType("SysId", str)  # e.g. "KEY-1234"
-# SysName = NewType("SysName", str)  # e.g. "pye2e-fetcher-test-internal-attribute"
-# CustomRunId = NewType("CustomRunId", str)  # an uuid
-AttributePath = NewType("AttributePath", str)  # an uuid
+ProjectIdentifier = str  # e.g. "team/john.doe"
+CustomRunId = str        # an uuid
+SysId = str              # KEY-number
+AttributePath = str

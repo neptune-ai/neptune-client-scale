@@ -15,11 +15,9 @@
 import datetime
 import functools as ft
 from collections.abc import Iterable
-from dataclasses import dataclass
 from typing import (
     Any,
     Optional,
-    Union,
 )
 
 from neptune_api.client import AuthenticatedClient
@@ -33,50 +31,35 @@ from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2
     ProtoStringSeriesAttributeDTO,
 )
 
-from tests.e2e.test_fetcher import (
+from . import (
     identifiers,
     paging,
 )
 
-_BATCH_SIZE = 10000
-
-
-@dataclass(frozen=True)
-class FloatSeriesAggregations:
-    last: float
-    min: float
-    max: float
-    average: float
-    variance: float
-
-
-@dataclass(frozen=True)
-class StringSeriesAggregations:
-    last: str
-    last_step: float
-
-
-@dataclass(frozen=True)
-class FileProperties:
-    path: str
-    size_bytes: int
-    mime_type: str
-
-
 def fetch_attribute_values(
     client: AuthenticatedClient,
     project: identifiers.ProjectIdentifier,
-    custom_run_id: str,
-    attributes: Iterable[Union[identifiers.AttributePath, str]],
+    *,
+    attributes: Iterable[identifiers.AttributePath],
+    custom_run_id: Optional[identifiers.CustomRunId] = None,
+    run_id: Optional[identifiers.SysId] = None
 ) -> dict[identifiers.AttributePath, Any]:
     attribute_set: set[identifiers.AttributePath] = set(attributes)
+
     if not attribute_set:
         return {}
 
+    if custom_run_id is not None:
+        experiment_id = f"CUSTOM/{project}/{custom_run_id}"
+    elif run_id is not None:
+        experiment_id = f"{project}/{run_id}"
+    else:
+        raise ValueError("Either custom_run_id or run_id must be provided")
+
     params: dict[str, Any] = {
-        "experimentIdsFilter": [f"CUSTOM/{project}/{custom_run_id}"],
+        "experimentIdsFilter": [experiment_id],
         "attributeNamesFilter": list(attribute_set),
-        "nextPage": {"limit": _BATCH_SIZE},
+        "nextPage": {"limit": 10_000},
     }
 
     result: dict[identifiers.AttributePath, Any] = {}
@@ -117,11 +100,11 @@ def _fetch_attribute_values_page(
 def _process_attribute_values_page(
     data: ProtoQueryAttributesResultDTO,
     attribute_set: set[identifiers.AttributePath],
-) -> dict[identifiers.SysId, dict[identifiers.AttributePath, Any]]:
-    result: dict[identifiers.SysId, dict[identifiers.AttributePath, Any]] = {}
+) -> dict[str, dict[identifiers.AttributePath, Any]]:
+    result: dict[str, dict[identifiers.AttributePath, Any]] = {}
 
     for entry in data.entries:
-        sys_id = identifiers.SysId(entry.experimentShortId)
+        sys_id = entry.experimentShortId
 
         for attr in entry.attributes:
             attribute_path = identifiers.AttributePath(attr.name)
@@ -155,11 +138,7 @@ def _make_new_attribute_values_page_params(
 
 
 def _extract_value(attr: ProtoAttributeDTO) -> Optional[Any]:
-    if attr.type == "floatSeries":
-        return _extract_float_series_aggregations(attr.float_series_properties)
-    elif attr.type == "stringSeries":
-        return _extract_string_series_aggregations(attr.string_series_properties)
-    elif attr.type == "string":
+    if attr.type == "string":
         return attr.string_properties.value
     elif attr.type == "int":
         return attr.int_properties.value
@@ -171,34 +150,29 @@ def _extract_value(attr: ProtoAttributeDTO) -> Optional[Any]:
         return datetime.datetime.fromtimestamp(attr.datetime_properties.value / 1000, tz=datetime.timezone.utc)
     elif attr.type == "stringSet":
         return set(attr.string_set_properties.value)
+    elif attr.type == "floatSeries":
+        properties = attr.float_series_properties
+        return dict(
+            last=properties.last,
+            min=properties.min,
+            max=properties.max,
+            average=properties.average,
+            variance=properties.variance,
+        )
+    elif attr.type == "stringSeries":
+        properties = attr.string_series_properties
+        return dict(
+            last=properties.last,
+            last_step=properties.last_step,
+        )
     elif attr.type == "fileRef":
-        return _extract_file_ref_properties(attr.file_ref_properties)
+        properties = attr.file_ref_properties
+        return dict(
+            path=properties.path,
+            size_bytes=properties.sizeBytes,
+            mime_type=properties.mimeType,
+        )
     elif attr.type == "experimentState":
         return None
     else:
         raise NotImplementedError(f"Unsupported attribute type: {attr.type}")
-
-
-def _extract_float_series_aggregations(attr: ProtoFloatSeriesAttributeDTO) -> FloatSeriesAggregations:
-    return FloatSeriesAggregations(
-        last=attr.last,
-        min=attr.min,
-        max=attr.max,
-        average=attr.average,
-        variance=attr.variance,
-    )
-
-
-def _extract_string_series_aggregations(attr: ProtoStringSeriesAttributeDTO) -> StringSeriesAggregations:
-    return StringSeriesAggregations(
-        last=attr.last,
-        last_step=attr.last_step,
-    )
-
-
-def _extract_file_ref_properties(attr: ProtoFileRefAttributeDTO) -> FileProperties:
-    return FileProperties(
-        path=attr.path,
-        size_bytes=attr.sizeBytes,
-        mime_type=attr.mimeType,
-    )
