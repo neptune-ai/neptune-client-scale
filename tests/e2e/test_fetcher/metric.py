@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import functools as ft
 from collections.abc import Iterable
 from typing import (
     Any,
@@ -28,7 +27,6 @@ from neptune_retrieval_api.proto.neptune_pb.api.v1.model.series_values_pb2 impor
 from . import (
     fetch_attribute_values,
     identifiers,
-    paging,
 )
 
 _TOTAL_POINT_LIMIT: int = 1_000_000
@@ -81,24 +79,14 @@ def fetch_metric_values(
         ],
         "stepRange": {"from": step_range[0], "to": step_range[1]},
         "order": "ascending",
+        "perSeriesPointsLimit": _TOTAL_POINT_LIMIT / len(attribute_set),
     }
 
-    result: dict[identifiers.AttributePath, dict[float, float]] = {}
-
-    for page_result in paging.fetch_pages(
-        client=client,
-        fetch_page=_fetch_metrics_page,
-        process_page=ft.partial(_process_metrics_page, request_id_to_attribute=request_id_to_attribute),
-        make_new_page_params=_make_new_metrics_page_params,
-        params=params,
-    ):
-        for attribute, values in page_result.items():
-            result.setdefault(attribute, {}).update(values)
-
-    return result
+    response = _fetch_metrics(client, params)
+    return _process_metrics_response(response, request_id_to_attribute)
 
 
-def _fetch_metrics_page(
+def _fetch_metrics(
     client: AuthenticatedClient,
     params: dict[str, Any],
 ) -> ProtoFloatSeriesValuesResponseDTO:
@@ -109,7 +97,7 @@ def _fetch_metrics_page(
     return ProtoFloatSeriesValuesResponseDTO.FromString(response.content)
 
 
-def _process_metrics_page(
+def _process_metrics_response(
     data: ProtoFloatSeriesValuesResponseDTO,
     request_id_to_attribute: dict[str, identifiers.AttributePath],
 ) -> dict[identifiers.AttributePath, dict[float, float]]:
@@ -122,37 +110,3 @@ def _process_metrics_page(
             items.setdefault(attribute, {}).update(values)
 
     return items
-
-
-def _make_new_metrics_page_params(
-    params: dict[str, Any], data: Optional[ProtoFloatSeriesValuesResponseDTO]
-) -> Optional[dict[str, Any]]:
-    if data is None:
-        for request in params["requests"]:
-            if "afterStep" in request:
-                del request["afterStep"]
-        per_series_points_limit = _TOTAL_POINT_LIMIT // len(params["requests"])
-        params["perSeriesPointsLimit"] = per_series_points_limit
-        return params
-
-    prev_per_series_points_limit = params["perSeriesPointsLimit"]
-    new_request_after_steps = {}
-    for series in data.series:
-        request_id = series.requestId
-        value_size = len(series.series.values)
-        is_page_full = value_size == prev_per_series_points_limit
-        if is_page_full:
-            new_request_after_steps[request_id] = series.series.values[-1].step
-
-    if not new_request_after_steps:
-        return None
-
-    new_requests = []
-    for request in params["requests"]:
-        request_id = request["requestId"]
-        if request_id in new_request_after_steps:
-            after_step = new_request_after_steps[request_id]
-            request["afterStep"] = after_step
-            new_requests.append(request)
-    params["requests"] = new_requests
-    return params

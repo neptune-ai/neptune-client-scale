@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import functools as ft
 from collections.abc import Iterable
 from typing import (
     Any,
@@ -28,7 +27,6 @@ from neptune_retrieval_api.proto.neptune_pb.api.v1.model.series_values_pb2 impor
 from . import (
     fetch_attribute_values,
     identifiers,
-    paging,
 )
 
 
@@ -81,22 +79,11 @@ def fetch_series_values(
         "order": "ascending",
     }
 
-    result: dict[identifiers.AttributePath, dict[float, str]] = {}
-
-    for page_result in paging.fetch_pages(
-        client=client,
-        fetch_page=_fetch_series_page,
-        process_page=ft.partial(_process_series_page, request_id_to_attribute=request_id_to_attribute),
-        make_new_page_params=_make_new_series_page_params,
-        params=params,
-    ):
-        for attribute, values in page_result.items():
-            result.setdefault(attribute, {}).update(values)
-
-    return result
+    response = _fetch_series(client, params)
+    return _process_series_response(response, request_id_to_attribute)
 
 
-def _fetch_series_page(
+def _fetch_series(
     client: AuthenticatedClient,
     params: dict[str, Any],
 ) -> ProtoSeriesValuesResponseDTO:
@@ -107,7 +94,7 @@ def _fetch_series_page(
     return ProtoSeriesValuesResponseDTO.FromString(response.content)
 
 
-def _process_series_page(
+def _process_series_response(
     data: ProtoSeriesValuesResponseDTO,
     request_id_to_attribute: dict[str, identifiers.AttributePath],
 ) -> dict[identifiers.AttributePath, dict[float, str]]:
@@ -120,34 +107,3 @@ def _process_series_page(
             items.setdefault(attribute, {}).update(values)
 
     return items
-
-
-def _make_new_series_page_params(
-    params: dict[str, Any], data: Optional[ProtoSeriesValuesResponseDTO]
-) -> Optional[dict[str, Any]]:
-    if data is None:
-        for request in params["requests"]:
-            if "searchAfter" in request:
-                del request["searchAfter"]
-        return params
-
-    request_id_to_search_after = {
-        series.requestId: series.searchAfter
-        for series in data.series
-        if series.searchAfter is not None and series.searchAfter.token and not series.searchAfter.finished
-    }
-    if not request_id_to_search_after:
-        return None
-
-    new_requests = []
-    for request in params["requests"]:
-        request_id = request["requestId"]
-        if request_id in request_id_to_search_after:
-            search_after = request_id_to_search_after[request_id]
-            request["searchAfter"] = {
-                "finished": search_after.finished,
-                "token": search_after.token,
-            }
-            new_requests.append(request)
-    params["requests"] = new_requests
-    return params

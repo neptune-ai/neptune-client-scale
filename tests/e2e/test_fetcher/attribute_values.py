@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import datetime
-import functools as ft
 from collections.abc import Iterable
 from typing import (
     Any,
@@ -26,10 +25,7 @@ from neptune_retrieval_api.models import QueryAttributesBodyDTO
 from neptune_retrieval_api.proto.neptune_pb.api.v1.model.attributes_pb2 import ProtoQueryAttributesResultDTO
 from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2 import ProtoAttributeDTO
 
-from . import (
-    identifiers,
-    paging,
-)
+from . import identifiers
 
 
 def fetch_attribute_values(
@@ -58,28 +54,14 @@ def fetch_attribute_values(
         "nextPage": {"limit": 10_000},
     }
 
-    result: dict[identifiers.AttributePath, Any] = {}
-    for page_result in paging.fetch_pages(
-        client=client,
-        fetch_page=ft.partial(_fetch_attribute_values_page, project=project),
-        process_page=ft.partial(
-            _process_attribute_values_page,
-            attribute_set=attribute_set,
-        ),
-        make_new_page_params=_make_new_attribute_values_page_params,
-        params=params,
-    ):
-        for sys_id, attributes in page_result.items():
-            if sys_id not in result:
-                result[sys_id] = {}
-            for attribute_path, value in attributes.items():
-                result[sys_id][attribute_path] = value
+    response = _fetch_attribute_values(client, params, project)
+    result = _process_attribute_values_response(response)
 
     assert len(result) == 1, f"Expected one run in the result, got {len(result)}"
     return next(iter(result.values()))
 
 
-def _fetch_attribute_values_page(
+def _fetch_attribute_values(
     client: AuthenticatedClient,
     params: dict[str, Any],
     project: identifiers.ProjectIdentifier,
@@ -93,9 +75,8 @@ def _fetch_attribute_values_page(
     return ProtoQueryAttributesResultDTO.FromString(response.content)
 
 
-def _process_attribute_values_page(
+def _process_attribute_values_response(
     data: ProtoQueryAttributesResultDTO,
-    attribute_set: set[identifiers.AttributePath],
 ) -> dict[str, dict[identifiers.AttributePath, Any]]:
     result: dict[str, dict[identifiers.AttributePath, Any]] = {}
 
@@ -103,34 +84,14 @@ def _process_attribute_values_page(
         sys_id = entry.experimentShortId
 
         for attr in entry.attributes:
-            attribute_path = identifiers.AttributePath(attr.name)
-            if attribute_path not in attribute_set:
-                continue
-
             item_value = _extract_value(attr)
             if item_value is None:
                 continue
 
             sys_id_dict = result.setdefault(sys_id, {})
-            sys_id_dict[attribute_path] = item_value
+            sys_id_dict[attr.name] = item_value
 
     return result
-
-
-def _make_new_attribute_values_page_params(
-    params: dict[str, Any], data: Optional[ProtoQueryAttributesResultDTO]
-) -> Optional[dict[str, Any]]:
-    if data is None:
-        if "nextPageToken" in params["nextPage"]:
-            del params["nextPage"]["nextPageToken"]
-        return params
-
-    next_page_token = data.nextPage.nextPageToken
-    if not next_page_token:
-        return None
-
-    params["nextPage"]["nextPageToken"] = next_page_token
-    return params
 
 
 def _extract_value(attr: ProtoAttributeDTO) -> Optional[Any]:
