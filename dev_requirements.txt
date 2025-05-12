@@ -7,3 +7,4 @@ pytest
 pytest-timeout
 pytest-xdist
 freezegun
+numpy
