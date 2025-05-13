@@ -579,7 +579,7 @@ def test_log_files_single_metadata(run, client, project_name, temp_dir, files, e
         ),
     ],
 )
-def test_log_files_single_error(
+def test_log_files_error_single(
     run, client, project_name, temp_dir, on_error_queue, caplog, files, error_type, warnings
 ):
     # given
@@ -626,55 +626,83 @@ def test_log_files_single_error(
 @pytest.mark.parametrize(
     "file_series",
     [
-        {
-            1.0: {"test_file_series/series_1": b"bytes content 1"},
-            2.0: {"test_file_series/series_1": b"bytes content 2"},
-            3.0: {"test_file_series/series_1": b"bytes content 3"},
-        },
-        {
-            1.0: {
-                "test_file_series/series_2a": b"bytes content 1",
-                "test_file_series/series_2b": b"bytes content 2",
-            },
-        },
-        {
-            1.0: {
-                "test_file_series/series_3a": b"bytes content 1",
-                "test_file_series/series_3b": b"bytes content 2",
-            },
-            3.0: {
-                "test_file_series/series_3b": b"bytes content 3",
-                "test_file_series/series_3c": b"bytes content 4",
-            },
-        },
-        {
-            1.0: {"test_file_series/series_4": b"bytes content"},
-            1.1: {"test_file_series/series_4": "e2e/resources/file.txt"},
-            1.2: {"test_file_series/series_4": pathlib.Path("e2e/resources/file.txt")},
-            1.3: {"test_file_series/series_4": File(source="e2e/resources/file.txt")},
-        },
-        {
-            0.0: {"test_file_series/series_5": b"bytes content 1"},
-            0.1**6: {"test_file_series/series_5": b"bytes content 2"},
-            1.0: {"test_file_series/series_5": b"bytes content 3"},
-            1.000001: {"test_file_series/series_5": b"bytes content 4"},
-            10**11: {"test_file_series/series_5": b"bytes content 5"},
-            9 * 10**11: {"test_file_series/series_5": b"bytes content 6"},
-            999999999999.9999: {"test_file_series/series_5": b"bytes content 7"},  # we run into float precision issues
-        },
+        [
+            (1.0, {"test_file_series/series_1": b"bytes content 1"}),
+            (2.0, {"test_file_series/series_1": b"bytes content 2"}),
+            (3.0, {"test_file_series/series_1": b"bytes content 3"}),
+        ],
+        [
+            (
+                1.0,
+                {
+                    "test_file_series/series_2a": b"bytes content 1",
+                    "test_file_series/series_2b": b"bytes content 2",
+                },
+            ),
+        ],
+        [
+            (
+                1.0,
+                {
+                    "test_file_series/series_3a": b"bytes content 1",
+                    "test_file_series/series_3b": b"bytes content 2",
+                },
+            ),
+            (
+                3.0,
+                {
+                    "test_file_series/series_3b": b"bytes content 3",
+                    "test_file_series/series_3c": b"bytes content 4",
+                },
+            ),
+        ],
+        [
+            (1.0, {"test_file_series/series_4": b"bytes content"}),
+            (1.1, {"test_file_series/series_4": "e2e/resources/file.txt"}),
+            (1.2, {"test_file_series/series_4": pathlib.Path("e2e/resources/file.txt")}),
+            (1.3, {"test_file_series/series_4": File(source="e2e/resources/file.txt")}),
+        ],
+        [
+            (0.0, {"test_file_series/series_5": b"bytes content 1"}),
+            (0.1**6, {"test_file_series/series_5": b"bytes content 2"}),
+            (1.0, {"test_file_series/series_5": b"bytes content 3"}),
+            (1.000001, {"test_file_series/series_5": b"bytes content 4"}),
+            (10**11, {"test_file_series/series_5": b"bytes content 5"}),
+            (9 * 10**11, {"test_file_series/series_5": b"bytes content 6"}),
+            (
+                999999999999.9999,
+                {"test_file_series/series_5": b"bytes content 7"},
+            ),  # we run into float precision issues
+        ],
+        [
+            (1.0, {"test_file_series/series_6a": b"bytes content a 1"}),
+            (2.0, {"test_file_series/series_6a": b"bytes content a 2"}),
+            (1.0, {"test_file_series/series_6b": b"bytes content b 1"}),
+            (3.0, {"test_file_series/series_6a": b"bytes content a 3"}),
+            (2.0, {"test_file_series/series_6b": b"bytes content b 2"}),
+        ],
+        [
+            (3.0, {"test_file_series/series_7": b"bytes content 1"}),
+            (2.0, {"test_file_series/series_7": b"bytes content 2"}),
+            (1.0, {"test_file_series/series_7": b"bytes content 3"}),
+        ],
+        [
+            (1.0, {"test_file_series/series_8": b"bytes content 1"}),
+            (1.0, {"test_file_series/series_8": b"bytes content 2"}),
+        ],
     ],
 )
 def test_log_files_multiple(caplog, run, client, project_name, run_init_kwargs, temp_dir, file_series):
     # given
     ensure_test_directory()
     attribute_series: dict[str, dict[float, Any]] = {}
-    for step, files in file_series.items():
+    for step, files in file_series:
         for attr, content in files.items():
             attribute_series.setdefault(attr, {})[step] = content
 
     # when
     with caplog.at_level(logging.WARNING):
-        for step, files in file_series.items():
+        for step, files in file_series:
             run.log_files(files=files, step=step)
 
     assert not caplog.records, "No warnings should be logged"
@@ -722,5 +750,5 @@ def ensure_test_directory():
 
 def extra_wait(timeout=10):
     # FIXME: We need to account for eventual consistency on the backend. This can be made cleaner.
-    # In other words, our wait for file upload is not enough. The file is not immediately available
+    # In other words, our wait for file upload is not enough. The file is not immediately available after the upload.
     time.sleep(timeout)
