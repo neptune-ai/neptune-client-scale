@@ -7,10 +7,6 @@ from datetime import (
 from unittest.mock import patch
 
 import pytest
-from neptune_fetcher.alpha import (
-    filters,
-    runs,
-)
 
 from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
@@ -21,6 +17,12 @@ from neptune_scale.util import SharedInt
 from .conftest import (
     random_series,
     unique_path,
+)
+from .test_fetcher import (
+    fetch_attribute_values,
+    fetch_files,
+    fetch_metric_values,
+    fetch_series_values,
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
@@ -50,8 +52,9 @@ def test_sync_invalid_file(tmp_path):
         sync.sync_all(run_log_file=path, api_token=API_TOKEN)
 
 
-def test_sync_atoms(run_init_kwargs, ro_run):
+def test_sync_atoms(run_init_kwargs, client, project_name):
     # given
+    run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
         now = time.time()
@@ -70,31 +73,55 @@ def test_sync_atoms(run_init_kwargs, ro_run):
 
     # then
     assert not db_path.exists()
+    fetched = fetch_attribute_values(client=client, project=project_name, custom_run_id=run_id, attributes=data.keys())
     for key, value in data.items():
-        assert ro_run[key].fetch() == value, f"Value for {key} does not match"
+        assert fetched[key] == value, f"Value for {key} does not match"
 
 
-def test_sync_series(run_init_kwargs, ro_run):
+def test_sync_metrics(run_init_kwargs, client, project_name):
     # given
+    run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
 
-        series_path = unique_path("test_sync_series/test_sync_series")
+        metric_path = unique_path("test_sync_metrics/float_series")
         steps, values = random_series()
         for step, value in zip(steps, values):
-            run.log_metrics(data={series_path: value}, step=step)
+            run.log_metrics(data={metric_path: value}, step=step)
 
     # when
     sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
 
     # then
     assert not db_path.exists()
-    df = ro_run[series_path].fetch_values()
-    assert df["step"].tolist() == steps
-    assert df["value"].tolist() == values
+    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run_id, attributes=[metric_path])
+    assert list(fetched[metric_path].keys()) == steps
+    assert list(fetched[metric_path].values()) == values
 
 
-def test_sync_files(run_init_kwargs, temp_dir):
+def test_sync_series(run_init_kwargs, client, project_name):
+    # given
+    run_id = run_init_kwargs["run_id"]
+    with Run(**run_init_kwargs, mode="offline") as run:
+        db_path = run._operations_repo._db_path
+
+        series_path = unique_path("test_sync_series/string_series")
+        steps, values = random_series()
+        values = [f"s{value}" for value in values]
+        for step, value in zip(steps, values):
+            run.log_string_series(data={series_path: value}, step=step)
+
+    # when
+    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+
+    # then
+    assert not db_path.exists()
+    fetched = fetch_series_values(client=client, project=project_name, custom_run_id=run_id, attributes=[series_path])
+    assert list(fetched[series_path].keys()) == steps
+    assert list(fetched[series_path].values()) == values
+
+
+def test_sync_files(run_init_kwargs, client, project_name, temp_dir):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -108,9 +135,10 @@ def test_sync_files(run_init_kwargs, temp_dir):
 
     # then
     assert not db_path.exists()
-    runs.download_files(runs=run_id, attributes=filters.AttributeFilter(name_eq=path), destination=temp_dir)
-    expected_path = temp_dir / run_id / path.replace(":", "_").replace("+", "_")
-    with open(expected_path, "rb") as file:
+    fetch_files(
+        client=client, project=project_name, custom_run_id=run_id, attributes_targets={path: temp_dir / "file-value"}
+    )
+    with open(temp_dir / "file-value", "rb") as file:
         content = file.read()
         assert content == b"test_sync_files file content"
 
@@ -147,7 +175,7 @@ def test_sync_all_types_combined(run_init_kwargs, temp_dir):
 
 @pytest.mark.parametrize("timeout", [0, 1, 5])
 @pytest.mark.timeout(30)
-def test_sync_wait_timeout(run_init_kwargs, ro_run, timeout):
+def test_sync_wait_timeout(run_init_kwargs, timeout):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
@@ -182,7 +210,7 @@ def test_sync_wait_timeout(run_init_kwargs, ro_run, timeout):
     ],
 )
 @pytest.mark.timeout(30)
-def test_sync_stop_timeout(run_init_kwargs, ro_run, timeout, hung_method):
+def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
