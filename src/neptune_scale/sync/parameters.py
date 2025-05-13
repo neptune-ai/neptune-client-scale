@@ -34,6 +34,8 @@ MAX_REQUEST_SIZE_BYTES = 16 * 1024 * 1024  # 16MB
 OPERATION_REPOSITORY_TIMEOUT = 60  # 1 minute
 # Maximum number of bytes in a single string series data point
 MAX_STRING_SERIES_DATA_POINT_LENGTH = 1024 * 1024
+# Max histogram bins = 512, thus max bin edges = 513
+MAX_HISTOGRAM_BIN_EDGES = 513
 
 # Files
 # Max length of destination path in file storage backend

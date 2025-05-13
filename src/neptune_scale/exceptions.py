@@ -45,6 +45,10 @@ __all__ = (
     "NeptunePreviewStepNotAfterLastCommittedStep",
     "NeptuneDatabaseConflict",
     "NeptuneLocalStorageInUnsupportedVersion",
+    "NeptuneHistogramBinEdgesContainNaN",
+    "NeptuneHistogramTooManyBins",
+    "NeptuneHistogramBinEdgesNotIncreasing",
+    "NeptuneHistogramValuesLengthMismatch",
 )
 
 from typing import (
@@ -557,3 +561,36 @@ class NeptuneDatabaseConflict(NeptuneScaleError):
 
     def __init__(self, path: str = "") -> None:
         super().__init__(name=path)
+
+
+class NeptuneHistogramBinEdgesContainNaN(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneHistogramBinEdgesContainNaN: Histogram bin edges cannot contain NaN values.
+{end}
+"""
+
+
+class NeptuneHistogramTooManyBins(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneHistogramTooManyBins: Histogram can have at most 512 bins
+{end}
+This corresponds to the maximum number of 513 bin edges.
+"""
+
+
+class NeptuneHistogramBinEdgesNotIncreasing(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneHistogramBinEdgesNotIncreasing: Histogram bin edges must be strictly increasing.
+{end}
+"""
+
+
+class NeptuneHistogramValuesLengthMismatch(NeptuneScaleError):
+    message = """
+{h1}
+NeptuneHistogramValuesLengthMismatch: Histogram counts/densities length must be equal to bin edges length - 1.
+{end}
+"""
