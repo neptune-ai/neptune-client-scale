@@ -44,10 +44,7 @@ from neptune_scale.sync.size_util import (
     SINGLE_FLOAT_VALUE_SIZE,
     proto_string_size,
 )
-from neptune_scale.types import (
-    ArrayLike,
-    Histogram,
-)
+from neptune_scale.types import Histogram
 from neptune_scale.util import (
     envs,
     get_logger,
@@ -55,7 +52,6 @@ from neptune_scale.util import (
 
 __all__ = (
     "FileRefData",
-    "HistogramsData",
     "MetadataSplitter",
     "Metrics",
     "datetime_to_proto",
@@ -63,27 +59,6 @@ __all__ = (
     "histograms_to_update_run_snapshots",
     "string_series_to_update_run_snapshots",
 )
-
-
-# Check if numpy is available and define variables / functions accordingly.
-# We use this distinction in histograms to act based on numpy presence.
-try:
-    import numpy as np
-
-    _HAS_NUMPY = True
-    # What types we accept in ArrayLike fields in Histogram
-    _VALID_ARRAYLIKE_TYPES: tuple[Any, ...] = (list, np.ndarray)
-
-    # If necessary, convert np.ndarray to plain python list for protobuf serialization
-    def as_list(arr: ArrayLike) -> list[Union[float, int]]:
-        return arr.tolist() if isinstance(arr, np.ndarray) else arr
-
-except ImportError:
-    _HAS_NUMPY = False
-    _VALID_ARRAYLIKE_TYPES = (list,)
-
-    def as_list(arr: ArrayLike) -> list[Union[float, int]]:
-        return arr
 
 
 logger = get_logger()
@@ -105,15 +80,6 @@ class FileRefData:
     destination: str
     mime_type: str
     size_bytes: int
-
-
-@dataclass(frozen=True)
-class HistogramsData:
-    # py39 does not support slots=True on @dataclass
-    __slots__ = ("data", "step")
-
-    data: dict[str, Histogram]
-    step: Union[float, int]
 
 
 @dataclass
@@ -493,34 +459,19 @@ def _stream_string_series(string_series: dict[str, str]) -> Iterator[tuple[str, 
         yield key, value
 
 
-def _has_non_numeric_values(arr: ArrayLike) -> bool:
-    """
-    Return true if the array contains non-numeric values or NaN.
-    A for-loop approach is ~3.5x faster than eg. `any(lambda x: isinstance(arr, (int, float) or math.isnan(x))`.
-    """
-    if _HAS_NUMPY and isinstance(arr, np.ndarray):
-        return not np.issubdtype(arr.dtype, np.number) or np.any(np.isnan(arr))
-
-    isnan = math.isnan
-    try:
-        for v in arr:
-            if isnan(float(v)):
-                return True
-    except (ValueError, TypeError):
-        return True
-    return False
-
-
 def histograms_to_update_run_snapshots(
-    histograms: Optional[HistogramsData],
+    histograms: Optional[dict[str, Histogram]],
+    step: Optional[Union[float, int]],
     timestamp: datetime,
     max_size: int = MAX_SINGLE_OPERATION_SIZE_BYTES,
 ) -> Iterator[UpdateRunSnapshot]:
     if not histograms:
         return
 
-    stream = peekable(_stream_histograms(histograms.data))
-    step = make_step(histograms.step)
+    assert step is not None, "Step must be provided when histograms are present"
+
+    stream = peekable(_stream_histograms(histograms))
+    step = make_step(step)
     timestamp = datetime_to_proto(timestamp)
 
     # Local bindings for faster name lookups
@@ -532,52 +483,45 @@ def histograms_to_update_run_snapshots(
         size = 0
         while size < max_size:
             try:
-                key, value = _peek_stream()
+                key, histogram = _peek_stream()
             except StopIteration:
                 break
 
-            new_size = size + _proto_string_size(key) + value.ByteSize() + 6
+            new_size = size + _proto_string_size(key) + histogram.ByteSize() + 6
             if new_size > max_size:
                 break
 
-            update.append[key].MergeFrom(value)
+            update.append[key].histogram.CopyFrom(histogram)
             size, _ = new_size, next(stream)
 
         yield update
 
 
-def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, Value]]:
+def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, ProtobufHistogram]]:
     # local bindings, faster in tight loops
     _is_instance = isinstance
     _max_histogram_bin_edges = MAX_HISTOGRAM_BIN_EDGES
-    _valid_arraylike_types = _VALID_ARRAYLIKE_TYPES
-    _as_list = as_list
 
     for key, value in _validate_paths(histograms):
         if not _is_instance(value, Histogram):
             _warn_or_raise_on_invalid_value(f"Histogram values must be of type Histogram (got `{key}`:`{value}`)")
             continue
 
-        if not isinstance(value.bin_edges, _valid_arraylike_types):
-            _warn_or_raise_on_invalid_value(
-                f"Histogram bin_edges must be of type list or np.ndarray (got `{key}`:`{value.bin_edges}`)"
-            )
-            continue
-
         has_counts, has_densities = value.counts is not None, value.densities is not None
         values_field = value.counts if has_counts else value.densities
+
+        try:
+            bin_edges = value.bin_edges_as_list()
+            counts = value.counts_as_list() if value.counts is not None else None
+            densities = value.densities_as_list() if value.densities is not None else None
+        except TypeError as e:
+            _warn_or_raise_on_invalid_value(f"{e} (at `{key}`)")
+            continue
 
         # Merge the check for 'either one but not both is set' into a single condition
         if has_counts == has_densities:
             _warn_or_raise_on_invalid_value(
                 f"One of Histogram counts and densities must be set, and they cannot be set together (at `{key}`)"
-            )
-            continue
-
-        if not isinstance(values_field, _valid_arraylike_types):
-            field_name = "counts" if has_counts else "densities"
-            _warn_or_raise_on_invalid_value(
-                f"Histogram {field_name} must be of type list or np.ndarray (got `{key}`:`{values_field}`)"
             )
             continue
 
@@ -588,35 +532,26 @@ def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, 
             )
             continue
 
-        if len(values_field) != len(value.bin_edges) - 1:
+        if len(values_field) != len(value.bin_edges) - 1:  # type: ignore
             field_name = "counts" if has_counts else "densities"
             _warn_or_raise_on_invalid_value(
                 f"Histogram {field_name} must be of length equal to bin_edges - 1 "
-                f"(got {len(values_field)} {field_name} and {len(value.bin_edges)} bin edges at `{key}`)"
-            )
-            continue
-
-        if _has_non_numeric_values(value.bin_edges):
-            _warn_or_raise_on_invalid_value(
-                f"Histogram bin_edges must be of type int or float and not NaN (got `{key}`:`{value.bin_edges}`)"
+                f"(got {len(values_field)} {field_name} and {len(value.bin_edges)} bin edges at `{key}`)"  # type: ignore
             )
             continue
 
         try:
             histogram = ProtobufHistogram(
-                bin_edges=_as_list(value.bin_edges),
-                counts=ProtobufHistogram.Counts(values=_as_list(value.counts)) if has_counts else None,
-                densities=ProtobufHistogram.Densities(values=_as_list(value.densities)) if has_densities else None,
+                bin_edges=bin_edges,
+                counts=ProtobufHistogram.Counts(values=counts) if has_counts else None,
+                densities=ProtobufHistogram.Densities(values=densities) if has_densities else None,
             )
-        except (ValueError, TypeError):
-            # bin_edges are validated at this point, so any error should be in counts/densities
-            field_name = "counts" if has_counts else "densities"
-            _warn_or_raise_on_invalid_value(
-                f"Histogram {field_name} must be of type float or int (got `{key}`:`{values_field}`)"
-            )
+        # TypeError is raised by protobuf when the values are not numeric
+        except TypeError:
+            _warn_or_raise_on_invalid_value(f"Histogram fields must be numeric (at `{key}`)")
             continue
 
-        yield key, Value(histogram=histogram)
+        yield key, histogram
 
 
 def _is_over_utf8_bytes_limit(string: str, max_bytes: int) -> bool:

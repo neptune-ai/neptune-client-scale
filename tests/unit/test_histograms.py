@@ -11,10 +11,7 @@ from freezegun import freeze_time
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from neptune_scale.exceptions import NeptuneUnableToLogData
-from neptune_scale.sync.metadata_splitter import (
-    HistogramsData,
-    histograms_to_update_run_snapshots,
-)
+from neptune_scale.sync.metadata_splitter import histograms_to_update_run_snapshots
 from neptune_scale.types import Histogram
 
 # The character "𐍈" (U+10348) encodes to 4 bytes
@@ -31,18 +28,13 @@ def _as_list(arr) -> list:
 
 
 @pytest.fixture(params=(True, False), ids=("with_numpy", "without_numpy"))
-def metadata_splitter_module(request):
+def types_module(request):
     """
-    When used in a test, this fixture returns the metadata_splitter module with numpy
+    When used in a test, this fixture returns the neptune_scale.types module with numpy
     enabled or disabled. Any testcase using this fixture will be executed 2x,
     once with numpy and once without it.
-
-    Any functions/variables should be accessed via the fixture, eg:
-
-    def test_something(metadata_splitter_module):
-        assert metadata_splitter_module._HAS_NUMPY
     """
-    import neptune_scale.sync.metadata_splitter
+    import neptune_scale.types
 
     orig_numpy = None
 
@@ -50,7 +42,7 @@ def metadata_splitter_module(request):
         orig_numpy = sys.modules.pop("numpy", None)
         sys.modules["numpy"] = None
 
-    mod = importlib.reload(neptune_scale.sync.metadata_splitter)
+    mod = importlib.reload(neptune_scale.types)
 
     assert mod._HAS_NUMPY == request.param, "Reimported module should have the same numpy status as requested"
     try:
@@ -81,9 +73,9 @@ def metadata_splitter_module(request):
 @pytest.mark.parametrize("numpy_counts", (False, True))
 @pytest.mark.parametrize("numpy_densities", (False, True))
 def test_histograms_to_operations(
-    metadata_splitter_module, bin_edges, counts, densities, numpy_bin_edges, numpy_counts, numpy_densities
+    types_module, bin_edges, counts, densities, numpy_bin_edges, numpy_counts, numpy_densities
 ):
-    if not metadata_splitter_module._HAS_NUMPY and any((numpy_bin_edges, numpy_counts, numpy_densities)):
+    if not types_module._HAS_NUMPY and any((numpy_bin_edges, numpy_counts, numpy_densities)):
         pytest.skip("Testcase with numpy disabled, skipping ndarray cases.")
 
     # If requested and not None, convert plain python lists to numpy arrays
@@ -98,9 +90,7 @@ def test_histograms_to_operations(
     }
 
     timestamp = datetime.now()
-    updates = metadata_splitter_module.histograms_to_update_run_snapshots(
-        HistogramsData(data=histograms, step=1), timestamp=timestamp, max_size=max_size
-    )
+    updates = histograms_to_update_run_snapshots(histograms, 1, timestamp=timestamp, max_size=max_size)
 
     result = list(updates)
     assert len(result)
@@ -144,29 +134,29 @@ def test_histograms_to_operations(
 )
 @pytest.mark.parametrize("action", ("raise", "drop"))
 def test_histograms_invalid_paths(caplog, action, invalid_path):
-    data = HistogramsData(data={invalid_path: object()}, step=1)
+    data = {invalid_path: object()}
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
             with pytest.raises(NeptuneUnableToLogData, match="paths must be"):
-                list(histograms_to_update_run_snapshots(data, datetime.now()))
+                list(histograms_to_update_run_snapshots(data, 1, datetime.now()))
         else:
             with caplog.at_level("WARNING"):
-                list(histograms_to_update_run_snapshots(data, datetime.now()))
+                list(histograms_to_update_run_snapshots(data, 1, datetime.now()))
             assert "paths must be" in caplog.text
 
 
 @pytest.mark.parametrize("path", ("A", "A" * 1024, UTF_CHAR * 256))
 @patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", "raise")
 def test_histograms_valid_paths(path):
-    data = HistogramsData(data={path: Histogram(bin_edges=[1], counts=[])}, step=1)
-    list(histograms_to_update_run_snapshots(data, datetime.now()))
+    data = {path: Histogram(bin_edges=[1], counts=[])}
+    list(histograms_to_update_run_snapshots(data, 1, datetime.now()))
 
 
 @pytest.mark.parametrize("action", ("raise", "drop"))
 @pytest.mark.parametrize(
     "bin_edges, counts, densities, match_message",
     (
-        (None, None, None, "bin_edges must be of type"),
+        (None, None, None, "Bin edges must be of type"),
         ([], None, None, "counts and densities must be set"),  # no values field is set
         ([], [], [], "cannot be set together"),
         ([1, 2], [1], [1], "cannot be set together"),  # counts and densities are both set
@@ -176,12 +166,12 @@ def test_histograms_valid_paths(path):
         ([1, 2], None, list(range(100)), "densities must be of length equal to bin_edges - 1"),
         (list(range(514)), list(range(513)), None, "bin_edges must be of length"),
         (list(range(1000)), list(range(999)), None, "bin_edges must be of length"),
-        ([1, "s"], [1], None, "bin_edges must be of type"),
-        ([1, 2, 3], [1, "s"], None, "counts must be of type"),
-        ([1, 2], [math.nan], None, "counts must be of type"),  # counts are integers, so nan is not allowed
-        ([1, 2], [math.inf], None, "counts must be of type"),
-        ([1, 2], [-math.inf], None, "counts must be of type"),
-        ([1, 2, 3], None, [1, "s"], "densities must be of type"),
+        ([1, "s"], [1], None, "must be numeric"),
+        ([1, 2, 3], [1, "s"], None, "must be numeric"),
+        ([1, 2], [math.nan], None, "must be numeric"),  # counts are integers, so nan is not allowed
+        ([1, 2], [math.inf], None, "must be numeric"),
+        ([1, 2], [-math.inf], None, "must be numeric"),
+        ([1, 2, 3], None, [1, "s"], "must be numeric"),
     ),
 )
 @pytest.mark.parametrize("numpy_bin_edges", (False, True))
@@ -189,7 +179,7 @@ def test_histograms_valid_paths(path):
 @pytest.mark.parametrize("numpy_densities", (False, True))
 def test_histograms_invalid_values(
     caplog,
-    metadata_splitter_module,
+    types_module,
     action,
     bin_edges,
     counts,
@@ -199,7 +189,7 @@ def test_histograms_invalid_values(
     numpy_counts,
     numpy_densities,
 ):
-    if not metadata_splitter_module._HAS_NUMPY and any((numpy_bin_edges, numpy_counts, numpy_densities)):
+    if not types_module._HAS_NUMPY and any((numpy_bin_edges, numpy_counts, numpy_densities)):
         pytest.skip("Testcase with numpy disabled, skipping ndarray cases.")
 
     # If requested and not None, convert plain python lists to numpy arrays
@@ -207,20 +197,17 @@ def test_histograms_invalid_values(
     counts = np.array(counts) if numpy_counts and counts is not None else counts
     densities = np.array(densities) if numpy_densities and densities is not None else densities
 
-    data = HistogramsData(
-        data={
-            "bad-value": Histogram(bin_edges=bin_edges, counts=counts, densities=densities),
-            "valid-value": Histogram(bin_edges=[1, 2], counts=[1]),
-        },
-        step=1,
-    )
+    data = {
+        "bad-value": Histogram(bin_edges=bin_edges, counts=counts, densities=densities),
+        "valid-value": Histogram(bin_edges=[1, 2], counts=[1]),
+    }
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
             with pytest.raises(NeptuneUnableToLogData, match=match_message):
-                list(metadata_splitter_module.histograms_to_update_run_snapshots(data, datetime.now()))
+                list(histograms_to_update_run_snapshots(data, 1, datetime.now()))
         else:
             with caplog.at_level("WARNING"):
-                result = list(metadata_splitter_module.histograms_to_update_run_snapshots(data, datetime.now()))
+                result = list(histograms_to_update_run_snapshots(data, 1, datetime.now()))
 
             assert len(result[0].append) == 1
             assert "valid-value" in result[0].append

@@ -23,7 +23,6 @@ from neptune_scale.sync.files import (
 )
 from neptune_scale.sync.metadata_splitter import (
     FileRefData,
-    HistogramsData,
     MetadataSplitter,
     Metrics,
     datetime_to_proto,
@@ -629,7 +628,7 @@ class Run(AbstractContextManager):
     def log_histograms(
         self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
     ) -> None:
-        self._log(timestamp=timestamp, histograms=HistogramsData(data=histograms, step=step))
+        self._log(timestamp=timestamp, histograms=histograms, step=step)
 
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
@@ -734,7 +733,7 @@ class Run(AbstractContextManager):
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         string_series: Optional[dict[str, str]] = None,
         file_series: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
-        histograms: Optional[HistogramsData] = None,
+        histograms: Optional[dict[str, Histogram]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -770,9 +769,8 @@ class Run(AbstractContextManager):
             verify_type("file_series", file_series, dict)
 
         if histograms is not None:
-            verify_type("histograms", histograms, HistogramsData)
-            verify_type("histograms", histograms.data, dict)
-            verify_type("step", histograms.step, (float, int))
+            verify_type("histograms", histograms, dict)
+            verify_type("step", step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -822,7 +820,7 @@ class Run(AbstractContextManager):
             itertools.chain(
                 splitter,
                 string_series_to_update_run_snapshots(string_series=string_series, step=step, timestamp=timestamp),
-                histograms_to_update_run_snapshots(histograms, timestamp),
+                histograms_to_update_run_snapshots(histograms=histograms, step=step, timestamp=timestamp),
             )
         )
 
