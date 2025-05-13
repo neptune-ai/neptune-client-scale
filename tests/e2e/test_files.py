@@ -394,8 +394,8 @@ def test_assign_files_error_no_access(run, client, project_name, temp_dir):
         {"test_file_series/file_empty1": "e2e/resources/empty_file"},
         {"test_file_series/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
         {"test_file_series/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
-        {"test_file_series/file_metadata1": File(b"from buffer", mime_type="a" * 128)},
-        {"test_file_series/file_metadata1": File(b"from buffer", destination="a")},
+        {"test_file_series/file_metadata3": File(b"from buffer", mime_type="a" * 128)},
+        {"test_file_series/file_metadata4": File(b"from buffer", destination="a")},
     ],
 )
 def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, temp_dir, files):
@@ -423,7 +423,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
 
     # check content
     for i, (attribute_path, attribute_content) in enumerate(files.items()):
-        compare_content(actual_path=temp_dir / str(i) / str(step), expected_content=attribute_content)
+        compare_content(actual_path=temp_dir / str(i) / f"{step:19.6f}", expected_content=attribute_content)
 
 
 @pytest.mark.parametrize(
@@ -607,7 +607,7 @@ def test_log_files_single_error(
 
     for attribute_path, attribute_content in files.items():
         if attribute_path:
-            actual_path = temp_dir / attribute_path / str(step)
+            actual_path = temp_dir / attribute_path / f"{step:19.6f}"
             assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
 
     if error_type is None:
@@ -653,6 +653,15 @@ def test_log_files_single_error(
             1.2: {"test_file_series/series_4": pathlib.Path("e2e/resources/file.txt")},
             1.3: {"test_file_series/series_4": File(source="e2e/resources/file.txt")},
         },
+        {
+            0.0: {"test_file_series/series_5": b"bytes content 1"},
+            0.1**6: {"test_file_series/series_5": b"bytes content 2"},
+            1.0: {"test_file_series/series_5": b"bytes content 3"},
+            1.000001: {"test_file_series/series_5": b"bytes content 4"},
+            10**11: {"test_file_series/series_5": b"bytes content 5"},
+            9 * 10**11: {"test_file_series/series_5": b"bytes content 6"},
+            999999999999.9999: {"test_file_series/series_5": b"bytes content 7"},  # we run into float precision issues
+        },
     ],
 )
 def test_log_files_multiple(caplog, run, client, project_name, run_init_kwargs, temp_dir, file_series):
@@ -683,7 +692,7 @@ def test_log_files_multiple(caplog, run, client, project_name, run_init_kwargs, 
 
     for i, attribute_series in enumerate(attribute_series.values()):
         for step, content in attribute_series.items():
-            compare_content(actual_path=temp_dir / str(i) / str(step), expected_content=content)
+            compare_content(actual_path=temp_dir / str(i) / f"{step:19.6f}", expected_content=content)
 
 
 def compare_content(actual_path, expected_content):

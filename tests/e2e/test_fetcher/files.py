@@ -81,7 +81,7 @@ def fetch_file_series(
     )
 
     source_targets: dict[str, pathlib.Path] = {
-        file_ref["path"]: attributes_targets[attribute] / str(step)
+        file_ref["path"]: attributes_targets[attribute] / f"{step:19.6f}"
         for attribute, series in file_ref_series.items()
         for step, file_ref in series.items()
     }
