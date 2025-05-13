@@ -64,17 +64,29 @@ def guess_mime_type_from_bytes(data: bytes, destination: Optional[str] = None) -
 # Maximum lengths of various components of the file destination.
 MAX_RUN_ID_COMPONENT_LENGTH = 300
 MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH = 300
-MAX_FILENAME_EXTENSION_LENGTH = 18
+MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH = 280
+MAX_SERIES_STEP_PATH_COMPONENT_LENGTH = 19
 MAX_FILENAME_PATH_COMPONENT_LENGTH = 180
+MAX_FILENAME_EXTENSION_LENGTH = 18
 
 # Format: "run_id/attribute_path/file.txt", we need +2 to account for the "/" separators.
 # The lengths should add up to MAX_FILE_DESTINATION_LENGTH.
 assert (
     MAX_RUN_ID_COMPONENT_LENGTH
     + MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH
-    + MAX_FILENAME_EXTENSION_LENGTH
     + MAX_FILENAME_PATH_COMPONENT_LENGTH
+    + MAX_FILENAME_EXTENSION_LENGTH
     + 2
+) == MAX_FILE_DESTINATION_LENGTH
+
+# Format: "run_id/series_attribute_path/series_step/file.txt", with +3 to account for the "/" separators.
+assert (
+    MAX_RUN_ID_COMPONENT_LENGTH
+    + MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    + MAX_SERIES_STEP_PATH_COMPONENT_LENGTH
+    + MAX_FILENAME_PATH_COMPONENT_LENGTH
+    + MAX_FILENAME_EXTENSION_LENGTH
+    + 3
 ) == MAX_FILE_DESTINATION_LENGTH
 
 
@@ -93,7 +105,7 @@ def _sanitize_and_trim(input_str: str, max_length: int, force_suffix: bool) -> s
     return sanitized[: max_length - len(suffix)] + suffix
 
 
-def generate_destination(run_id: str, attribute_name: str, filename: str) -> str:
+def generate_destination(run_id: str, attribute_name: str, filename: str, step: Optional[Union[float, int]]) -> str:
     """
     Generate a path under which a file should be saved in the storage.
 
@@ -112,7 +124,14 @@ def generate_destination(run_id: str, attribute_name: str, filename: str) -> str
     """
 
     run_id = _sanitize_and_trim(run_id, MAX_RUN_ID_COMPONENT_LENGTH, force_suffix=True)
-    attribute_name = _sanitize_and_trim(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH, force_suffix=True)
+
+    if step is None:
+        attribute_name = _sanitize_and_trim(attribute_name, MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH, force_suffix=True)
+    else:
+        series_name = _sanitize_and_trim(attribute_name, MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH, force_suffix=True)
+        # steps longer that 12 + 6 digits should be rejected by the server, but let's be safe and truncate them here
+        series_step = _sanitize_and_trim(f"{step:019.6f}", MAX_SERIES_STEP_PATH_COMPONENT_LENGTH, force_suffix=False)
+        attribute_name = f"{series_name}/{series_step}"
 
     # Sanitize the filename. Truncate if necessary, keeping extension (truncated) if present.
     path = pathlib.Path(filename)

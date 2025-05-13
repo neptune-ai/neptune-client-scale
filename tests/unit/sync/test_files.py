@@ -2,6 +2,7 @@ import gzip
 import pathlib
 import re
 import tempfile
+from decimal import Decimal
 from unittest.mock import patch
 
 import filetype
@@ -12,6 +13,8 @@ from neptune_scale.sync.files import (
     MAX_FILENAME_EXTENSION_LENGTH,
     MAX_FILENAME_PATH_COMPONENT_LENGTH,
     MAX_RUN_ID_COMPONENT_LENGTH,
+    MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH,
+    MAX_SERIES_STEP_PATH_COMPONENT_LENGTH,
     _sanitize_and_trim,
     generate_destination,
     guess_mime_type_from_bytes,
@@ -152,7 +155,7 @@ def test_sanitize_and_trim(run_id, max_length, match, force_suffix):
     ],
 )
 def test_generate_destination(run_id, attribute_name, filename, match_run_id, match_attribute, match_filename):
-    result = generate_destination(run_id, attribute_name, filename)
+    result = generate_destination(run_id, attribute_name, filename, step=None)
     # # +2 is for "/" separators
     if len(run_id) + len(attribute_name) + len(filename) + 2 >= MAX_FILE_DESTINATION_LENGTH:
         assert len(result) == MAX_FILE_DESTINATION_LENGTH, "Did not use all the available space"
@@ -168,4 +171,69 @@ def test_generate_destination(run_id, attribute_name, filename, match_run_id, ma
 
     assert re.fullmatch(match_run_id, run_id_component), "RunId component did not match"
     assert re.fullmatch(match_attribute, attribute_component), "Attribute component did not match"
+    assert re.fullmatch(match_filename, file_component), "File component did not match"
+
+
+@pytest.mark.parametrize(
+    "run_id, attribute_name, step, filename, match_run_id, match_attribute, match_step, match_filename",
+    # Note that the trailing "-[0-9a-f]{16}" regex matches the hash digest used when
+    # truncating path components.
+    [
+        (
+            "/run/id",
+            "attribute/path/",
+            1.0,
+            "file.txt",
+            "^_run_id-[0-9a-f]{16}$",
+            r"^attribute_path_-[0-9a-f]{16}$",
+            "^000000000001_000000$",
+            r"^file.txt$",
+        ),
+        # Exact match of max length taking digest into account
+        (
+            "R" * 283,
+            "A" * 283,
+            Decimal("999999999999.999999"),
+            "F" * 180 + "." + "E" * 17,
+            "^R{283}-[0-9a-f]{16}$",
+            r"^A{263}-[0-9a-f]{16}$",
+            "^999999999999_999999$",
+            r"^F{180}\.E{17}$",
+        ),
+        # Truncation of all components
+        (
+            "R" * 500,
+            "A" * 500,
+            Decimal("9999999999999.999999"),
+            "F" * 500 + "." + "E" * 100,
+            "^R{283}-[0-9a-f]{16}$",
+            r"^A{263}-[0-9a-f]{16}$",
+            r"^9{2}-[0-9a-f]{16}$",
+            r"^F{163}-[" r"0-9a-f]{16}\.E{17}$",
+        ),
+    ],
+)
+def test_generate_destination_series(
+    run_id, attribute_name, step, filename, match_run_id, match_attribute, match_step, match_filename
+):
+    result = generate_destination(run_id, attribute_name, filename, step)
+    # # +3 is for "/" separators
+    if (
+        len(run_id) + len(attribute_name) + MAX_SERIES_STEP_PATH_COMPONENT_LENGTH + len(filename) + 3
+        >= MAX_FILE_DESTINATION_LENGTH
+    ):
+        assert len(result) == MAX_FILE_DESTINATION_LENGTH, "Did not use all the available space"
+    else:
+        assert len(result) <= MAX_FILE_DESTINATION_LENGTH
+
+    run_id_component, attribute_component, step_component, file_component = result.split("/")
+
+    assert len(run_id_component) <= MAX_RUN_ID_COMPONENT_LENGTH
+    assert len(attribute_component) <= MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    assert len(step_component) <= MAX_SERIES_STEP_PATH_COMPONENT_LENGTH
+    assert len(file_component) <= MAX_FILENAME_PATH_COMPONENT_LENGTH + MAX_FILENAME_EXTENSION_LENGTH
+
+    assert re.fullmatch(match_run_id, run_id_component), "RunId component did not match"
+    assert re.fullmatch(match_attribute, attribute_component), "Attribute component did not match"
+    assert re.fullmatch(match_step, step_component), "Step component did not match"
     assert re.fullmatch(match_filename, file_component), "File component did not match"
