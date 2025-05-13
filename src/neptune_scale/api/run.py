@@ -825,7 +825,7 @@ class Run(AbstractContextManager):
         )
 
         # Save file upload requests only after MetadataSplitter processed input
-        if file_upload_requests:
+        if all_file_upload_requests:
             self._operations_repo.save_file_upload_requests([req for _, req in all_file_upload_requests])
 
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)

@@ -31,6 +31,7 @@ from neptune_storage_api.models import (
 
 from . import (
     fetch_attribute_values,
+    fetch_series_values,
     identifiers,
 )
 
@@ -52,6 +53,38 @@ def fetch_files(
     )
 
     source_targets = {file_ref["path"]: attributes_targets[attribute] for attribute, file_ref in file_refs.items()}
+
+    if not source_targets:
+        return
+
+    _download_from_paths(
+        client=client,
+        project=project,
+        source_targets=source_targets.items(),
+    )
+
+
+def fetch_file_series(
+    client: AuthenticatedClient,
+    project: identifiers.ProjectIdentifier,
+    *,
+    attributes_targets: dict[identifiers.AttributePath, pathlib.Path],
+    custom_run_id: Optional[identifiers.CustomRunId] = None,
+    run_id: Optional[identifiers.SysId] = None,
+) -> None:
+    file_ref_series = fetch_series_values(
+        client=client,
+        project=project,
+        custom_run_id=custom_run_id,
+        run_id=run_id,
+        attributes=list(attributes_targets.keys()),
+    )
+
+    source_targets: dict[str, pathlib.Path] = {
+        file_ref["path"]: attributes_targets[attribute] / str(step)
+        for attribute, series in file_ref_series.items()
+        for step, file_ref in series.items()
+    }
 
     if not source_targets:
         return
