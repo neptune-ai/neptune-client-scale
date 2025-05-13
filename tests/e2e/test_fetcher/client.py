@@ -32,9 +32,14 @@ from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.models import ClientConfig
 
-from neptune_scale.util.envs import API_TOKEN_ENV_NAME
+from neptune_scale.util.envs import (
+    ALLOW_SELF_SIGNED_CERTIFICATE,
+    API_TOKEN_ENV_NAME,
+    get_bool,
+)
 
 NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS: Final[float] = float(os.environ.get("NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS", "60"))
+NEPTUNE_VERIFY_SSL: Final[bool] = not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, False)
 
 
 @dataclass
@@ -64,7 +69,9 @@ def _get_config_and_token_urls(
     *, credentials: Credentials, proxies: Optional[dict[str, str]]
 ) -> tuple[ClientConfig, TokenRefreshingURLs]:
     timeout = httpx.Timeout(NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS)
-    with Client(base_url=credentials.base_url, httpx_args={"mounts": proxies}, timeout=timeout) as client:
+    with Client(
+        base_url=credentials.base_url, httpx_args={"mounts": proxies}, timeout=timeout, verify_ssl=NEPTUNE_VERIFY_SSL
+    ) as client:
         config_response = get_client_config.sync_detailed(client=client)
         config = config_response.parsed
 
@@ -89,4 +96,5 @@ def _create_auth_api_client(
         api_key_exchange_callback=exchange_api_key,
         httpx_args={"mounts": proxies, "http2": False},
         timeout=httpx.Timeout(NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS),
+        verify_ssl=NEPTUNE_VERIFY_SSL,
     )
