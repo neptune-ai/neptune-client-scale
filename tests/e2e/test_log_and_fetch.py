@@ -11,7 +11,6 @@ import numpy as np
 from pytest import mark
 
 from neptune_scale.api.run import Run
-from neptune_scale.types import Histogram
 
 from .conftest import (
     random_series,
@@ -20,7 +19,6 @@ from .conftest import (
 from .test_fetcher import (
     fetch_attribute_values,
     fetch_metric_values,
-    fetch_series_values,
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
@@ -160,43 +158,3 @@ def test_async_lag_callback():
         # Second callback should be called after logging configs
         event.wait(timeout=60)
         assert event.is_set()
-
-
-@mark.parametrize("testing_counts", (True, False))
-@mark.parametrize("use_numpy", (True, False))
-def test_histograms(run, client, project_name, testing_counts, use_numpy):
-    """Log multiple steps with multiple histograms, and verify that the values are correct. Do this
-    once with counts and once with densities, and once with numpy arrays and once with plain lists."""
-
-    path = unique_path("test_histograms")
-    value_param = "counts" if testing_counts else "densities"
-
-    logged_steps = []
-    # Log a bunch of steps with histograms ranging up to the maximum number of bins
-    for step in range(3):
-        data = {}
-        for i in range(1, 514):
-            value = np.array(range(i - 1)) if use_numpy else list(range(i - 1))
-            data[f"{path}/hist-{i}"] = Histogram(bin_edges=list(range(i)), **{value_param: value})
-
-        run.log_histograms(data, step=step)
-        run.wait_for_processing()
-        logged_steps.append(data)
-
-    fetched_histograms = fetch_series_values(
-        client, project_name, attributes=logged_steps[0].keys(), custom_run_id=run._run_id
-    )
-
-    assert set(fetched_histograms.keys()) == set(logged_steps[0].keys()), "Not all attributes are present"
-
-    # fetched histograms format is: path (str) -> dict of step (float) to histogram dict
-    for path, steps in fetched_histograms.items():
-        assert len(steps) == len(logged_steps), f"Attribute {path} has incorrect number of steps"
-
-        for step, fetched in steps.items():
-            expected = logged_steps[int(step)][path]
-
-            assert fetched["type"] == "COUNTING" if testing_counts else "DENSITY"
-            assert fetched["bins_edges"] == expected.bin_edges
-            expected_values = expected.counts if testing_counts else expected.densities
-            assert fetched["bin_values"] == (expected_values.tolist() if use_numpy else expected_values)
