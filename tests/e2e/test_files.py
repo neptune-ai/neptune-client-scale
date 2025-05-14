@@ -296,20 +296,14 @@ def test_assign_files_error(run, client, project_name, temp_dir, on_error_queue,
 
     # then
     attributes = list(files.keys())
-    try:
-        fetch_files(
-            client,
-            project_name,
-            custom_run_id=run._run_id,
-            attributes_targets={attr: temp_dir / attr for attr in attributes},
-        )
-    except AssertionError:
-        pass
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
-    for attribute_path, attribute_content in files.items():
-        if attribute_path:
-            actual_path = temp_dir / attribute_path
-            assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
+    assert not os.listdir(temp_dir)
 
     if error_type is None:
         assert on_error_queue.empty()
@@ -338,15 +332,12 @@ def test_assign_files_error_no_access(run, client, project_name, temp_dir):
 
     # then
     attributes = list(files.keys())
-    try:
-        fetch_files(
-            client,
-            project_name,
-            custom_run_id=run._run_id,
-            attributes_targets={attr: temp_dir / attr for attr in attributes},
-        )
-    except AssertionError:
-        pass
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
 
     expected_path = temp_dir / attributes[0]
     assert not os.path.exists(expected_path), f"File {expected_path} should not exist"
@@ -595,20 +586,13 @@ def test_log_files_error_single(
 
     # then
     attributes = list(files.keys())
-    try:
-        fetch_file_series(
-            client,
-            project_name,
-            custom_run_id=run._run_id,
-            attributes_targets={attr: temp_dir / attr for attr in attributes},
-        )
-    except AssertionError:
-        pass
-
-    for attribute_path, attribute_content in files.items():
-        if attribute_path:
-            actual_path = temp_dir / attribute_path / f"{step:19.6f}"
-            assert not os.path.exists(actual_path), f"File {actual_path} should not exist"
+    fetch_file_series(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={attr: temp_dir / attr for attr in attributes},
+    )
+    assert not os.listdir(temp_dir)
 
     if error_type is None:
         assert on_error_queue.empty()

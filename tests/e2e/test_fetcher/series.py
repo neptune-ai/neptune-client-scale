@@ -117,20 +117,20 @@ def _process_series_response(
 
 
 def _extract_value(obj: ProtoSeriesPointValueObjectDTO) -> Union[str, dict[str, Any]]:
-    if obj.stringValue:
+    if obj.HasField("stringValue"):
         return str(obj.stringValue)
-    elif obj.fileRef:
+    elif obj.HasField("fileRef"):
         file_ref = obj.fileRef
         return dict(
             path=file_ref.path,
             mime_type=file_ref.mimeType,
-            size=file_ref.size,
+            size=file_ref.sizeBytes,
         )
-    elif obj.histogram:
+    elif obj.HasField("histogram"):
         histogram = obj.histogram
         return dict(
-            bin_values=list(histogram.binValues),
-            bins_edges=list(histogram.binsEdges),
+            bin_values=list(histogram.values),
+            bins_edges=list(histogram.edges),
             type=histogram.type,
         )
     else:

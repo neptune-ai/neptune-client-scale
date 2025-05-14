@@ -57,7 +57,9 @@ def fetch_attribute_values(
     response = _fetch_attribute_values(client, params, project)
     result = _process_attribute_values_response(response)
 
-    assert len(result) == 1, f"Expected one run in the result, got {len(result)}"
+    assert len(result) <= 1, f"Expected one run in the result, got {len(result)}"
+    if not result:
+        return {}
     return next(iter(result.values()))
 
 
