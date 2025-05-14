@@ -15,7 +15,7 @@ def stringify_unsupported(d: dict[str, Any]) -> dict[str, Any]:
     Returns:
         dict: Flattened dictionary with string keys and cast values
 
-    For more details, see https://docs.neptune.ai/api/utils/#stringify_unsupported
+    For details, see https://docs.neptune.ai/utils/stringify_unsupported
     """
     if not isinstance(d, dict):
         raise TypeError("Input must be a dictionary")
