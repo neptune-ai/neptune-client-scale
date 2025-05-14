@@ -124,7 +124,7 @@ def _extract_value(obj: ProtoSeriesPointValueObjectDTO) -> Union[str, dict[str, 
         return dict(
             path=file_ref.path,
             mime_type=file_ref.mimeType,
-            size=file_ref.sizeBytes,
+            size_bytes=file_ref.sizeBytes,
         )
     elif obj.HasField("histogram"):
         histogram = obj.histogram

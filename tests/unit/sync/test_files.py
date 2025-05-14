@@ -13,8 +13,8 @@ from neptune_scale.sync.files import (
     MAX_FILENAME_EXTENSION_LENGTH,
     MAX_FILENAME_PATH_COMPONENT_LENGTH,
     MAX_RUN_ID_COMPONENT_LENGTH,
-    MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH,
     MAX_SERIES_STEP_PATH_COMPONENT_LENGTH,
+    NO_STEP_PLACEHOLDER,
     _sanitize_and_trim,
     generate_destination,
     guess_mime_type_from_bytes,
@@ -128,10 +128,10 @@ def test_sanitize_and_trim(run_id, max_length, match, force_suffix):
         # Exact match of max length taking digest into account
         (
             "R" * 283,
-            "A" * 283,
+            "A" * 263,
             "F" * 180 + "." + "E" * 17,
             "^R{283}-[0-9a-f]{16}$",
-            r"^A{283}-[0-9a-f]{16}$",
+            r"^A{263}-[0-9a-f]{16}$",
             r"^F{180}\.E{17}$",
         ),
         # Truncation of all components
@@ -140,7 +140,7 @@ def test_sanitize_and_trim(run_id, max_length, match, force_suffix):
             "A" * 500,
             "F" * 500 + "." + "E" * 100,
             "^R{283}-[0-9a-f]{16}$",
-            r"^A{283}-[0-9a-f]{16}$",
+            r"^A{263}-[0-9a-f]{16}$",
             r"^F{163}-[" r"0-9a-f]{16}\.E{17}$",
         ),
         # Long filename should be truncated, with extension shortened as well
@@ -156,21 +156,23 @@ def test_sanitize_and_trim(run_id, max_length, match, force_suffix):
 )
 def test_generate_destination(run_id, attribute_name, filename, match_run_id, match_attribute, match_filename):
     result = generate_destination(run_id, attribute_name, filename, step=None)
-    # # +2 is for "/" separators
-    if len(run_id) + len(attribute_name) + len(filename) + 2 >= MAX_FILE_DESTINATION_LENGTH:
-        assert len(result) == MAX_FILE_DESTINATION_LENGTH, "Did not use all the available space"
+    if len(run_id) + len(attribute_name) + len(NO_STEP_PLACEHOLDER) + len(filename) + 3 >= MAX_FILE_DESTINATION_LENGTH:
+        assert len(result) == MAX_FILE_DESTINATION_LENGTH - MAX_SERIES_STEP_PATH_COMPONENT_LENGTH + len(
+            NO_STEP_PLACEHOLDER
+        ), "Did not use all the available space"
     else:
         assert len(result) <= MAX_FILE_DESTINATION_LENGTH
 
-    run_id_component, tail = result.split("/", maxsplit=1)
-    attribute_component, file_component = tail.rsplit("/", maxsplit=1)
+    run_id_component, attribute_component, step_component, file_component = result.split("/")
 
     assert len(run_id_component) <= MAX_RUN_ID_COMPONENT_LENGTH
     assert len(attribute_component) <= MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    assert len(step_component) <= MAX_SERIES_STEP_PATH_COMPONENT_LENGTH
     assert len(file_component) <= MAX_FILENAME_PATH_COMPONENT_LENGTH + MAX_FILENAME_EXTENSION_LENGTH
 
     assert re.fullmatch(match_run_id, run_id_component), "RunId component did not match"
     assert re.fullmatch(match_attribute, attribute_component), "Attribute component did not match"
+    assert step_component == NO_STEP_PLACEHOLDER, f"Step component should be {NO_STEP_PLACEHOLDER}"
     assert re.fullmatch(match_filename, file_component), "File component did not match"
 
 
@@ -229,7 +231,7 @@ def test_generate_destination_series(
     run_id_component, attribute_component, step_component, file_component = result.split("/")
 
     assert len(run_id_component) <= MAX_RUN_ID_COMPONENT_LENGTH
-    assert len(attribute_component) <= MAX_SERIES_ATTRIBUTE_PATH_COMPONENT_LENGTH
+    assert len(attribute_component) <= MAX_ATTRIBUTE_PATH_COMPONENT_LENGTH
     assert len(step_component) <= MAX_SERIES_STEP_PATH_COMPONENT_LENGTH
     assert len(file_component) <= MAX_FILENAME_PATH_COMPONENT_LENGTH + MAX_FILENAME_EXTENSION_LENGTH
 

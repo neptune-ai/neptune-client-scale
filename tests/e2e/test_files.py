@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from neptune_scale.exceptions import NeptuneAttributePathEmpty
+from neptune_scale.sync.files import NO_STEP_PLACEHOLDER
 from neptune_scale.types import File
 
 from .test_fetcher import (
@@ -116,7 +117,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination1": b"Hello world"},
             {
-                "path": re.compile("[^/]+/test_files_file_destination1-[^/]+/[^/.]+.bin"),
+                "path": re.compile("[^/]+/test_files_file_destination1-[^/]+/" + NO_STEP_PLACEHOLDER + "/[^/.]+.bin"),
                 "size_bytes": 11,
                 "mime_type": "application/octet-stream",
             },
@@ -124,7 +125,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination2": "e2e/resources/file.txt"},
             {
-                "path": re.compile("[^/]+/test_files_file_destination2-[^/]+/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination2-[^/]+/" + NO_STEP_PLACEHOLDER + "/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "text/plain",
             },
@@ -132,7 +133,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination3": File(source="e2e/resources/file.txt")},
             {
-                "path": re.compile("[^/]+/test_files_file_destination3-[^/]+/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination3-[^/]+/" + NO_STEP_PLACEHOLDER + "/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "text/plain",
             },
@@ -148,7 +149,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination5": File(source="e2e/resources/file.txt", size=67)},
             {
-                "path": re.compile("[^/]+/test_files_file_destination5-[^/]+/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination5-[^/]+/" + NO_STEP_PLACEHOLDER + "/file.txt"),
                 "size_bytes": 67,
                 "mime_type": "text/plain",
             },
@@ -156,7 +157,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination6": File(source="e2e/resources/file.txt", mime_type="application/json")},
             {
-                "path": re.compile("[^/]+/test_files_file_destination6-[^/]+/file.txt"),
+                "path": re.compile("[^/]+/test_files_file_destination6-[^/]+/" + NO_STEP_PLACEHOLDER + "/file.txt"),
                 "size_bytes": 19,
                 "mime_type": "application/json",
             },
@@ -164,7 +165,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination7": File(source="e2e/resources/binary_file")},
             {
-                "path": re.compile("[^/]+/test_files_file_destination7-[^/]+/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination7-[^/]+/" + NO_STEP_PLACEHOLDER + "/binary_file"),
                 "size_bytes": 1024,
                 "mime_type": "application/octet-stream",
             },
@@ -172,7 +173,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination8": File(source="e2e/resources/binary_file", mime_type="audio/mpeg")},
             {
-                "path": re.compile("[^/]+/test_files_file_destination8-[^/]+/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination8-[^/]+/" + NO_STEP_PLACEHOLDER + "/binary_file"),
                 "size_bytes": 1024,
                 "mime_type": "audio/mpeg",
             },
@@ -180,7 +181,7 @@ def test_assign_files_absolute(run, client, project_name, temp_dir):
         (
             {"test_files/file_destination9": File(source="e2e/resources/binary_file", size=123)},
             {
-                "path": re.compile("[^/]+/test_files_file_destination9-[^/]+/binary_file"),
+                "path": re.compile("[^/]+/test_files_file_destination9-[^/]+/" + NO_STEP_PLACEHOLDER + "/binary_file"),
                 "size_bytes": 123,
                 "mime_type": "application/octet-stream",
             },
@@ -424,7 +425,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination1": b"Hello world"},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination1-[^/]+/000000000002_000000/[^/.]+.bin"),
-                "size": 11,
+                "size_bytes": 11,
                 "mime_type": "application/octet-stream",
             },
         ),
@@ -432,7 +433,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination2": "e2e/resources/file.txt"},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination2-[^/]+/000000000002_000000/file.txt"),
-                "size": 19,
+                "size_bytes": 19,
                 "mime_type": "text/plain",
             },
         ),
@@ -440,7 +441,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination3": File(source="e2e/resources/file.txt")},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination3-[^/]+/000000000002_000000/file.txt"),
-                "size": 19,
+                "size_bytes": 19,
                 "mime_type": "text/plain",
             },
         ),
@@ -450,13 +451,13 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
                     source="e2e/resources/file.txt", destination="custom_destination.txt"
                 )
             },
-            {"path": "custom_destination.txt", "size": 19, "mime_type": "text/plain"},
+            {"path": "custom_destination.txt", "size_bytes": 19, "mime_type": "text/plain"},
         ),
         (
             {"test_file_series/file_destination5": File(source="e2e/resources/file.txt", size=67)},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination5-[^/]+/000000000002_000000/file.txt"),
-                "size": 67,
+                "size_bytes": 67,
                 "mime_type": "text/plain",
             },
         ),
@@ -464,7 +465,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination6": File(source="e2e/resources/file.txt", mime_type="application/json")},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination6-[^/]+/000000000002_000000/file.txt"),
-                "size": 19,
+                "size_bytes": 19,
                 "mime_type": "application/json",
             },
         ),
@@ -472,7 +473,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination7": File(source="e2e/resources/binary_file")},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination7-[^/]+/000000000002_000000/binary_file"),
-                "size": 1024,
+                "size_bytes": 1024,
                 "mime_type": "application/octet-stream",
             },
         ),
@@ -480,7 +481,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination8": File(source="e2e/resources/binary_file", mime_type="audio/mpeg")},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination8-[^/]+/000000000002_000000/binary_file"),
-                "size": 1024,
+                "size_bytes": 1024,
                 "mime_type": "audio/mpeg",
             },
         ),
@@ -488,7 +489,7 @@ def test_log_files_single(caplog, run, client, project_name, run_init_kwargs, te
             {"test_file_series/file_destination9": File(source="e2e/resources/binary_file", size=123)},
             {
                 "path": re.compile("[^/]+/test_file_series_file_destination9-[^/]+/000000000002_000000/binary_file"),
-                "size": 123,
+                "size_bytes": 123,
                 "mime_type": "application/octet-stream",
             },
         ),
