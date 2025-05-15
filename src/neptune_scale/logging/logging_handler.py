@@ -56,7 +56,7 @@ class NeptuneLoggingHandler(logging.Handler):
         
         logger = logging.getLogger("my_experiment")
 
-        npt_handler = NeptuneLoggingHandler(run=run, level=2, attribute_path="messages/info")
+        npt_handler = NeptuneLoggingHandler(run=run, level=logging.INFO, attribute_path="messages/info")
         logger.addHandler(npt_handler)
 
         logger.info("Starting data preparation")
