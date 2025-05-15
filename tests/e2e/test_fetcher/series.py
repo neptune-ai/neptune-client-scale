@@ -129,8 +129,8 @@ def _extract_value(obj: ProtoSeriesPointValueObjectDTO) -> Union[str, dict[str, 
     elif obj.HasField("histogram"):
         histogram = obj.histogram
         return dict(
-            bin_values=list(histogram.values),
-            bins_edges=list(histogram.edges),
+            values=list(histogram.values),
+            edges=list(histogram.edges),
             type=histogram.type,
         )
     else:
