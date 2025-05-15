@@ -795,7 +795,7 @@ class Run(AbstractContextManager):
             if file_upload_requests
             else None
         )
-        file_series_upload_requests = self._prepare_files_for_upload(file_series)
+        file_series_upload_requests = self._prepare_files_for_upload(file_series, step=step)
         file_series_data = (
             {attr_name: self._file_request_to_file_ref_data(req) for attr_name, req in file_series_upload_requests}
             if file_series_upload_requests
@@ -825,7 +825,7 @@ class Run(AbstractContextManager):
         )
 
         # Save file upload requests only after MetadataSplitter processed input
-        if file_upload_requests:
+        if all_file_upload_requests:
             self._operations_repo.save_file_upload_requests([req for _, req in all_file_upload_requests])
 
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
@@ -840,7 +840,7 @@ class Run(AbstractContextManager):
         )
 
     def _prepare_files_for_upload(
-        self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
+        self, files: Optional[dict[str, Union[str, Path, bytes, File]]], step: Optional[Union[float, int]] = None
     ) -> list[tuple[str, FileUploadRequest]]:
         """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
 
@@ -884,7 +884,7 @@ class Run(AbstractContextManager):
                 request = FileUploadRequest(
                     source_path=str(file_path.absolute()),
                     destination=(
-                        generate_destination(self._run_id, attr_name, file_path.name)
+                        generate_destination(self._run_id, attr_name, file_path.name, step)
                         if destination is None
                         else str(destination)
                     ),
