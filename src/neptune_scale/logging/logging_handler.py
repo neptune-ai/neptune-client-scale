@@ -47,13 +47,13 @@ class NeptuneLoggingHandler(logging.Handler):
     Args:
         run: A reference to a Run object which should track the logs.
         level: Level of logs to capture. If not provided, defaults to `logging.NOTSET`.
-        attribute_path: Path to the `StringSeries` attribute that stores the logs. If not provided, 
+        attribute_path: Path to the `StringSeries` attribute that stores the logs. If not provided,
             the logs are stored under "runtime/logs".
-    
+
     Example:
         ```
         from neptune_scale import NeptuneLoggingHandler
-        
+
         logger = logging.getLogger("my_experiment")
 
         npt_handler = NeptuneLoggingHandler(run=run, level=logging.INFO, attribute_path="messages/info")
