@@ -127,8 +127,8 @@ class Run(AbstractContextManager):
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
-        system_namespace: Optional[str] = None,
         runtime_namespace: Optional[str] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -159,7 +159,6 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
-            system_namespace: Deprecated.
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
 
         """
@@ -187,6 +186,7 @@ class Run(AbstractContextManager):
         verify_type("enable_console_log_capture", enable_console_log_capture, bool)
         verify_type("runtime_namespace", runtime_namespace, (str, type(None)))
 
+        system_namespace: Optional[str] = kwargs.get("system_namespace")
         if system_namespace is not None:
             logger.warning(
                 "`system_namespace` is deprecated and will be removed in a future version. "
