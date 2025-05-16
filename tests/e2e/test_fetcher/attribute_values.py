@@ -57,7 +57,9 @@ def fetch_attribute_values(
     response = _fetch_attribute_values(client, params, project)
     result = _process_attribute_values_response(response)
 
-    assert len(result) == 1, f"Expected one run in the result, got {len(result)}"
+    assert len(result) <= 1, f"Expected one run in the result, got {len(result)}"
+    if not result:
+        return {}
     return next(iter(result.values()))
 
 
@@ -72,6 +74,7 @@ def _fetch_attribute_values(
         body=body,
         project_identifier=project,
     )
+    assert response.status_code == 200, f"Failed to fetch attribute values: {response.status_code} {response.content}"
     return ProtoQueryAttributesResultDTO.FromString(response.content)
 
 

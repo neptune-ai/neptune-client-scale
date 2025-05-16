@@ -25,8 +25,8 @@ from neptune_scale.sync.metadata_splitter import (
     FileRefData,
     MetadataSplitter,
     Metrics,
-    StringSeries,
     datetime_to_proto,
+    histograms_to_update_run_snapshots,
     make_step,
     string_series_to_update_run_snapshots,
 )
@@ -34,7 +34,10 @@ from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     OperationsRepository,
 )
-from neptune_scale.types import File
+from neptune_scale.types import (
+    File,
+    Histogram,
+)
 
 __all__ = ["Run"]
 
@@ -270,7 +273,7 @@ class Run(AbstractContextManager):
                     initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
-                        timestamp=timestamp, string_series=StringSeries(data, step)
+                        timestamp=timestamp, step=step, string_series=data
                     ),
                 )
             )
@@ -547,9 +550,9 @@ class Run(AbstractContextManager):
         """
         self._log(
             timestamp=timestamp,
+            step=step,
             metrics=Metrics(
                 data=data,
-                step=step,
                 preview=preview,
                 preview_completion=preview_completion,
             ),
@@ -632,7 +635,7 @@ class Run(AbstractContextManager):
                 )
             ```
         """
-        self._log(timestamp=timestamp, string_series=StringSeries(data=data, step=step))
+        self._log(timestamp=timestamp, step=step, string_series=data)
 
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
@@ -692,6 +695,53 @@ class Run(AbstractContextManager):
         """
         self._log(files=files)
 
+    def log_files(
+        self,
+        files: dict[str, Union[str, Path, bytes, File]],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
+    ) -> None:
+        """Appends a file value and uploads the file contents at a particular step.
+
+        Pass the data as a dictionary {key: value} with:
+
+        - key: path to the attribute where the series is stored in the run.
+        - value: a file value to append to the series.
+
+        The files are uploaded to the Neptune object storage and the attributes are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically.
+        You can override this by providing `mime_type` and `size_bytes` fields in the `File` object.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects.
+                To log multiple file series for a step in a single function call, include multiple key-value pairs
+                in the dictionary.
+                If a value is a string or Path, it's treated as a file path.
+                If a value is bytes, it's treated as raw file content to save.
+                If a value is a `File` object, its `source` field is used.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the files.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            run = Run(...)
+
+            # for step in training loop
+            run.log_files(
+                files={"predictions/train": "output/train/predictions.png"},
+                step=1,
+            )
+            ```
+        """
+        self._log(timestamp=timestamp, step=step, file_series=files)
+
     def log(
         self,
         step: Optional[Union[float, int]] = None,
@@ -712,8 +762,9 @@ class Run(AbstractContextManager):
         """
         self._log(
             timestamp=timestamp,
+            step=step,
             configs=configs,
-            metrics=Metrics(step=step, data=metrics) if metrics is not None else None,
+            metrics=Metrics(data=metrics) if metrics is not None else None,
             tags_add=tags_add,
             tags_remove=tags_remove,
         )
@@ -721,10 +772,13 @@ class Run(AbstractContextManager):
     def _log(
         self,
         timestamp: Optional[datetime] = None,
+        step: Optional[Union[float, int]] = None,
         configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
         metrics: Optional[Metrics] = None,
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
-        string_series: Optional[StringSeries] = None,
+        string_series: Optional[dict[str, str]] = None,
+        file_series: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
+        histograms: Optional[dict[str, Histogram]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
     ) -> None:
@@ -735,9 +789,9 @@ class Run(AbstractContextManager):
         verify_type("files", files, (dict, type(None)))
 
         if metrics is not None:
+            verify_type("step", step, (float, int, type(None)))
             verify_type("metrics", metrics, Metrics)
             verify_type("metrics", metrics.data, dict)
-            verify_type("step", metrics.step, (float, int, type(None)))
             verify_type("preview", metrics.preview, bool)
             verify_type("preview_completion", metrics.preview_completion, (float, type(None)))
 
@@ -752,9 +806,16 @@ class Run(AbstractContextManager):
                 verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
 
         if string_series is not None:
-            verify_type("string_series", string_series, StringSeries)
-            verify_type("string_series", string_series.data, dict)
-            verify_type("step", string_series.step, (float, int))
+            verify_type("step", step, (float, int))
+            verify_type("string_series", string_series, dict)
+
+        if file_series is not None:
+            verify_type("step", step, (float, int))
+            verify_type("file_series", file_series, dict)
+
+        if histograms is not None:
+            verify_type("histograms", histograms, dict)
+            verify_type("step", step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
@@ -773,27 +834,29 @@ class Run(AbstractContextManager):
         elif isinstance(timestamp, float):
             timestamp = datetime.fromtimestamp(timestamp)
 
-        file_upload_requests = self._prepare_files_for_upload(files) if files else None
+        file_upload_requests = self._prepare_files_for_upload(files)
         file_data = (
-            {
-                attr_name: FileRefData(
-                    destination=req.destination,
-                    mime_type=req.mime_type,
-                    size_bytes=req.size_bytes,
-                )
-                for attr_name, req in file_upload_requests
-            }
+            {attr_name: self._file_request_to_file_ref_data(req) for attr_name, req in file_upload_requests}
             if file_upload_requests
             else None
         )
+        file_series_upload_requests = self._prepare_files_for_upload(file_series, step=step)
+        file_series_data = (
+            {attr_name: self._file_request_to_file_ref_data(req) for attr_name, req in file_series_upload_requests}
+            if file_series_upload_requests
+            else None
+        )
+        all_file_upload_requests = file_upload_requests + file_series_upload_requests
 
         splitter: MetadataSplitter = MetadataSplitter(
             project=self._project,
             run_id=self._run_id,
             timestamp=timestamp,
+            step=step,
             configs=configs,
             metrics=metrics,
             files=file_data,
+            file_series=file_series_data,
             add_tags=tags_add,
             remove_tags=tags_remove,
         )
@@ -801,19 +864,28 @@ class Run(AbstractContextManager):
         operations = list(
             itertools.chain(
                 splitter,
-                string_series_to_update_run_snapshots(string_series, timestamp),
+                string_series_to_update_run_snapshots(string_series=string_series, step=step, timestamp=timestamp),
+                histograms_to_update_run_snapshots(histograms=histograms, step=step, timestamp=timestamp),
             )
         )
 
         # Save file upload requests only after MetadataSplitter processed input
-        if file_upload_requests:
-            self._operations_repo.save_file_upload_requests([req[1] for req in file_upload_requests])
+        if all_file_upload_requests:
+            self._operations_repo.save_file_upload_requests([req for _, req in all_file_upload_requests])
 
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
         self._sequence_tracker.update_sequence_id(sequence_id)
 
+    @staticmethod
+    def _file_request_to_file_ref_data(file_request: FileUploadRequest) -> FileRefData:
+        return FileRefData(
+            destination=file_request.destination,
+            mime_type=file_request.mime_type,
+            size_bytes=file_request.size_bytes,
+        )
+
     def _prepare_files_for_upload(
-        self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
+        self, files: Optional[dict[str, Union[str, Path, bytes, File]]], step: Optional[Union[float, int]] = None
     ) -> list[tuple[str, FileUploadRequest]]:
         """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
 
@@ -857,7 +929,7 @@ class Run(AbstractContextManager):
                 request = FileUploadRequest(
                     source_path=str(file_path.absolute()),
                     destination=(
-                        generate_destination(self._run_id, attr_name, file_path.name)
+                        generate_destination(self._run_id, attr_name, file_path.name, step)
                         if destination is None
                         else str(destination)
                     ),

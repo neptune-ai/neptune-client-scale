@@ -8,7 +8,6 @@ import azure.core.exceptions
 from azure.core.pipeline.transport import AsyncioRequestsTransport
 from azure.storage.blob.aio import BlobClient
 
-from neptune_scale.sync.metadata_splitter import proto_encoded_bytes_field_size
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
@@ -17,6 +16,7 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
     SequenceId,
 )
+from neptune_scale.sync.size_util import proto_encoded_bytes_field_size
 
 __all__ = ("SyncProcess",)
 
@@ -58,6 +58,10 @@ from neptune_scale.exceptions import (
     NeptuneFileMetadataExceedsSizeLimit,
     NeptuneFileUploadError,
     NeptuneFileUploadTemporaryError,
+    NeptuneHistogramBinEdgesContainNaN,
+    NeptuneHistogramBinEdgesNotIncreasing,
+    NeptuneHistogramTooManyBins,
+    NeptuneHistogramValuesLengthMismatch,
     NeptuneInternalServerError,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectError,
@@ -132,6 +136,10 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
     IngestCode.STRING_SET_EXCEEDS_SIZE_LIMIT: NeptuneStringSetExceedsSizeLimit,
     IngestCode.SERIES_PREVIEW_STEP_NOT_AFTER_LAST_COMMITTED_STEP: NeptunePreviewStepNotAfterLastCommittedStep,
     IngestCode.FILE_REF_EXCEEDS_SIZE_LIMIT: NeptuneFileMetadataExceedsSizeLimit,
+    IngestCode.HISTOGRAM_BIN_EDGES_CONTAINS_NAN: NeptuneHistogramBinEdgesContainNaN,
+    IngestCode.HISTOGRAM_TOO_MANY_BINS: NeptuneHistogramTooManyBins,
+    IngestCode.HISTOGRAM_BIN_EDGES_NOT_INCREASING: NeptuneHistogramBinEdgesNotIncreasing,
+    IngestCode.HISTOGRAM_VALUES_LENGTH_DOESNT_MATCH_BINS: NeptuneHistogramValuesLengthMismatch,
 }
 
 
