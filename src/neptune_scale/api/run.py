@@ -696,7 +696,7 @@ class Run(AbstractContextManager):
         timestamp: Optional[datetime] = None,
     ) -> None:
         """Appends a file value and uploads the file contents at a particular step.
-        
+
         Pass the data as a dictionary {key: value} with:
 
         - key: path to the attribute where the series is stored in the run.
@@ -719,13 +719,13 @@ class Run(AbstractContextManager):
             timestamp (datetime, optional): Time of logging the files.
                 If not provided, the current time is used.
                 If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
-        
+
         Example:
             ```
             from neptune_scale import Run
 
             run = Run(...)
-            
+
             # for step in training loop
             run.log_files(
                 files={"predictions/train": "output/train/predictions.png"},
