@@ -628,6 +628,36 @@ class Run(AbstractContextManager):
     def log_histograms(
         self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
     ) -> None:
+        """Logs the specified histograms at a particular step.
+
+        Args:
+            histograms (dict[str, Histogram]):
+                A dictionary with attribute names as keys and histogram objects as values.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the histograms data.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+
+        Example:
+            ```
+            from neptune_scale import Run
+            from neptune_scale.types import Histogram
+
+            my_histogram = Histogram(
+                bin_edges=[0, 1, 40, 89, float(+inf)],
+                counts=[5, 82, 44, 1],
+            )
+
+            run = Run(...)
+            run.log_histograms(
+                histograms={
+                    "layers/1/activations": my_histogram
+                },
+                step=1,
+            )
+            ```
+        """
         self._log(timestamp=timestamp, histograms=histograms, step=step)
 
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
