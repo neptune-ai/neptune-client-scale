@@ -625,11 +625,6 @@ class Run(AbstractContextManager):
         """
         self._log(timestamp=timestamp, step=step, string_series=data)
 
-    def log_histograms(
-        self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
-    ) -> None:
-        self._log(timestamp=timestamp, histograms=histograms, step=step)
-
     def add_tags(self, tags: Union[list[str], set[str], tuple[str]], group_tags: bool = False) -> None:
         """
         Adds the list of tags to the run.
