@@ -12,10 +12,10 @@ from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
 from neptune_scale.cli.sync import SyncRunner
 from neptune_scale.exceptions import NeptuneUnableToLogData
-from neptune_scale.util import SharedInt
 
 from .conftest import (
     random_series,
+    sleep_10s,
     unique_path,
 )
 from .test_fetcher import (
@@ -24,6 +24,9 @@ from .test_fetcher import (
     fetch_metric_values,
     fetch_series_values,
 )
+
+TEST_TIMEOUT = 30
+
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 API_TOKEN = os.getenv("NEPTUNE_API_TOKEN")
@@ -174,16 +177,17 @@ def test_sync_all_types_combined(run_init_kwargs, temp_dir):
 
 
 @pytest.mark.parametrize("timeout", [0, 1, 5])
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(TEST_TIMEOUT)
+@patch("neptune_scale.cli.sync.run_sync_process", new=sleep_10s)  # replace the sync process with no-op sleep
 def test_sync_wait_timeout(run_init_kwargs, timeout):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
-        data = {"str-value": "hello-world"}
-        run.log_configs(data)
+        run.log_configs(data={"str-value": "hello-world"})
+        run.assign_files(files={"a-file": b"content"})
+
     runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
     runner.start()
-    runner._last_ack_seq = SharedInt(1)  # replace so that wait never sees the true progress and hangs
 
     # when
     start_time = time.monotonic()
@@ -205,17 +209,18 @@ def test_sync_wait_timeout(run_init_kwargs, timeout):
 @pytest.mark.parametrize(
     "hung_method",
     [
-        "neptune_scale.sync.sync_process.SyncProcess.terminate",
+        "multiprocessing.context.SpawnProcess.terminate",
         "neptune_scale.sync.errors_tracking.ErrorsMonitor.interrupt",
     ],
 )
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(TEST_TIMEOUT)
 def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
-        data = {"str-value": "hello-world"}
-        run.log_configs(data)
+        run.log_configs(data={"str-value": "hello-world"})
+        run.assign_files(files={"a-file": b"content"})
+
     runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
     runner.start()
 

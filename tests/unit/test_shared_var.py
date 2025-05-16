@@ -1,3 +1,4 @@
+import multiprocessing
 from multiprocessing import Process
 
 import pytest
@@ -6,6 +7,8 @@ from neptune_scale.util import (
     SharedFloat,
     SharedInt,
 )
+
+mp_context = multiprocessing.get_context("spawn")
 
 
 def _child(var):
@@ -19,7 +22,7 @@ def _child(var):
 
 @pytest.mark.parametrize("tp", (SharedInt, SharedFloat))
 def test_set_and_notify(tp):
-    var = tp(0)
+    var = tp(multiprocessing_context=mp_context, initial_value=0)
 
     process = Process(target=_child, args=(var,))
     process.start()
