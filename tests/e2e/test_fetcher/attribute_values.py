@@ -19,11 +19,11 @@ from typing import (
     Optional,
 )
 
+from neptune_api.api.retrieval import query_attributes_within_project_proto
 from neptune_api.client import AuthenticatedClient
-from neptune_retrieval_api.api.default import query_attributes_within_project_proto
-from neptune_retrieval_api.models import QueryAttributesBodyDTO
-from neptune_retrieval_api.proto.neptune_pb.api.v1.model.attributes_pb2 import ProtoQueryAttributesResultDTO
-from neptune_retrieval_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2 import ProtoAttributeDTO
+from neptune_api.models import QueryAttributesBodyDTO
+from neptune_api.proto.neptune_pb.api.v1.model.attributes_pb2 import ProtoQueryAttributesResultDTO
+from neptune_api.proto.neptune_pb.api.v1.model.leaderboard_entries_pb2 import ProtoAttributeDTO
 
 from . import identifiers
 

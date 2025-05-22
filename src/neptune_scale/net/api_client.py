@@ -42,6 +42,7 @@ from neptune_api.api.data_ingestion import (
     check_request_status_bulk,
     submit_operation,
 )
+from neptune_api.api.storage import signed_url
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.errors import (
@@ -51,7 +52,13 @@ from neptune_api.errors import (
     UnableToExchangeApiKeyError,
     UnableToRefreshTokenError,
 )
-from neptune_api.models import ClientConfig
+from neptune_api.models import (
+    ClientConfig,
+    CreateSignedUrlsRequest,
+    CreateSignedUrlsResponse,
+    FileToSign,
+    Permission,
+)
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     RequestId,
@@ -60,13 +67,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_api.types import Response
-from neptune_storage_api.api.storagebridge import signed_url
-from neptune_storage_api.models import (
-    CreateSignedUrlsRequest,
-    CreateSignedUrlsResponse,
-    FileToSign,
-    Permission,
-)
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
