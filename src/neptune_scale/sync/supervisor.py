@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ("ProcessSupervisor",)
 
 from collections.abc import Callable
-from multiprocessing import Process
+from multiprocessing.process import BaseProcess
 from typing import Optional
 
 from neptune_scale.sync.parameters import PROCESS_SUPERVISOR_THREAD_SLEEP_TIME
@@ -16,9 +16,9 @@ logger = get_logger()
 
 
 class ProcessSupervisor(Daemon):
-    def __init__(self, process: Process, callback: Callable[[], None]) -> None:
+    def __init__(self, process: BaseProcess, callback: Callable[[], None]) -> None:
         super().__init__(name="ProcessSupervisor", sleep_time=PROCESS_SUPERVISOR_THREAD_SLEEP_TIME)
-        self._process: Process = process
+        self._process: BaseProcess = process
         self._callback: Callable[[], None] = callback
         self._last_is_alive: Optional[bool] = None
 

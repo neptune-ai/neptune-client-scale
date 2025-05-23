@@ -16,14 +16,15 @@
 
 __all__ = ["sync_all"]
 
+import multiprocessing
 import time
 from dataclasses import dataclass
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from typing import Optional
 
 from tqdm import tqdm
 
-from neptune_scale.sync import sync_process
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
@@ -32,7 +33,7 @@ from neptune_scale.sync.operations_repository import (
     OperationsRepository,
     SequenceId,
 )
-from neptune_scale.sync.sync_process import SyncProcess
+from neptune_scale.sync.sync_process import run_sync_process
 from neptune_scale.util import (
     SharedFloat,
     SharedInt,
@@ -83,13 +84,16 @@ class SyncRunner:
         self._api_token: str = api_token
         self._run_log_file: Path = run_log_file
         self._operations_repository: OperationsRepository = OperationsRepository(db_path=run_log_file)
-        self._errors_queue: ErrorsQueue = ErrorsQueue()
-        self._last_queued_seq = SharedInt(-1)
-        self._last_ack_seq = SharedInt(-1)
-        self._last_ack_timestamp = SharedFloat(-1)
+
+        self._spawn_mp_context = multiprocessing.get_context("spawn")
+        self._errors_queue: ErrorsQueue = ErrorsQueue(self._spawn_mp_context)
+        self._last_queued_seq = SharedInt(self._spawn_mp_context, -1)
+        self._last_ack_seq = SharedInt(self._spawn_mp_context, -1)
+        self._last_ack_timestamp = SharedFloat(self._spawn_mp_context, -1)
+
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._file_upload_request_init_count: Optional[int] = None
-        self._sync_process: Optional[SyncProcess] = None
+        self._sync_process: Optional[BaseProcess] = None
         self._errors_monitor: Optional[ErrorsMonitor] = None
 
     def start(
@@ -107,16 +111,21 @@ class SyncRunner:
             logger.error("No run metadata found in log")
             return
 
-        self._sync_process = sync_process.SyncProcess(
-            operations_repository_path=self._run_log_file,
-            errors_queue=self._errors_queue,
-            api_token=self._api_token,
-            project=metadata.project,
-            family=metadata.run_id,
-            last_queued_seq=self._last_queued_seq,
-            last_ack_seq=self._last_ack_seq,
-            last_ack_timestamp=self._last_ack_timestamp,
+        self._sync_process = self._spawn_mp_context.Process(
+            name="SyncProcess",
+            target=run_sync_process,
+            kwargs={
+                "project": metadata.project,
+                "family": metadata.run_id,
+                "operations_repository_path": self._run_log_file,
+                "errors_queue": self._errors_queue,
+                "api_token": self._api_token,
+                "last_queued_seq": self._last_queued_seq,
+                "last_ack_seq": self._last_ack_seq,
+                "last_ack_timestamp": self._last_ack_timestamp,
+            },
         )
+
         self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
 
         self._sync_process.start()
