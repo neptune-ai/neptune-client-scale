@@ -353,7 +353,7 @@ class SenderThread(Daemon):
         if status_code != 200:
             _raise_exception(status_code)
 
-        return response.parsed
+        return SubmitResponse.FromString(response.content)
 
     def work(self) -> None:
         try:
@@ -527,7 +527,7 @@ class StatusTrackingThread(Daemon):
         if status_code != 200:
             _raise_exception(status_code)
 
-        return response.parsed
+        return BulkRequestStatus.FromString(response.content)
 
     def work(self) -> None:
         try:

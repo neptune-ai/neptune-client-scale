@@ -38,9 +38,9 @@ from neptune_api import (
     Client,
 )
 from neptune_api.api.backend import get_client_config
-from neptune_api.api.data_ingestion import (
-    check_request_status_bulk,
-    submit_operation,
+from neptune_api.api.ingestion import (
+    bulk_check_status,
+    ingest,
 )
 from neptune_api.api.storage import signed_url
 from neptune_api.auth_helpers import exchange_api_key
@@ -60,12 +60,11 @@ from neptune_api.models import (
     Permission,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
-    BulkRequestStatus,
     RequestId,
     RequestIdList,
-    SubmitResponse,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_api.types import File as BinaryContent
 from neptune_api.types import Response
 
 from neptune_scale.exceptions import (
@@ -136,10 +135,10 @@ def create_auth_api_client(
 
 class ApiClient(abc.ABC):
     @abc.abstractmethod
-    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]: ...
+    def submit(self, operation: RunOperation, family: str) -> Response[BinaryContent]: ...
 
     @abc.abstractmethod
-    def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]: ...
+    def check_batch(self, request_ids: list[str], project: str) -> Response[BinaryContent]: ...
 
     def close(self) -> None: ...
 
@@ -165,14 +164,18 @@ class HostedApiClient(ApiClient):
         )
         logger.debug("Connected to Neptune API")
 
-    def submit(self, operation: RunOperation, family: str) -> Response[SubmitResponse]:
-        return submit_operation.sync_detailed(client=self.backend, body=operation, family=family)
+    def submit(self, operation: RunOperation, family: str) -> Response[BinaryContent]:
+        return ingest.sync_detailed(client=self.backend, body=BinaryContent(payload=operation.SerializeToString()))
 
-    def check_batch(self, request_ids: list[str], project: str) -> Response[BulkRequestStatus]:
-        return check_request_status_bulk.sync_detailed(
+    def check_batch(self, request_ids: list[str], project: str) -> Response[BinaryContent]:
+        return bulk_check_status.sync_detailed(
             client=self.backend,
             project_identifier=project,
-            body=RequestIdList(ids=[RequestId(value=request_id) for request_id in request_ids]),
+            body=BinaryContent(
+                payload=RequestIdList(
+                    ids=[RequestId(value=request_id) for request_id in request_ids]
+                ).SerializeToString()
+            ),
         )
 
     def close(self) -> None:
