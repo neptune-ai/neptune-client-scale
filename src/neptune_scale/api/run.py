@@ -12,7 +12,7 @@ import mimetypes
 import multiprocessing
 import re
 import uuid
-from multiprocessing.context import SpawnProcess
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from types import TracebackType
 from urllib.parse import quote_plus
@@ -307,7 +307,7 @@ class Run(AbstractContextManager):
             self._last_ack_seq: Optional[SharedInt] = SharedInt(spawn_mp_context, -1)
             self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(spawn_mp_context, -1)
 
-            self._sync_process: Optional[SpawnProcess] = spawn_mp_context.Process(
+            self._sync_process: Optional[BaseProcess] = spawn_mp_context.Process(
                 name="SyncProcess",
                 target=run_sync_process,
                 kwargs={

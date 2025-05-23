@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from multiprocessing.context import SpawnContext
+from multiprocessing.context import BaseContext
 from types import TracebackType
 from typing import (
     Generic,
@@ -33,7 +33,7 @@ class SharedVar(Generic[T]):
             print(var.value)
     """
 
-    def __init__(self, multiprocessing_context: SpawnContext, typecode_or_type: str, initial_value: T):
+    def __init__(self, multiprocessing_context: BaseContext, typecode_or_type: str, initial_value: T):
         self._value = multiprocessing_context.Value(typecode_or_type, initial_value)
         self._condition = multiprocessing_context.Condition(self._value.get_lock())
 
@@ -73,10 +73,10 @@ class SharedVar(Generic[T]):
 
 
 class SharedInt(SharedVar[int]):
-    def __init__(self, multiprocessing_context: SpawnContext, initial_value: int) -> None:
+    def __init__(self, multiprocessing_context: BaseContext, initial_value: int) -> None:
         super().__init__(multiprocessing_context, "i", initial_value)
 
 
 class SharedFloat(SharedVar[float]):
-    def __init__(self, multiprocessing_context: SpawnContext, initial_value: float) -> None:
+    def __init__(self, multiprocessing_context: BaseContext, initial_value: float) -> None:
         super().__init__(multiprocessing_context, "d", initial_value)

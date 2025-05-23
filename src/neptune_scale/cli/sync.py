@@ -19,7 +19,7 @@ __all__ = ["sync_all"]
 import multiprocessing
 import time
 from dataclasses import dataclass
-from multiprocessing.context import SpawnProcess
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from typing import Optional
 
@@ -93,7 +93,7 @@ class SyncRunner:
 
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._file_upload_request_init_count: Optional[int] = None
-        self._sync_process: Optional[SpawnProcess] = None
+        self._sync_process: Optional[BaseProcess] = None
         self._errors_monitor: Optional[ErrorsMonitor] = None
 
     def start(
