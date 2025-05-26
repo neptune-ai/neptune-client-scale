@@ -66,16 +66,18 @@ class Histogram:
     """Represents a histogram with explicit bin edges.
 
     To specify the data distribution across bins, you can use either counts or densities. Note that n bins have n+1
-    bin edges, so the length of the `bin_edges` argument should be one more than the length of the counts or densities.
+    bin edges, so the length of the `bin_edges` argument should be one more than the length of the array
+    that specifies the counts or densities.
 
     Use the histogram as a value in the dictionary passed to `Run.log_histograms()`.
 
     Args:
-        bin_edges (ArrayLike): The bin edges of the histogram. The maximum number of edges is 513.
+        bin_edges (Union[list[Union[float, int]], "np.ndarray"]): The bin edges of the histogram.
+            The maximum number of edges is 513.
             To create unbounded bins at the beginning or end, use `inf` values.
-        counts (ArrayLike, optional): Number of data points that fall into each bin.
-        densities (ArrayLike, optional): Density values for each bin.
-            If passing custom values, they must be normalized so that the area of the histogram bars equals 1.
+        counts (Union[list[int], "np.ndarray"]): Number of data points that fall into each bin, as a 1D array.
+        densities (Union[list[Union[float, int]], "np.ndarray"]): 1D array of probability density function
+            values for each bin.
 
     Examples:
 
@@ -83,7 +85,7 @@ class Histogram:
         from neptune_scale.types import Histogram
 
 
-        neptune_histogram = Histogram(bin_edges=[float("-inf"), 1, 10, 1000], counts=[135, 289, 45])
+        neptune_histogram = Histogram(bin_edges=[0, 1, 10, 1000], counts=[135, 289, 45])
         ```
 
         Using NumPy:
