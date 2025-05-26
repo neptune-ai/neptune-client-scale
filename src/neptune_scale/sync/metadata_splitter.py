@@ -546,9 +546,11 @@ def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, 
                 counts=ProtobufHistogram.Counts(values=counts) if has_counts else None,
                 densities=ProtobufHistogram.Densities(values=densities) if has_densities else None,
             )
-        # TypeError is raised by protobuf when the values are not numeric
+        # TypeError is raised by protobuf when the values are not numeric, also if counts are not int
         except TypeError:
-            _warn_or_raise_on_invalid_value(f"Histogram fields must be numeric (at `{key}`)")
+            _warn_or_raise_on_invalid_value(
+                f"Histogram bin_edges and densities must be numeric, counts must be int, if provided (at `{key}`)"
+            )
             continue
 
         yield key, histogram

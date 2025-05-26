@@ -78,7 +78,7 @@ class Histogram:
             If passing custom values, they must be normalized so that the area of the histogram bars equals 1.
 
     Examples:
-    
+
         ```
         from neptune_scale.types import Histogram
 

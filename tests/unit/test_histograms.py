@@ -168,7 +168,8 @@ def test_histograms_valid_paths(path):
         (list(range(1000)), list(range(999)), None, "bin_edges must be of length"),
         ([1, "s"], [1], None, "must be numeric"),
         ([1, 2, 3], [1, "s"], None, "must be numeric"),
-        ([1, 2], [math.nan], None, "must be numeric"),  # counts are integers, so nan is not allowed
+        ([1, 2], [1.0], None, "must be numeric"),  # counts must be strictly ints
+        ([1, 2], [math.nan], None, "must be numeric"),
         ([1, 2], [math.inf], None, "must be numeric"),
         ([1, 2], [-math.inf], None, "must be numeric"),
         ([1, 2, 3], None, [1, "s"], "must be numeric"),

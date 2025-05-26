@@ -166,7 +166,7 @@ class ConsoleLogCaptureThread(Daemon):
         self,
         *,
         run_id: str,
-        system_namespace: str,
+        runtime_namespace: str,
         initial_step: Union[int, float],
         logs_flush_frequency_sec: float,
         logs_sink: Callable[[dict[str, str], Union[float, int], Optional[datetime]], None],
@@ -179,11 +179,11 @@ class ConsoleLogCaptureThread(Daemon):
         _subscribe(run_id)
 
         self._stdout_partial_line = PartialLine()
-        self._stdout_attribute = f"{system_namespace}/stdout"
+        self._stdout_attribute = f"{runtime_namespace}/stdout"
         self._stdout_step = StepTracker(initial_step)
 
         self._stderr_partial_line = PartialLine()
-        self._stderr_attribute = f"{system_namespace}/stderr"
+        self._stderr_attribute = f"{runtime_namespace}/stderr"
         self._stderr_step = StepTracker(initial_step)
 
     def work(self) -> None:

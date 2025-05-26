@@ -130,7 +130,8 @@ class Run(AbstractContextManager):
         on_error_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
-        system_namespace: Optional[str] = None,
+        runtime_namespace: Optional[str] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Initializes a run that logs the model-building metadata to Neptune.
@@ -161,7 +162,8 @@ class Run(AbstractContextManager):
                 wasn't caught by other callbacks.
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
-            system_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "system".
+            runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
+
         """
 
         if run_id is None:
@@ -185,7 +187,17 @@ class Run(AbstractContextManager):
         verify_type("on_error_callback", on_error_callback, (Callable, type(None)))
         verify_type("on_warning_callback", on_warning_callback, (Callable, type(None)))
         verify_type("enable_console_log_capture", enable_console_log_capture, bool)
-        verify_type("system_namespace", system_namespace, (str, type(None)))
+        verify_type("runtime_namespace", runtime_namespace, (str, type(None)))
+
+        system_namespace: Optional[str] = kwargs.get("system_namespace")
+        if system_namespace is not None:
+            logger.warning(
+                "`system_namespace` is deprecated and will be removed in a future version. "
+                "Use `runtime_namespace` instead."
+            )
+            verify_type("system_namespace", system_namespace, (str, type(None)))
+
+        runtime_namespace = system_namespace if runtime_namespace is None else runtime_namespace
 
         if resume and creation_time is not None:
             logger.warning("`creation_time` is ignored when used together with `resume`.")
@@ -257,7 +269,7 @@ class Run(AbstractContextManager):
                 if not enable_console_log_capture
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
-                    system_namespace=system_namespace.rstrip("/") if system_namespace else "system",
+                    runtime_namespace=runtime_namespace.rstrip("/") if runtime_namespace else "runtime",
                     initial_step=fork_step if fork_step is not None else 0,
                     logs_flush_frequency_sec=1,
                     logs_sink=lambda data, step, timestamp: self._log(
@@ -644,6 +656,7 @@ class Run(AbstractContextManager):
             from neptune_scale import Run
             from neptune_scale.types import Histogram
 
+
             my_histogram = Histogram(
                 bin_edges=[0, 1, 40, 89, float(+inf)],
                 counts=[5, 82, 44, 1],
@@ -725,6 +738,44 @@ class Run(AbstractContextManager):
         *,
         timestamp: Optional[datetime] = None,
     ) -> None:
+        """Appends a file value and uploads the file contents at a particular step.
+
+        Pass the data as a dictionary {key: value} with:
+
+        - key: path to the attribute where the series is stored in the run.
+        - value: a file value to append to the series.
+
+        The files are uploaded to the Neptune object storage and the attributes are set to point to the uploaded files.
+
+        Mime type and size are determined from the provided source (file or bytes buffer) automatically.
+        You can override this by providing `mime_type` and `size_bytes` fields in the `File` object.
+
+        Args:
+            files: dictionary of files to log, where values are one of: str, Path, bytes, or `File` objects.
+                To log multiple file series for a step in a single function call, include multiple key-value pairs
+                in the dictionary.
+                If a value is a string or Path, it's treated as a file path.
+                If a value is bytes, it's treated as raw file content to save.
+                If a value is a `File` object, its `source` field is used.
+            step (float or int): Index of the series entry.
+                Tip: Using float rather than int values can be useful, for example, when logging substeps in a batch.
+            timestamp (datetime, optional): Time of logging the files.
+                If not provided, the current time is used.
+                If provided, and `timestamp.tzinfo` is not set, the local timezone is used.
+
+        Example:
+            ```
+            from neptune_scale import Run
+
+            run = Run(...)
+
+            # for step in training loop
+            run.log_files(
+                files={"predictions/train": "output/train/predictions.png"},
+                step=1,
+            )
+            ```
+        """
         self._log(timestamp=timestamp, step=step, file_series=files)
 
     def log(
@@ -825,7 +876,7 @@ class Run(AbstractContextManager):
             if file_upload_requests
             else None
         )
-        file_series_upload_requests = self._prepare_files_for_upload(file_series)
+        file_series_upload_requests = self._prepare_files_for_upload(file_series, step=step)
         file_series_data = (
             {attr_name: self._file_request_to_file_ref_data(req) for attr_name, req in file_series_upload_requests}
             if file_series_upload_requests
@@ -855,7 +906,7 @@ class Run(AbstractContextManager):
         )
 
         # Save file upload requests only after MetadataSplitter processed input
-        if file_upload_requests:
+        if all_file_upload_requests:
             self._operations_repo.save_file_upload_requests([req for _, req in all_file_upload_requests])
 
         sequence_id = self._operations_repo.save_update_run_snapshots(operations)
@@ -870,7 +921,7 @@ class Run(AbstractContextManager):
         )
 
     def _prepare_files_for_upload(
-        self, files: Optional[dict[str, Union[str, Path, bytes, File]]]
+        self, files: Optional[dict[str, Union[str, Path, bytes, File]]], step: Optional[Union[float, int]] = None
     ) -> list[tuple[str, FileUploadRequest]]:
         """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
 
@@ -914,7 +965,7 @@ class Run(AbstractContextManager):
                 request = FileUploadRequest(
                     source_path=str(file_path.absolute()),
                     destination=(
-                        generate_destination(self._run_id, attr_name, file_path.name)
+                        generate_destination(self._run_id, attr_name, file_path.name, step)
                         if destination is None
                         else str(destination)
                     ),

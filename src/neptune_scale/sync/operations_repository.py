@@ -39,7 +39,8 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-DB_VERSION = "v2"
+DB_VERSION = "v3"
+BACKWARD_COMPATIBLE_DB_VERSIONS = ("v2", "v3")
 
 SequenceId = typing.NewType("SequenceId", int)
 
@@ -357,7 +358,7 @@ class OperationsRepository:
 
                 version, project, run_id = row
 
-                if version != DB_VERSION:
+                if version not in BACKWARD_COMPATIBLE_DB_VERSIONS:
                     raise NeptuneLocalStorageInUnsupportedVersion()
 
                 return Metadata(project=project, run_id=run_id)

@@ -42,11 +42,25 @@ from neptune_scale.sync.parameters import (
 
 class NeptuneLoggingHandler(logging.Handler):
     """
-    A logging handler that sends log messages to a Neptune run.
-    In its constructor, it takes:
-    - a Neptune run to log to,
-    - a logging level (default is NOTSET),
-    - an optional attribute path under which to store logs (default is "system/logs").
+    A logging handler that sends the records created by the Python Logger to a Neptune run.
+
+    Args:
+        run: A reference to a Run object which should track the logs.
+        level: Level of logs to capture. If not provided, defaults to `logging.NOTSET`.
+        attribute_path: Path to the `StringSeries` attribute that stores the logs. If not provided,
+            the logs are stored under "runtime/logs".
+
+    Example:
+        ```
+        from neptune_scale import NeptuneLoggingHandler
+
+        logger = logging.getLogger("my_experiment")
+
+        npt_handler = NeptuneLoggingHandler(run=run, level=logging.INFO, attribute_path="messages/info")
+        logger.addHandler(npt_handler)
+
+        logger.info("Starting data preparation")
+        ```
     """
 
     def __init__(
@@ -59,7 +73,7 @@ class NeptuneLoggingHandler(logging.Handler):
         verify_type("run", run, Run)
         verify_type("level", level, int)
         verify_type("attribute_path", attribute_path, (str, type(None)))
-        path = attribute_path if attribute_path else "system/logs"
+        path = attribute_path if attribute_path else "runtime/logs"
         verify_max_length("attribute_path", path, MAX_ATTRIBUTE_PATH_LENGTH)
 
         super().__init__(level=level)
