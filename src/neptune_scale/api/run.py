@@ -337,7 +337,20 @@ class Run(AbstractContextManager):
 
             self._errors_monitor.start()
             with self._lock:
-                self._sync_process.start()
+                # This try-except block is to guard against creating the Run() object without
+                # the `if __name__ == '__main__':` guard, which is required when using the 'spawn' start method.
+                # With 'spawn', the child process will try to import the module and in doing so,
+                # initialize the Run() again, which would lead to an infinite stack of starting sync processes.
+                # The multiprocessing library guards against this, and we just add a more user-friendly error message.
+                try:
+                    self._sync_process.start()
+                except RuntimeError as e:
+                    message = (
+                        "Failed to start the synchronization process. "
+                        + "This might indicate that Run() was initialized without "
+                        + "the if __name__ == '__main__': guard."
+                    )
+                    raise RuntimeError(message) from e
                 self._sync_process_supervisor.start()
         else:
             self._errors_queue = None
