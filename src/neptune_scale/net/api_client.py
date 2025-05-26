@@ -101,6 +101,7 @@ def get_config_and_token_urls(
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
+        headers={"User-Agent": _generate_user_agent()},
     ) as client:
         try:
             config_response = get_client_config.sync_detailed(client=client)
@@ -131,7 +132,41 @@ def create_auth_api_client(
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
+        headers={"User-Agent": _generate_user_agent()},
     )
+
+
+def _generate_user_agent() -> str:
+    import platform
+    from importlib.metadata import version
+
+    package_name = "neptune-scale"
+    package_version = "unknown"
+    additional_metadata = {
+        "neptune-api": "unknown",
+        "python": "unknown",
+        "os": "unknown",
+    }
+
+    try:
+        package_version = version(package_name)
+    except Exception:
+        pass
+    try:
+        additional_metadata["neptune-api"] = version("neptune-api")
+    except Exception:
+        pass
+    try:
+        additional_metadata["python"] = platform.python_version()
+    except Exception:
+        pass
+    try:
+        additional_metadata["os"] = platform.platform()
+    except Exception:
+        pass
+
+    additional_metadata_str = "; ".join(f"{k}={v}" for k, v in additional_metadata.items())
+    return f"{package_name}/{package_version} ({additional_metadata_str})"
 
 
 class ApiClient(abc.ABC):
