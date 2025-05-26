@@ -18,7 +18,7 @@ from neptune_scale.sync.operations_repository import (
 )
 from neptune_scale.sync.size_util import proto_encoded_bytes_field_size
 
-__all__ = ("SyncProcess",)
+__all__ = ("run_sync_process",)
 
 import datetime
 import functools as ft
@@ -26,7 +26,6 @@ import os
 import queue
 import signal
 import threading
-from multiprocessing import Process
 from types import FrameType
 from typing import (
     Generic,
@@ -184,139 +183,125 @@ class PeekableQueue(Generic[T]):
                 self._queue.get()
 
 
-class SyncProcess(Process):
-    def __init__(
-        self,
-        operations_repository_path: Path,
-        errors_queue: ErrorsQueue,
-        api_token: str,
-        project: str,
-        family: str,
-        last_queued_seq: SharedInt,
-        last_ack_seq: SharedInt,
-        last_ack_timestamp: SharedFloat,
-    ) -> None:
-        super().__init__(name="SyncProcess")
+def run_sync_process(
+    operations_repository_path: Path,
+    errors_queue: ErrorsQueue,
+    api_token: str,
+    project: str,
+    family: str,
+    last_queued_seq: SharedInt,
+    last_ack_seq: SharedInt,
+    last_ack_timestamp: SharedFloat,
+) -> None:
+    logger.info("Data synchronization started")
+    stop_event = threading.Event()
+    signal.signal(signal.SIGTERM, ft.partial(_handle_stop_signal, stop_event))
 
-        self._operations_repository_path: Path = operations_repository_path
-        self._errors_queue: ErrorsQueue = errors_queue
-        self._api_token: str = api_token
-        self._project: str = project
-        self._family: str = family
-        self._last_queued_seq: SharedInt = last_queued_seq
-        self._last_ack_seq: SharedInt = last_ack_seq
-        self._last_ack_timestamp: SharedFloat = last_ack_timestamp
+    status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
+    operations_repository = OperationsRepository(db_path=operations_repository_path)
+    sender_thread = SenderThread(
+        api_token=api_token,
+        operations_repository=operations_repository,
+        status_tracking_queue=status_tracking_queue,
+        errors_queue=errors_queue,
+        family=family,
+        last_queued_seq=last_queued_seq,
+    )
+    status_thread = StatusTrackingThread(
+        api_token=api_token,
+        project=project,
+        operations_repository=operations_repository,
+        errors_queue=errors_queue,
+        status_tracking_queue=status_tracking_queue,
+        last_ack_seq=last_ack_seq,
+        last_ack_timestamp=last_ack_timestamp,
+    )
+    file_uploader_thread = FileUploaderThread(
+        api_token=api_token,
+        project=project,
+        operations_repository=operations_repository,
+        errors_queue=errors_queue,
+    )
+    threads = [sender_thread, status_thread, file_uploader_thread]
+    parent_process = psutil.Process(os.getpid()).parent()
 
-    def run(self) -> None:
-        logger.info("Data synchronization started")
-        stop_event = threading.Event()
-        signal.signal(signal.SIGTERM, ft.partial(self._handle_stop_signal, stop_event))
+    def metadata_sending_threads_died() -> bool:
+        return not sender_thread.is_alive() or not status_thread.is_alive()
 
-        status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
-        operations_repository = OperationsRepository(db_path=self._operations_repository_path)
-        sender_thread = SenderThread(
-            api_token=self._api_token,
-            operations_repository=operations_repository,
-            status_tracking_queue=status_tracking_queue,
-            errors_queue=self._errors_queue,
-            family=self._family,
-            last_queued_seq=self._last_queued_seq,
-        )
-        status_thread = StatusTrackingThread(
-            api_token=self._api_token,
-            project=self._project,
-            operations_repository=operations_repository,
-            errors_queue=self._errors_queue,
-            status_tracking_queue=status_tracking_queue,
-            last_ack_seq=self._last_ack_seq,
-            last_ack_timestamp=self._last_ack_timestamp,
-        )
-        file_uploader_thread = FileUploaderThread(
-            api_token=self._api_token,
-            project=self._project,
-            operations_repository=operations_repository,
-            errors_queue=self._errors_queue,
-        )
-        threads = [sender_thread, status_thread, file_uploader_thread]
-        parent_process = psutil.Process(os.getpid()).parent()
+    def interrupt_metadata_sending_threads() -> None:
+        if sender_thread.is_alive():
+            sender_thread.interrupt()
 
-        def metadata_sending_threads_died() -> bool:
-            return not sender_thread.is_alive() or not status_thread.is_alive()
+        # we're interrupting the status thread only if
+        # - it's alive, and
+        # - the status tracking queue is empty, and
+        # - we know it will stay empty (since sender_thread is dead)
+        elif status_thread.is_alive() and status_tracking_queue.peek(max_size=1) is None:
+            status_thread.interrupt()
 
-        def interrupt_metadata_sending_threads() -> None:
-            if sender_thread.is_alive():
-                sender_thread.interrupt()
+    def file_uploader_thread_died() -> bool:
+        return not file_uploader_thread.is_alive()
 
-            # we're interrupting the status thread only if
-            # - it's alive, and
-            # - the status tracking queue is empty, and
-            # - we know it will stay empty (since sender_thread is dead)
-            elif status_thread.is_alive() and status_tracking_queue.peek(max_size=1) is None:
-                status_thread.interrupt()
+    def interrupt_file_uploader_thread() -> None:
+        file_uploader_thread.interrupt()
 
-        def file_uploader_thread_died() -> bool:
-            return not file_uploader_thread.is_alive()
+    def all_threads_died() -> bool:
+        return all(not t.is_alive() for t in threads)
 
-        def interrupt_file_uploader_thread() -> None:
-            file_uploader_thread.interrupt()
+    def close_all_threads() -> None:
+        for t in threads:
+            t.interrupt()
+        for t in threads:
+            t.join(timeout=SHUTDOWN_TIMEOUT)
+            t.close()
 
-        def all_threads_died() -> bool:
-            return all(not t.is_alive() for t in threads)
+    for thread in threads:
+        thread.start()
 
-        def close_all_threads() -> None:
-            for t in threads:
-                t.interrupt()
-            for t in threads:
-                t.join(timeout=SHUTDOWN_TIMEOUT)
-                t.close()
+    try:
+        while not stop_event.is_set():
+            for thread in threads:
+                thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
 
-        for thread in threads:
-            thread.start()
+            if metadata_sending_threads_died():
+                interrupt_file_uploader_thread()
+                interrupt_metadata_sending_threads()
 
-        try:
-            while not stop_event.is_set():
-                for thread in threads:
-                    thread.join(timeout=SYNC_PROCESS_SLEEP_TIME)
+            if file_uploader_thread_died():
+                interrupt_metadata_sending_threads()
 
-                if metadata_sending_threads_died():
-                    interrupt_file_uploader_thread()
-                    interrupt_metadata_sending_threads()
+            if all_threads_died():
+                break
 
-                if file_uploader_thread_died():
-                    interrupt_metadata_sending_threads()
+            if not _is_process_running(parent_process):
+                logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
+                break
 
-                if all_threads_died():
-                    break
+    except KeyboardInterrupt:
+        logger.debug("KeyboardInterrupt received")
+    finally:
+        logger.info("Data synchronization stopping")
+        close_all_threads()
+        operations_repository.close(cleanup_files=False)
+    logger.info("Data synchronization finished")
 
-                if not self._is_process_running(parent_process):
-                    logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
-                    break
 
-        except KeyboardInterrupt:
-            logger.debug("KeyboardInterrupt received")
-        finally:
-            logger.info("Data synchronization stopping")
-            close_all_threads()
-            operations_repository.close(cleanup_files=False)
-        logger.info("Data synchronization finished")
+def _is_process_running(process: Optional[psutil.Process]) -> bool:
+    try:
+        # Check if parent exists and is running
+        return process is not None and process.is_running()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
 
-    @staticmethod
-    def _is_process_running(process: Optional[psutil.Process]) -> bool:
-        try:
-            # Check if parent exists and is running
-            return process is not None and process.is_running()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return False
 
-    @staticmethod
-    def _handle_stop_signal(stop_event: threading.Event, signum: int, frame: Optional[FrameType]) -> None:
-        try:
-            signal_name = signal.Signals(signum).name
-        except ValueError:
-            signal_name = str(signum)
+def _handle_stop_signal(stop_event: threading.Event, signum: int, frame: Optional[FrameType]) -> None:
+    try:
+        signal_name = signal.Signals(signum).name
+    except ValueError:
+        signal_name = str(signum)
 
-        logger.debug(f"Received signal {signal_name}")
-        stop_event.set()
+    logger.debug(f"Received signal {signal_name}")
+    stop_event.set()
 
 
 class SenderThread(Daemon):

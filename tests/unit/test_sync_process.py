@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import itertools
+import multiprocessing
 import os
 import pathlib
 import tempfile
@@ -64,6 +65,7 @@ from neptune_scale.util.shared_var import (
 )
 
 metadata = Metadata(project="project", run_id="run_id")
+mp_context = multiprocessing.get_context("spawn")
 
 
 def response(request_ids: list[str], status_code: int = 200):
@@ -126,7 +128,7 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
     # given
     status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(initial_value=0)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
@@ -153,7 +155,7 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
 
     status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(initial_value=0)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
@@ -184,7 +186,7 @@ def test_sender_thread_processes_element_on_single_retryable_error(operations_re
     # given
     status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(initial_value=0)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
@@ -220,7 +222,7 @@ def test_sender_thread_fails_on_regular_error():
     operations_repository_mock.get_metadata.side_effect = [metadata]
     status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(initial_value=0)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
@@ -255,7 +257,7 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
     # given
     status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(initial_value=0)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
@@ -288,8 +290,8 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
 
 def test_sender_thread_processes_elements_with_multiple_operations_in_batch(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
-    last_queue_seq = SharedInt(initial_value=0)
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
@@ -324,8 +326,8 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
 
 def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
-    last_queue_seq = SharedInt(initial_value=0)
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
@@ -364,8 +366,8 @@ def test_sender_thread_processes_elements_with_multiple_operations_split_by_type
 
 def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
-    last_queue_seq = SharedInt(initial_value=0)
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
@@ -402,8 +404,8 @@ def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_oper
     """Verify if we calculate protobuf overhead properly for multiple small operations,
     so that the maximum message size is not exceeded."""
     status_tracking_queue = PeekableQueue()
-    errors_queue = ErrorsQueue()
-    last_queue_seq = SharedInt(initial_value=0)
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
@@ -449,8 +451,8 @@ def test_status_thread_processes_element():
     operations_repository = Mock()
     errors_queue = Mock()
     status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=-1)
-    last_ack_timestamp = SharedFloat(initial_value=-1)
+    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
@@ -501,8 +503,8 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     operations_repository = Mock()
     errors_queue = Mock()
     status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=-1)
-    last_ack_timestamp = SharedFloat(initial_value=-1)
+    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
@@ -552,8 +554,8 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
     operations_repository = Mock()
     errors_queue = Mock()
     status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=-1)
-    last_ack_timestamp = SharedFloat(initial_value=-1)
+    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
@@ -594,8 +596,8 @@ def test_status_thread_processes_element_sequence():
     operations_repository = Mock()
     errors_queue = Mock()
     status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(initial_value=-1)
-    last_ack_timestamp = SharedFloat(initial_value=-1)
+    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
+    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
