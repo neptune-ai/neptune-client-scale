@@ -657,12 +657,13 @@ class Run(AbstractContextManager):
             from neptune_scale.types import Histogram
 
 
+            run = Run(...)
+            
+            # for step in iteration
             my_histogram = Histogram(
-                bin_edges=[0, 1, 40, 89, float(+inf)],
+                bin_edges=[0, 1, 40, 89, 1000],
                 counts=[5, 82, 44, 1],
             )
-
-            run = Run(...)
             run.log_histograms(
                 histograms={
                     "layers/1/activations": my_histogram

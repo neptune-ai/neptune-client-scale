@@ -73,11 +73,10 @@ class Histogram:
 
     Args:
         bin_edges (Union[list[Union[float, int]], "np.ndarray"]): The bin edges of the histogram.
-            The maximum number of edges is 513.
-            To create unbounded bins at the beginning or end, use `inf` values.
+            Can't be empty. The maximum number of edges is 513.
         counts (Union[list[int], "np.ndarray"]): Number of data points that fall into each bin, as a 1D array.
-        densities (Union[list[Union[float, int]], "np.ndarray"]): 1D array of probability density function
-            values for each bin.
+        densities (Union[list[Union[float, int]], "np.ndarray"]): Probability density function values for each bin,
+            as a 1D array.
 
     Examples:
 
