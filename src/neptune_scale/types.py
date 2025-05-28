@@ -63,8 +63,46 @@ except ImportError:
 
 @dataclass
 class Histogram:
-    """Represents a histogram with explicit bin edges and counts/densities
-    falling into specific bins.
+    """Represents a histogram with explicit bin edges.
+
+    To specify the data distribution across bins, you can use either counts or densities. Note that n bins have n+1
+    bin edges, so the length of the `bin_edges` argument should be one more than the length of the array
+    that specifies the counts or densities.
+
+    Use the histogram as a value in the dictionary passed to `Run.log_histograms()`.
+
+    Args:
+        bin_edges (Union[list[Union[float, int]], "np.ndarray"]): The bin edges of the histogram.
+            Can't be empty. The maximum number of edges is 513.
+        counts (Union[list[int], "np.ndarray"]): Number of data points that fall into each bin, as a 1D array.
+        densities (Union[list[Union[float, int]], "np.ndarray"]): Probability density function values for each bin,
+            as a 1D array.
+
+    Examples:
+
+        ```
+        from neptune_scale.types import Histogram
+
+
+        neptune_histogram = Histogram(bin_edges=[0, 1, 10, 1000], counts=[135, 289, 45])
+        ```
+
+        Using NumPy:
+
+        ```
+        import numpy as np
+
+
+        a = np.arange(5)
+
+        # Using sample count per bin
+        counts, bin_edges = np.histogram(a, density=False)
+        neptune_histogram = Histogram(bin_edges=bin_edges, counts=counts)
+
+        # Using density values
+        densities, bin_edges = np.histogram(a, density=True)
+        neptune_histogram = Histogram(bin_edges=bin_edges, densities=densities)
+        ```
     """
 
     bin_edges: ArrayLike[Union[float, int]]
