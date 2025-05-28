@@ -157,15 +157,16 @@ def test_histograms_valid_paths(path):
     "bin_edges, counts, densities, match_message",
     (
         (None, None, None, "Bin edges must be of type"),
-        ([], None, None, "counts and densities must be set"),  # no values field is set
-        ([], [], [], "cannot be set together"),
+        ([1], None, None, "counts and densities must be set"),  # no values field is set
+        ([1], [], [], "cannot be set together"),
         ([1, 2], [1], [1], "cannot be set together"),  # counts and densities are both set
         ([1, 2], [1, 2], None, "counts must be of length equal to bin_edges - 1"),
         ([1, 2], list(range(100)), None, "counts must be of length equal to bin_edges - 1"),
         ([1, 2], None, [1, 2], "densities must be of length equal to bin_edges - 1"),
         ([1, 2], None, list(range(100)), "densities must be of length equal to bin_edges - 1"),
-        (list(range(514)), list(range(513)), None, "bin_edges must be of length"),
-        (list(range(1000)), list(range(999)), None, "bin_edges must be of length"),
+        ([], [1], None, "bin edges must not be empty"),
+        (list(range(514)), list(range(513)), None, "must have at most"),
+        (list(range(1000)), list(range(999)), None, "must have at most"),
         ([1, "s"], [1], None, "must be numeric"),
         ([1, 2, 3], [1, "s"], None, "must be numeric"),
         ([1, 2], [1.0], None, "must be numeric"),  # counts must be strictly ints

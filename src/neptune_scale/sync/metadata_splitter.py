@@ -525,9 +525,9 @@ def _stream_histograms(histograms: dict[str, Histogram]) -> Iterator[tuple[str, 
             )
             continue
 
-        if len(value.bin_edges) > _max_histogram_bin_edges:
+        if not bin_edges or len(bin_edges) > _max_histogram_bin_edges:
             _warn_or_raise_on_invalid_value(
-                f"Histogram bin_edges must be of length <= {_max_histogram_bin_edges} "
+                f"Histogram bin edges must not be empty and must have at most {_max_histogram_bin_edges} elements "
                 f"(got {len(value.bin_edges)} bin edges at `{key}`)"
             )
             continue
