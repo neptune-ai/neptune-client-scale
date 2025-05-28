@@ -658,7 +658,7 @@ class Run(AbstractContextManager):
 
 
             run = Run(...)
-            
+
             # for step in iteration
             my_histogram = Histogram(
                 bin_edges=[0, 1, 40, 89, 1000],
