@@ -81,12 +81,9 @@ from neptune_scale.sync.lag_tracking import LagTracker
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
-    MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
-    MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
     OPERATION_REPOSITORY_POLL_SLEEP_TIME,
     STOP_MESSAGE_FREQUENCY,
 )
-from neptune_scale.sync.sequence_tracker import SequenceTracker
 from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.sync_process import run_sync_process
 from neptune_scale.util import envs
@@ -97,10 +94,6 @@ from neptune_scale.util.envs import (
 )
 from neptune_scale.util.generate_run_id import generate_run_id
 from neptune_scale.util.logger import get_logger
-from neptune_scale.util.shared_var import (
-    SharedFloat,
-    SharedInt,
-)
 from neptune_scale.util.timer import Timer
 
 logger = get_logger()
@@ -265,7 +258,6 @@ class Run(AbstractContextManager):
                 raise NeptuneDatabaseConflict(path=operations_repository_path.name)
             self._operations_repo.save_metadata(self._project, self._run_id)
 
-            self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._console_log_capture: Optional[ConsoleLogCaptureThread] = (
                 None
                 if not enable_console_log_capture
@@ -283,12 +275,10 @@ class Run(AbstractContextManager):
         else:
             self._storage_directory_path = None
             self._operations_repo = None
-            self._sequence_tracker = None
             self._console_log_capture = None
             self._logging_enabled = False
 
         if mode == "async":
-            assert self._sequence_tracker is not None
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
 
@@ -303,10 +293,6 @@ class Run(AbstractContextManager):
                 on_warning_callback=on_warning_callback,
             )
 
-            self._last_queued_seq: Optional[SharedInt] = SharedInt(spawn_mp_context, -1)
-            self._last_ack_seq: Optional[SharedInt] = SharedInt(spawn_mp_context, -1)
-            self._last_ack_timestamp: Optional[SharedFloat] = SharedFloat(spawn_mp_context, -1)
-
             self._sync_process: Optional[BaseProcess] = spawn_mp_context.Process(
                 name="SyncProcess",
                 target=run_sync_process,
@@ -316,9 +302,6 @@ class Run(AbstractContextManager):
                     "operations_repository_path": operations_repository_path,
                     "errors_queue": self._errors_queue,
                     "api_token": self._api_token,
-                    "last_queued_seq": self._last_queued_seq,
-                    "last_ack_seq": self._last_ack_seq,
-                    "last_ack_timestamp": self._last_ack_timestamp,
                 },
             )
             self._sync_process_supervisor: Optional[ProcessSupervisor] = ProcessSupervisor(
@@ -328,8 +311,7 @@ class Run(AbstractContextManager):
             self._lag_tracker: Optional[LagTracker] = None
             if async_lag_threshold is not None and on_async_lag_callback is not None:
                 self._lag_tracker = LagTracker(
-                    sequence_tracker=self._sequence_tracker,
-                    last_ack_timestamp=self._last_ack_timestamp,
+                    operations_repository_path=operations_repository_path,
                     async_lag_threshold=async_lag_threshold,
                     on_async_lag_callback=on_async_lag_callback,
                 )
@@ -355,9 +337,6 @@ class Run(AbstractContextManager):
         else:
             self._errors_queue = None
             self._errors_monitor = None
-            self._last_queued_seq = None
-            self._last_ack_seq = None
-            self._last_ack_timestamp = None
             self._sync_process = None
             self._sync_process_supervisor = None
             self._lag_tracker = None
@@ -506,7 +485,7 @@ class Run(AbstractContextManager):
         fork_run_id: Optional[str],
         fork_step: Optional[Union[int, float]],
     ) -> None:
-        if self._operations_repo is None or self._sequence_tracker is None:
+        if self._operations_repo is None:
             logger.debug("Run is in mode that doesn't support creating runs.")
             return
 
@@ -525,8 +504,7 @@ class Run(AbstractContextManager):
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
         )
 
-        sequence_id = self._operations_repo.save_create_run(create_run)
-        self._sequence_tracker.update_sequence_id(sequence_id)
+        self._operations_repo.save_create_run(create_run)
 
     def log_metrics(
         self,
@@ -894,7 +872,6 @@ class Run(AbstractContextManager):
             return
 
         assert self._operations_repo is not None
-        assert self._sequence_tracker is not None
 
         if timestamp is None:
             timestamp = datetime.now()
@@ -940,8 +917,7 @@ class Run(AbstractContextManager):
         if all_file_upload_requests:
             self._operations_repo.save_file_upload_requests([req for _, req in all_file_upload_requests])
 
-        sequence_id = self._operations_repo.save_update_run_snapshots(operations)
-        self._sequence_tracker.update_sequence_id(sequence_id)
+        self._operations_repo.save_update_run_snapshots(operations)
 
     @staticmethod
     def _file_request_to_file_ref_data(file_request: FileUploadRequest) -> FileRefData:
@@ -1011,93 +987,7 @@ class Run(AbstractContextManager):
 
         return result
 
-    def _wait(
-        self,
-        phrase: str,
-        sleep_time: float,
-        wait_seq: Optional[SharedInt],
-        timeout: Optional[float] = None,
-        verbose: bool = True,
-    ) -> bool:
-        if wait_seq is None or self._sequence_tracker is None:
-            return True
-
-        if timeout is not None and timeout <= 0:
-            return False
-
-        if verbose:
-            logger.info(f"Waiting for all operations to be {phrase}")
-
-        if timeout is None and verbose:
-            logger.warning("No timeout specified. Waiting indefinitely")
-
-        timer = Timer(timeout)
-        wait_time = sleep_time
-        last_print_timestamp: Optional[float] = None
-
-        while True:
-            try:
-                with self._lock:
-                    if self._sync_process is None or not self._sync_process.is_alive():
-                        with wait_seq:
-                            value = wait_seq.value
-                        if value >= self._sequence_tracker.last_sequence_id:
-                            if verbose:
-                                logger.info(f"All operations were {phrase}")
-                            return True
-                        else:
-                            logger.warning("Waiting interrupted because sync process is not running")
-                            return False
-
-                    # Handle the case where we get notified on `wait_seq` before we actually wait.
-                    # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
-                    if wait_seq.value >= self._sequence_tracker.last_sequence_id:
-                        return True
-
-                wait_time = min(wait_time, timer.remaining_time_or_inf())
-                with wait_seq:
-                    wait_seq.wait(timeout=wait_time)
-                    value = wait_seq.value
-
-                last_queued_sequence_id = self._sequence_tracker.last_sequence_id
-
-                if value == -1:
-                    if last_queued_sequence_id != -1:
-                        last_print_timestamp = print_message(
-                            f"Waiting. No operations were {phrase} yet. Operations to sync: %s",
-                            last_queued_sequence_id,
-                            last_print=last_print_timestamp,
-                            verbose=verbose,
-                        )
-                    else:
-                        last_print_timestamp = print_message(
-                            f"Waiting. No operations were {phrase} yet",
-                            last_print=last_print_timestamp,
-                            verbose=verbose,
-                        )
-                elif value < last_queued_sequence_id:
-                    last_print_timestamp = print_message(
-                        f"Waiting for remaining %d operation(s) to be {phrase}",
-                        last_queued_sequence_id - value,
-                        last_print=last_print_timestamp,
-                        verbose=verbose,
-                    )
-                else:
-                    # Reaching the last queued sequence ID means that all operations were submitted
-                    if verbose:
-                        logger.info(f"All operations were {phrase}")
-                    return True
-
-                if timer.is_expired():
-                    if verbose:
-                        logger.info("Waiting interrupted because timeout was reached")
-                    return False
-            except KeyboardInterrupt:
-                if verbose:
-                    logger.warning("Waiting interrupted by user")
-                return False
-
-    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
+    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
         """
         Waits until all metadata is submitted to Neptune for processing.
 
@@ -1109,15 +999,8 @@ class Run(AbstractContextManager):
             verbose (bool): If True (default), prints messages about the waiting process.
         """
         timer = Timer(timeout)
-        status_submitted = self._wait(
-            phrase="submitted",
-            sleep_time=MINIMAL_WAIT_FOR_PUT_SLEEP_TIME,
-            wait_seq=self._last_queued_seq,
-            timeout=timer.remaining_time(),
-            verbose=verbose,
-        )
-        status_files = self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
-        return status_submitted and status_files
+        self._wait_for_operation_submission(timeout=timer.remaining_time(), verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
@@ -1130,15 +1013,135 @@ class Run(AbstractContextManager):
             verbose (bool): If True (default), prints messages about the waiting process.
         """
         timer = Timer(timeout)
-        status_processed = self._wait(
-            phrase="processed",
-            sleep_time=MINIMAL_WAIT_FOR_ACK_SLEEP_TIME,
-            wait_seq=self._last_ack_seq,
-            timeout=timer.remaining_time(),
-            verbose=verbose,
-        )
-        status_files = self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
-        return status_processed and status_files
+        self._wait_for_operation_processing(timeout=timer.remaining_time(), verbose=verbose)
+        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
+
+    def _wait_for_operation_submission(
+        self,
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+    ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
+        if verbose:
+            logger.info("Waiting for all operations to be processed")
+
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        timer = Timer(timeout)
+        sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
+        last_print_timestamp: Optional[float] = None
+
+        while True:
+            try:
+                with self._lock:
+                    if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        break
+                    assert self._operations_repo is not None
+
+                # assumption: submissions are always behind or equal to the logged operations
+                submitted_sequence_id_range = self._operations_repo.get_operation_submission_sequence_id_range()
+                logged_sequence_id_range = self._operations_repo.get_operations_sequence_id_range()
+
+                if submitted_sequence_id_range is not None and logged_sequence_id_range is not None:
+                    _, max_submitted_sequence_id = submitted_sequence_id_range
+                    _, max_logged_sequence_id = logged_sequence_id_range
+                    operations_count = max(0, max_logged_sequence_id - max_submitted_sequence_id)
+
+                    if operations_count > 0:
+                        last_print_timestamp = print_message(
+                            "Waiting for remaining %d operation(s) to be submitted",
+                            operations_count,
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
+                        )
+                elif logged_sequence_id_range is not None:
+                    min_logged_sequence_id, max_logged_sequence_id = logged_sequence_id_range
+                    operations_count = max(0, max_logged_sequence_id - min_logged_sequence_id + 1)
+
+                    if operations_count > 0:
+                        last_print_timestamp = print_message(
+                            "Waiting. No operations were submitted yet. Operations to sync: %s",
+                            operations_count,
+                            last_print=last_print_timestamp,
+                            verbose=verbose,
+                        )
+                else:
+                    operations_count = 0
+
+                if operations_count > 0:
+                    if timer.is_expired():
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    sleep_time = min(sleep_time, timer.remaining_time_or_inf())
+
+                    time.sleep(sleep_time)
+                else:
+                    if verbose:
+                        logger.info("All operations were submitted")
+                    break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
+
+    def _wait_for_operation_processing(
+        self,
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+    ) -> None:
+        if timeout is not None and timeout <= 0:
+            return
+
+        if verbose:
+            logger.info("Waiting for all operations to be processed")
+
+        if timeout is None and verbose:
+            logger.warning("No timeout specified. Waiting indefinitely")
+
+        operations_count_limit = 1_000_000
+        timer = Timer(timeout)
+        sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
+        last_print_timestamp: Optional[float] = None
+
+        while True:
+            try:
+                with self._lock:
+                    if self._sync_process is None or not self._sync_process.is_alive():
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        break
+                    assert self._operations_repo is not None
+
+                operations_count = self._operations_repo.get_operation_count(limit=operations_count_limit)
+
+                if operations_count > 0:
+                    last_print_timestamp = print_message(
+                        "Waiting for remaining %d%s operation(s) to be processed",
+                        operations_count,
+                        "" if operations_count < operations_count_limit else "+",
+                        last_print=last_print_timestamp,
+                        verbose=verbose,
+                    )
+
+                    if timer.is_expired():
+                        if verbose:
+                            logger.info("Waiting interrupted because timeout was reached")
+                        break
+                    sleep_time = min(sleep_time, timer.remaining_time_or_inf())
+
+                    time.sleep(sleep_time)
+                else:
+                    if verbose:
+                        logger.info("All operations were processed")
+                    break
+            except KeyboardInterrupt:
+                if verbose:
+                    logger.warning("Waiting interrupted by user")
+                return
 
     def _wait_for_file_upload(
         self,
