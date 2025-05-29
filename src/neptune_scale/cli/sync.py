@@ -34,11 +34,7 @@ from neptune_scale.sync.operations_repository import (
     SequenceId,
 )
 from neptune_scale.sync.sync_process import run_sync_process
-from neptune_scale.util import (
-    SharedFloat,
-    SharedInt,
-    get_logger,
-)
+from neptune_scale.util import get_logger
 from neptune_scale.util.timer import Timer
 
 logger = get_logger()
@@ -87,9 +83,6 @@ class SyncRunner:
 
         self._spawn_mp_context = multiprocessing.get_context("spawn")
         self._errors_queue: ErrorsQueue = ErrorsQueue(self._spawn_mp_context)
-        self._last_queued_seq = SharedInt(self._spawn_mp_context, -1)
-        self._last_ack_seq = SharedInt(self._spawn_mp_context, -1)
-        self._last_ack_timestamp = SharedFloat(self._spawn_mp_context, -1)
 
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._file_upload_request_init_count: Optional[int] = None
@@ -99,7 +92,7 @@ class SyncRunner:
     def start(
         self,
     ) -> None:
-        self._log_seq_id_range = self._operations_repository.get_sequence_id_range()
+        self._log_seq_id_range = self._operations_repository.get_operations_sequence_id_range()
         self._file_upload_request_init_count = self._operations_repository.get_file_upload_requests_count()
 
         if self._log_seq_id_range is None:
@@ -120,9 +113,6 @@ class SyncRunner:
                 "operations_repository_path": self._run_log_file,
                 "errors_queue": self._errors_queue,
                 "api_token": self._api_token,
-                "last_queued_seq": self._last_queued_seq,
-                "last_ack_seq": self._last_ack_seq,
-                "last_ack_timestamp": self._last_ack_timestamp,
             },
         )
 
@@ -187,14 +177,12 @@ class SyncRunner:
             return last_progress
         assert self._log_seq_id_range is not None
 
-        with self._last_ack_seq:
-            self._last_ack_seq.wait(timeout=wait_time)
-            last_ack_seq_id = self._last_ack_seq.value
+        log_seq_id_range = self._operations_repository.get_operations_sequence_id_range()
 
-        if last_ack_seq_id != -1:
-            acked_count = last_ack_seq_id - self._log_seq_id_range[0] + 1
-        else:
-            acked_count = 0
+        acked_count = 0
+        if log_seq_id_range is not None:
+            acked_count = log_seq_id_range[0] - self._log_seq_id_range[0]
+            time.sleep(wait_time)
 
         return last_progress.updated(progress=acked_count)
 

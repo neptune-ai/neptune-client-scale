@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 
 import azure.core.exceptions
@@ -13,6 +12,7 @@ from neptune_scale.sync.operations_repository import (
     Metadata,
     Operation,
     OperationsRepository,
+    OperationSubmission,
     OperationType,
     SequenceId,
 )
@@ -23,13 +23,10 @@ __all__ = ("run_sync_process",)
 import datetime
 import functools as ft
 import os
-import queue
 import signal
 import threading
 from types import FrameType
 from typing import (
-    Generic,
-    NamedTuple,
     Optional,
     TypeVar,
 )
@@ -102,8 +99,6 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.util import (
     Daemon,
-    SharedFloat,
-    SharedInt,
     envs,
     get_logger,
 )
@@ -142,45 +137,11 @@ CODE_TO_ERROR: dict[IngestCode.ValueType, Optional[type[Exception]]] = {
 }
 
 
-class StatusTrackingElement(NamedTuple):
-    sequence_id: SequenceId
-    timestamp: datetime.datetime
-    request_id: str
-
-
 def code_to_exception(code: IngestCode.ValueType) -> Exception:
     if code in CODE_TO_ERROR:
         error = CODE_TO_ERROR[code]
         return error()  # type: ignore
     return NeptuneUnexpectedError(reason=f"Unexpected ingestion error code: {code}")
-
-
-class PeekableQueue(Generic[T]):
-    def __init__(self) -> None:
-        self._lock: threading.RLock = threading.RLock()
-        self._queue: queue.Queue[T] = queue.Queue()
-
-    def put(self, element: T) -> None:
-        with self._lock:
-            self._queue.put(element)
-
-    def peek(self, max_size: int) -> Optional[list[T]]:
-        with self._lock:
-            size = self._queue.qsize()
-            if size == 0:
-                return None
-
-            items = []
-            for i in range(min(size, max_size)):
-                item = self._queue.queue[i]
-                items.append(item)
-            return items
-
-    def commit(self, n: int) -> None:
-        with self._lock:
-            size = self._queue.qsize()
-            for _ in range(min(size, n)):
-                self._queue.get()
 
 
 def run_sync_process(
@@ -189,32 +150,23 @@ def run_sync_process(
     api_token: str,
     project: str,
     family: str,
-    last_queued_seq: SharedInt,
-    last_ack_seq: SharedInt,
-    last_ack_timestamp: SharedFloat,
 ) -> None:
     logger.info("Data synchronization started")
     stop_event = threading.Event()
     signal.signal(signal.SIGTERM, ft.partial(_handle_stop_signal, stop_event))
 
-    status_tracking_queue: PeekableQueue[StatusTrackingElement] = PeekableQueue()
     operations_repository = OperationsRepository(db_path=operations_repository_path)
     sender_thread = SenderThread(
         api_token=api_token,
         operations_repository=operations_repository,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
         family=family,
-        last_queued_seq=last_queued_seq,
     )
     status_thread = StatusTrackingThread(
         api_token=api_token,
         project=project,
         operations_repository=operations_repository,
         errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
     )
     file_uploader_thread = FileUploaderThread(
         api_token=api_token,
@@ -234,9 +186,9 @@ def run_sync_process(
 
         # we're interrupting the status thread only if
         # - it's alive, and
-        # - the status tracking queue is empty, and
+        # - the operation statuses in operations repository are empty, and
         # - we know it will stay empty (since sender_thread is dead)
-        elif status_thread.is_alive() and status_tracking_queue.peek(max_size=1) is None:
+        elif status_thread.is_alive() and operations_repository.get_operation_submission_count(limit=1) == 0:
             status_thread.interrupt()
 
     def file_uploader_thread_died() -> bool:
@@ -310,18 +262,15 @@ class SenderThread(Daemon):
         api_token: str,
         family: str,
         operations_repository: OperationsRepository,
-        status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
-        last_queued_seq: SharedInt,
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
         self._family: str = family
         self._operations_repository: OperationsRepository = operations_repository
-        self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
-        self._last_queued_seq: SharedInt = last_queued_seq
+        self._last_queued_seq: SequenceId = SequenceId(-1)
 
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
@@ -348,11 +297,9 @@ class SenderThread(Daemon):
                 - len(self._metadata.project)
                 - 200  # 200 bytes for RunOperation overhead,
             )
-            with self._last_queued_seq:
-                sequence_id = SequenceId(self._last_queued_seq.value)
 
             while operations := self._operations_repository.get_operations(
-                from_exclusive=sequence_id, up_to_bytes=max_operations_size
+                from_exclusive=self._last_queued_seq, up_to_bytes=max_operations_size
             ):
                 partitioned_operations = _partition_by_type_and_size(
                     operations, self._metadata.run_id, self._metadata.project, max_operations_size
@@ -361,7 +308,7 @@ class SenderThread(Daemon):
                 logger.debug(
                     "Start: submit %d RunOperations. Last queued seq: #%d",
                     len(partitioned_operations),
-                    sequence_id,
+                    self._last_queued_seq,
                 )
 
                 for run_operation, sequence_id, timestamp in partitioned_operations:
@@ -373,33 +320,30 @@ class SenderThread(Daemon):
 
                         last_request_id = request_ids.request_ids[-1]
 
-                        self._status_tracking_queue.put(
-                            StatusTrackingElement(
-                                sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp
-                            )
+                        self._operations_repository.save_operation_submissions(
+                            [
+                                OperationSubmission(
+                                    sequence_id=sequence_id,
+                                    request_id=last_request_id,
+                                    timestamp=int(timestamp.timestamp() * 1000),
+                                )
+                            ]
                         )
 
-                        # Update Last PUT sequence id and notify threads in the main process
-                        with self._last_queued_seq:
-                            self._last_queued_seq.value = sequence_id
-                            self._last_queued_seq.notify_all()
+                        self._last_queued_seq = sequence_id
                     except NeptuneRetryableError as e:
                         self._errors_queue.put(e)
                         # Sleep before retry
                         return
 
-                if logger.isEnabledFor(logging.DEBUG):
-                    # Don't access multiprocessing.Value if not in debug mode
-                    logger.debug(
-                        "Done: submit %d RunOperations. Last queued seq: #%d",
-                        len(partitioned_operations),
-                        self._last_queued_seq.value,
-                    )
+                logger.debug(
+                    "Done: submit %d RunOperations. Last queued seq: #%d",
+                    len(partitioned_operations),
+                    self._last_queued_seq,
+                )
 
         except Exception as e:
             self._errors_queue.put(e)
-            with self._last_queued_seq:
-                self._last_queued_seq.notify_all()
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
@@ -473,9 +417,6 @@ class StatusTrackingThread(Daemon):
         project: str,
         operations_repository: OperationsRepository,
         errors_queue: ErrorsQueue,
-        status_tracking_queue: PeekableQueue[StatusTrackingElement],
-        last_ack_seq: SharedInt,
-        last_ack_timestamp: SharedFloat,
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
@@ -483,21 +424,12 @@ class StatusTrackingThread(Daemon):
         self._project: str = project
         self._operations_repository: OperationsRepository = operations_repository
         self._errors_queue: ErrorsQueue = errors_queue
-        self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
-        self._last_ack_seq: SharedInt = last_ack_seq
-        self._last_ack_timestamp: SharedFloat = last_ack_timestamp
 
         self._backend: Optional[ApiClient] = None
 
     def close(self) -> None:
         if self._backend is not None:
             self._backend.close()
-
-    def get_next(self) -> Optional[list[StatusTrackingElement]]:
-        try:
-            return self._status_tracking_queue.peek(max_size=MAX_REQUESTS_STATUS_BATCH_SIZE)
-        except queue.Empty:
-            return None
 
     @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
     @with_api_errors_handling
@@ -516,10 +448,9 @@ class StatusTrackingThread(Daemon):
 
     def work(self) -> None:
         try:
-            while (batch := self.get_next()) is not None:
+            while batch := self._operations_repository.get_operation_submissions(limit=MAX_REQUESTS_STATUS_BATCH_SIZE):
                 request_ids = [element.request_id for element in batch]
                 sequence_ids = [element.sequence_id for element in batch]
-                timestamps = [element.timestamp for element in batch]
 
                 try:
                     response = self.check_batch(request_ids=request_ids)
@@ -530,8 +461,8 @@ class StatusTrackingThread(Daemon):
                     # Small give up, sleep before retry
                     break
 
-                operations_to_commit, processed_sequence_id, processed_timestamp, fatal_sync_error = 0, None, None, None
-                for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
+                processed_sequence_id, fatal_sync_error = None, None
+                for request_status, request_sequence_id in zip(response.statuses, sequence_ids):
                     if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
                         logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
                         # Request status not ready yet, sleep and retry
@@ -550,39 +481,25 @@ class StatusTrackingThread(Daemon):
                     for error in errors:
                         self._errors_queue.put(error)
 
-                    operations_to_commit += 1
-                    processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
+                    processed_sequence_id = request_sequence_id
 
-                if operations_to_commit > 0:
-                    self._status_tracking_queue.commit(operations_to_commit)
+                if processed_sequence_id is not None:
+                    logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
 
-                    # Update Last ACK sequence id and notify threads in the main process
-                    if processed_sequence_id is not None:
-                        logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
-
-                        self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
-
-                        with self._last_ack_seq:
-                            self._last_ack_seq.value = processed_sequence_id
-                            self._last_ack_seq.notify_all()
-
-                    # Update Last ACK timestamp and notify threads in the main process
-                    if processed_timestamp is not None:
-                        with self._last_ack_timestamp:
-                            self._last_ack_timestamp.value = processed_timestamp.timestamp()
-                            self._last_ack_timestamp.notify_all()
+                    # TODO: delete in a single transaction
+                    self._operations_repository.delete_operation_submissions(up_to_seq_id=processed_sequence_id)
+                    self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
 
                 if fatal_sync_error is not None:
                     raise fatal_sync_error
 
-                if operations_to_commit == 0:
+                if processed_sequence_id is None:
                     # Sleep before retry
                     break
 
         except Exception as e:
             self._errors_queue.put(e)
             self.interrupt()
-            self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e
 
     @staticmethod
