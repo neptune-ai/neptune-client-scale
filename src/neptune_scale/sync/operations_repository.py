@@ -64,9 +64,6 @@ class Operation:
         return datetime.fromtimestamp(self.timestamp / 1000)
 
 
-int(time.time() * 1000)
-
-
 @dataclass(frozen=True)
 class OperationSubmission:
     sequence_id: SequenceId
@@ -489,7 +486,7 @@ class OperationsRepository:
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "file_upload_requests", limit=limit)
 
-    def save_operation_submissions(self, statuses: list[OperationSubmission]) -> SequenceId:
+    def save_operation_submissions(self, submissions: list[OperationSubmission]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
@@ -497,12 +494,12 @@ class OperationsRepository:
                     INSERT INTO run_operation_submission (sequence_id, timestamp, request_id)
                     VALUES (?, ?, ?)
                     """,
-                    [(status.sequence_id, status.timestamp, status.request_id) for status in statuses],
+                    [(status.sequence_id, status.timestamp, status.request_id) for status in submissions],
                 )
                 cursor.execute("SELECT last_insert_rowid()")
                 return SequenceId(cursor.fetchone()[0])
 
-    def get_operation_submissions(self, limit: Optional[int] = None) -> list[OperationSubmission]:
+    def get_operation_submissions(self, limit: int) -> list[OperationSubmission]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(

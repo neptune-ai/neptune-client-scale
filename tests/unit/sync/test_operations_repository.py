@@ -21,7 +21,9 @@ from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
     OperationsRepository,
+    OperationSubmission,
     OperationType,
+    RequestId,
     SequenceId,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
@@ -597,6 +599,87 @@ def test_delete_file_upload_requests_empty(operations_repo):
     # Then
     requests = operations_repo.get_file_upload_requests(n=10)
     assert len(requests) == 3
+
+
+@pytest.mark.parametrize("limit", [0, 1, 3, 5, 10])
+def test_get_operation_submissions(operations_repo, limit):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When - get operations up to a size that should include the first 2 operations
+    result = operations_repo.get_operation_submissions(limit=limit)
+
+    # Then
+    assert result == submissions[:limit]
+
+
+def test_get_operation_submissions_empty_db(operations_repo):
+    # Given
+    submissions = operations_repo.get_operation_submissions(limit=10)
+
+    assert len(submissions) == 0
+
+
+@pytest.mark.parametrize("range_from, range_to", [(1, 5), (2, 4), (0, 10)])
+def test_get_operation_submission_sequence_id_range(operations_repo, range_from, range_to):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i)
+        for i in range(range_from, range_to + 1)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When
+    start_end = operations_repo.get_operation_submission_sequence_id_range()
+
+    # Then
+    assert start_end == (range_from, range_to)
+
+
+def test_get_operation_submission_sequence_id_range_empty_db(operations_repo):
+    # Given
+    start_end = operations_repo.get_operation_submission_sequence_id_range()
+    assert start_end is None
+
+
+def test_delete_operation_submission(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
+
+    # When - delete the first 3 operations
+    deleted_count = operations_repo.delete_operation_submissions(up_to_seq_id=result[2].sequence_id)
+
+    # Then
+    assert deleted_count == 3
+
+    # when
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 2
+
+
+def test_delete_operation_submission_invalid_id(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5, 10)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When - try to delete with a non-positive sequence ID
+    deleted_count = operations_repo.delete_operations(up_to_seq_id=SequenceId(0))
+
+    # Then
+    assert deleted_count == 0
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
 
 
 @pytest.mark.parametrize("cleanup_files", [True, False])
