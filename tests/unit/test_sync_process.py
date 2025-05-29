@@ -6,7 +6,6 @@ import os
 import pathlib
 import tempfile
 import time
-from datetime import timedelta
 from pathlib import Path
 from unittest.mock import (
     AsyncMock,
@@ -47,21 +46,17 @@ from neptune_scale.sync.operations_repository import (
     Metadata,
     Operation,
     OperationsRepository,
+    OperationSubmission,
     OperationType,
+    RequestId,
     SequenceId,
 )
 from neptune_scale.sync.parameters import MAX_REQUEST_SIZE_BYTES
 from neptune_scale.sync.sync_process import (
     FileUploaderThread,
-    PeekableQueue,
     SenderThread,
-    StatusTrackingElement,
     StatusTrackingThread,
     code_to_exception,
-)
-from neptune_scale.util.shared_var import (
-    SharedFloat,
-    SharedInt,
 )
 
 metadata = Metadata(project="project", run_id="run_id")
@@ -126,17 +121,13 @@ def operations_repo():
 
 def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock):
     # given
-    status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -153,17 +144,13 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
 def test_sender_thread_processes_single_element(operations_repository_mock):
     # given
 
-    status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -184,17 +171,13 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
 
 def test_sender_thread_processes_element_on_single_retryable_error(operations_repository_mock):
     # given
-    status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -220,17 +203,13 @@ def test_sender_thread_fails_on_regular_error():
     # given
     operations_repository_mock = Mock()
     operations_repository_mock.get_metadata.side_effect = [metadata]
-    status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -255,17 +234,13 @@ def test_sender_thread_fails_on_regular_error():
 
 def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations_repository_mock):
     # given
-    status_tracking_queue = Mock()
     errors_queue = Mock()
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -289,17 +264,13 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
 
 
 def test_sender_thread_processes_elements_with_multiple_operations_in_batch(operations_repo):
-    status_tracking_queue = PeekableQueue()
     errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -316,26 +287,21 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
     # then
     assert backend.submit.call_count == 1
 
-    tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)  # type: ignore
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
     assert len(tracking) == 1
     assert tracking[0].sequence_id == last_sequence_id
 
     assert len(operations_repo.get_operations(MAX_REQUEST_SIZE_BYTES)) == 10
-    assert last_queue_seq.value == last_sequence_id
 
 
 def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
-    status_tracking_queue = PeekableQueue()
     errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -356,26 +322,21 @@ def test_sender_thread_processes_elements_with_multiple_operations_split_by_type
     # then
     assert backend.submit.call_count == 4
 
-    tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
     assert len(tracking) == 4
     assert tracking[-1].sequence_id == last_sequence_id
 
-    assert operations_repo.get_sequence_id_range() == (1, last_sequence_id)
-    assert last_queue_seq.value == last_sequence_id
+    assert operations_repo.get_operations_sequence_id_range() == (1, last_sequence_id)
 
 
 def test_sender_thread_processes_big_operations_in_batches(operations_repo):
-    status_tracking_queue = PeekableQueue()
     errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -392,28 +353,23 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     # then
     assert backend.submit.call_count == 3
 
-    tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
     assert len(tracking) == 3
     assert tracking[-1].sequence_id == last_sequence_id
 
-    assert operations_repo.get_sequence_id_range() == (1, last_sequence_id)
-    assert last_queue_seq.value == last_sequence_id
+    assert operations_repo.get_operations_sequence_id_range() == (1, last_sequence_id)
 
 
 def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_operations(operations_repo):
     """Verify if we calculate protobuf overhead properly for multiple small operations,
     so that the maximum message size is not exceeded."""
-    status_tracking_queue = PeekableQueue()
     errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
-    last_queue_seq = SharedInt(multiprocessing_context=mp_context, initial_value=0)
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
-        last_queued_seq=last_queue_seq,
     )
     sender_thread._backend = backend
 
@@ -438,38 +394,33 @@ def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_oper
     # then
     assert backend.submit.call_count > 1
 
-    tracking: list[StatusTrackingElement] = status_tracking_queue.peek(10)
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
     assert len(tracking) == backend.submit.call_count
     assert tracking[-1].sequence_id == last_sequence_id
 
-    assert operations_repo.get_sequence_id_range() == (1, last_sequence_id)
-    assert last_queue_seq.value == last_sequence_id
+    assert operations_repo.get_operations_sequence_id_range() == (1, last_sequence_id)
 
 
 def test_status_thread_processes_element():
     # given
     operations_repository = Mock()
     errors_queue = Mock()
-    status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
     )
     status_thread._backend = backend
 
     # and
-    status_element = StatusTrackingElement(
-        sequence_id=SequenceId(0), timestamp=datetime.datetime.now(), request_id="id0"
+    status_element = OperationSubmission(
+        sequence_id=SequenceId(0),
+        timestamp=int(datetime.datetime.now().timestamp() / 1000),
+        request_id=RequestId("id0"),
     )
-    status_tracking_queue.peek.side_effect = [[status_element], None]
+    operations_repository.get_operation_submissions.side_effect = [[status_element], None]
 
     # and
     backend.check_batch.side_effect = [
@@ -482,9 +433,7 @@ def test_status_thread_processes_element():
     # then
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=SequenceId(0))
     errors_queue.put.assert_not_called()
-    status_tracking_queue.commit.assert_called_once_with(1)
-    assert last_ack_seq.value == status_element.sequence_id
-    assert last_ack_timestamp.value == status_element.timestamp.timestamp()
+    operations_repository.delete_operation_submissions.assert_called_once_with(up_to_seq_id=SequenceId(0))
 
 
 @pytest.mark.parametrize(
@@ -502,26 +451,22 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     # given
     operations_repository = Mock()
     errors_queue = Mock()
-    status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
     )
     status_thread._backend = backend
 
     # and
-    status_element = StatusTrackingElement(
-        sequence_id=SequenceId(0), timestamp=datetime.datetime.now(), request_id="id0"
+    status_element = OperationSubmission(
+        sequence_id=SequenceId(0),
+        timestamp=int(datetime.datetime.now().timestamp() / 1000),
+        request_id=RequestId("id0"),
     )
-    status_tracking_queue.peek.side_effect = [[status_element], None]
+    operations_repository.get_operation_submissions.side_effect = [[status_element], None]
 
     # and
     backend.check_batch.side_effect = [
@@ -534,9 +479,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     # then
     errors_queue.put.assert_called_once()
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
-    status_tracking_queue.commit.assert_called_once_with(1)
-    assert last_ack_seq.value == status_element.sequence_id
-    assert last_ack_timestamp.value == status_element.timestamp.timestamp()
+    operations_repository.delete_operation_submissions.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
 
 
 @pytest.mark.parametrize(
@@ -553,26 +496,22 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
     # given
     operations_repository = Mock()
     errors_queue = Mock()
-    status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
     )
     status_thread._backend = backend
 
     # and
-    status_element = StatusTrackingElement(
-        sequence_id=SequenceId(0), timestamp=datetime.datetime.now(), request_id="id0"
+    status_element = OperationSubmission(
+        sequence_id=SequenceId(0),
+        timestamp=int(datetime.datetime.now().timestamp() / 1000),
+        request_id=RequestId("id0"),
     )
-    status_tracking_queue.peek.side_effect = [[status_element], None]
+    operations_repository.get_operation_submissions.side_effect = [[status_element], None]
 
     # and
     backend.check_batch.side_effect = [
@@ -586,39 +525,38 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
     # then
     errors_queue.put.assert_called_once()
     operations_repository.delete_operations.assert_not_called()
-    status_tracking_queue.commit.assert_not_called()
-    assert last_ack_seq.value == -1
-    assert last_ack_timestamp.value == -1
+    operations_repository.delete_operation_submissions.assert_not_called()
 
 
 def test_status_thread_processes_element_sequence():
     # given
     operations_repository = Mock()
     errors_queue = Mock()
-    status_tracking_queue = Mock()
-    last_ack_seq = SharedInt(multiprocessing_context=mp_context, initial_value=-1)
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=-1)
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
-        status_tracking_queue=status_tracking_queue,
-        last_ack_seq=last_ack_seq,
-        last_ack_timestamp=last_ack_timestamp,
     )
     status_thread._backend = backend
 
     # and
     timestamp = datetime.datetime.now()
     status_elements = [
-        StatusTrackingElement(
-            sequence_id=SequenceId(i), timestamp=timestamp + timedelta(seconds=i), request_id=f"id{i}"
+        OperationSubmission(
+            sequence_id=SequenceId(i),
+            timestamp=int(timestamp.timestamp() / 1000),
+            request_id=RequestId(f"id{i}"),
         )
         for i in range(7)
     ]
-    status_tracking_queue.peek.side_effect = [status_elements[:2], status_elements[2:4], status_elements[4:], None]
+    operations_repository.get_operation_submissions.side_effect = [
+        status_elements[:2],
+        status_elements[2:4],
+        status_elements[4:],
+        None,
+    ]
 
     # and
     backend.check_batch.side_effect = [
@@ -654,15 +592,13 @@ def test_status_thread_processes_element_sequence():
         ]
     )
     assert errors_queue.put.call_count == 2
-    status_tracking_queue.commit.assert_has_calls(
+    operations_repository.delete_operation_submissions.assert_has_calls(
         [
-            call.method(2),
-            call.method(2),
-            call.method(1),
+            call.method(up_to_seq_id=SequenceId(1)),
+            call.method(up_to_seq_id=SequenceId(3)),
+            call.method(up_to_seq_id=SequenceId(4)),
         ]
     )
-    assert last_ack_seq.value == status_elements[-3].sequence_id
-    assert last_ack_timestamp.value == status_elements[-3].timestamp.timestamp()
 
 
 @pytest.mark.parametrize(
