@@ -230,7 +230,7 @@ def test_get_sequence_id_range_single(operations_repo):
     operations_repo.save_update_run_snapshots(snapshots)
 
     # When
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
 
     # Then
     assert start_end == (1, 1)
@@ -243,7 +243,7 @@ def test_get_sequence_id_range_multiple(operations_repo):
         operations_repo.save_update_run_snapshots(snapshots)
 
     # When
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
 
     # Then
     assert start_end == (1, 5)
@@ -251,7 +251,7 @@ def test_get_sequence_id_range_multiple(operations_repo):
 
 def test_get_sequence_id_range_empty_db(operations_repo):
     # Given
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
     assert start_end is None
 
 
@@ -788,7 +788,7 @@ def test_concurrent_reads(temp_db_path):
 
         operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
         operations_repo.get_metadata()
-        operations_repo.get_sequence_id_range()
+        operations_repo.get_operations_sequence_id_range()
     operations_repo.close(cleanup_files=True)
 
 
