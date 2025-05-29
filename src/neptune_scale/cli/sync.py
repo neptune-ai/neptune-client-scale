@@ -179,10 +179,11 @@ class SyncRunner:
 
         log_seq_id_range = self._operations_repository.get_operations_sequence_id_range()
 
-        acked_count = 0
         if log_seq_id_range is not None:
             acked_count = log_seq_id_range[0] - self._log_seq_id_range[0]
             time.sleep(wait_time)
+        else:
+            acked_count = self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1
 
         return last_progress.updated(progress=acked_count)
 

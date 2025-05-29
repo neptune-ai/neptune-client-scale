@@ -64,9 +64,6 @@ class Operation:
         return datetime.fromtimestamp(self.timestamp / 1000)
 
 
-int(time.time() * 1000)
-
-
 @dataclass(frozen=True)
 class OperationSubmission:
     sequence_id: SequenceId
