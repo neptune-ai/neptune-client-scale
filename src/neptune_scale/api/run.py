@@ -313,6 +313,7 @@ class Run(AbstractContextManager):
                 kwargs={
                     "project": self._project,
                     "family": self._run_id,
+                    "api_version": "v0",
                     "operations_repository_path": operations_repository_path,
                     "errors_queue": self._errors_queue,
                     "api_token": self._api_token,

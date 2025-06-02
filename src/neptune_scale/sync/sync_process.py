@@ -189,6 +189,7 @@ def run_sync_process(
     api_token: str,
     project: str,
     family: str,
+    api_version: str,
     last_queued_seq: SharedInt,
     last_ack_seq: SharedInt,
     last_ack_timestamp: SharedFloat,
@@ -201,6 +202,7 @@ def run_sync_process(
     operations_repository = OperationsRepository(db_path=operations_repository_path)
     sender_thread = SenderThread(
         api_token=api_token,
+        api_version=api_version,
         operations_repository=operations_repository,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -210,6 +212,7 @@ def run_sync_process(
     status_thread = StatusTrackingThread(
         api_token=api_token,
         project=project,
+        api_version=api_version,
         operations_repository=operations_repository,
         errors_queue=errors_queue,
         status_tracking_queue=status_tracking_queue,
@@ -218,6 +221,7 @@ def run_sync_process(
     )
     file_uploader_thread = FileUploaderThread(
         api_token=api_token,
+        api_version=api_version,
         project=project,
         operations_repository=operations_repository,
         errors_queue=errors_queue,
@@ -309,6 +313,7 @@ class SenderThread(Daemon):
         self,
         api_token: str,
         family: str,
+        api_version: str,
         operations_repository: OperationsRepository,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
         errors_queue: ErrorsQueue,
@@ -318,6 +323,7 @@ class SenderThread(Daemon):
 
         self._api_token: str = api_token
         self._family: str = family
+        self._api_version: str = api_version
         self._operations_repository: OperationsRepository = operations_repository
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
         self._errors_queue: ErrorsQueue = errors_queue
@@ -330,7 +336,7 @@ class SenderThread(Daemon):
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token)
+            self._backend = backend_factory(api_token=self._api_token, api_version=self._api_version)
 
         response = self._backend.submit(operation=operation, family=self._family)
 
@@ -471,6 +477,7 @@ class StatusTrackingThread(Daemon):
         self,
         api_token: str,
         project: str,
+        api_version: str,
         operations_repository: OperationsRepository,
         errors_queue: ErrorsQueue,
         status_tracking_queue: PeekableQueue[StatusTrackingElement],
@@ -481,6 +488,7 @@ class StatusTrackingThread(Daemon):
 
         self._api_token: str = api_token
         self._project: str = project
+        self._api_version: str = api_version
         self._operations_repository: OperationsRepository = operations_repository
         self._errors_queue: ErrorsQueue = errors_queue
         self._status_tracking_queue: PeekableQueue[StatusTrackingElement] = status_tracking_queue
@@ -503,7 +511,7 @@ class StatusTrackingThread(Daemon):
     @with_api_errors_handling
     def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token)
+            self._backend = backend_factory(api_token=self._api_token, api_version=self._api_version)
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
 
@@ -595,6 +603,7 @@ class FileUploaderThread(Daemon):
         self,
         project: str,
         api_token: str,
+        api_version: str,
         operations_repository: OperationsRepository,
         errors_queue: ErrorsQueue,
         max_concurrent_uploads: Optional[int] = None,
@@ -603,6 +612,7 @@ class FileUploaderThread(Daemon):
 
         self._project = project
         self._neptune_api_token = api_token
+        self._api_version = api_version
         self._operations_repository = operations_repository
         self._errors_queue = errors_queue
         self._max_concurrent_uploads = max_concurrent_uploads or envs.get_positive_int(
@@ -618,7 +628,7 @@ class FileUploaderThread(Daemon):
     def work(self) -> None:
         try:
             if self._api_client is None:
-                self._api_client = backend_factory(api_token=self._neptune_api_token)
+                self._api_client = backend_factory(api_token=self._neptune_api_token, api_version=self._api_version)
                 asyncio.set_event_loop(self._aio_loop)
 
             while file_upload_requests := self._operations_repository.get_file_upload_requests(
