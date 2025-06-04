@@ -43,7 +43,7 @@ from neptune_api.api.ingestion import (
     bulk_check_status,
     ingest,
 )
-from neptune_api.api.storage import signed_url
+from neptune_api.api.storage import signed_url_generic
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.errors import (
@@ -228,7 +228,7 @@ class HostedApiClient(ApiClient):
         mode: Literal["read", "write"],
     ) -> Response[CreateSignedUrlsResponse]:
         permission = Permission(mode)
-        return signed_url.sync_detailed(
+        return signed_url_generic.sync_detailed(
             client=self.backend,
             body=CreateSignedUrlsRequest(
                 files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],

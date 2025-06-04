@@ -37,6 +37,7 @@ from neptune_scale import NeptuneScaleWarning
 from neptune_scale.exceptions import (
     NeptuneFileUploadError,
     NeptuneFileUploadTemporaryError,
+    NeptuneRetryableError,
     NeptuneScaleError,
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
@@ -58,6 +59,7 @@ from neptune_scale.sync.sync_process import (
     StatusTrackingElement,
     StatusTrackingThread,
     code_to_exception,
+    upload_to_azure,
 )
 from neptune_scale.util.shared_var import (
     SharedFloat,
@@ -688,17 +690,30 @@ def mock_backend_factory():
         yield mock
 
 
+@pytest.fixture(params=["azure", "gcp"])
+def provider(request):
+    yield request.param
+
+
 @pytest.fixture
-def mock_fetch_file_storage_urls():
+def mock_fetch_file_storage_urls(provider):
     with patch("neptune_scale.sync.sync_process.fetch_file_storage_urls") as mock:
-        mock.return_value = {"target/text.txt": "text-url", "target/image.jpg": "image-url"}
+        mock.return_value = {"target/text.txt": (provider, "text-url"), "target/image.jpg": (provider, "image-url")}
         yield mock
 
 
 @pytest.fixture
-def mock_upload_file():
-    with patch("neptune_scale.sync.sync_process.upload_file") as mock:
-        yield mock
+def mock_upload_func(provider):
+    with (
+        patch("neptune_scale.sync.sync_process.upload_to_azure") as mock_azure,
+        patch("neptune_scale.sync.sync_process.upload_to_gcp") as mock_gcp,
+    ):
+        if provider == "azure":
+            yield mock_azure
+            mock_gcp.assert_not_called()
+        else:
+            yield mock_gcp
+            mock_azure.assert_not_called()
 
 
 @pytest.fixture
@@ -764,7 +779,7 @@ def test_file_uploader_thread_successful_upload_flow(
     temp_dir,
     uploader_thread,
     mock_fetch_file_storage_urls,
-    mock_upload_file,
+    mock_upload_func,
     mock_operations_repository,
     mock_errors_queue,
     buffer_upload_request,
@@ -794,7 +809,7 @@ def test_file_uploader_thread_successful_upload_flow(
         call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
     ]
     # All files should be uploaded
-    mock_upload_file.assert_has_calls(expected_calls)
+    mock_upload_func.assert_has_calls(expected_calls)
 
     # Completed files should be deleted from repository
     mock_operations_repository.delete_file_upload_requests.assert_has_calls(
@@ -814,7 +829,7 @@ def test_file_uploader_uploads_concurrently(
     mock_backend_factory,
     mock_operations_repository,
     mock_errors_queue,
-    mock_upload_file,
+    mock_upload_func,
     mock_fetch_file_storage_urls,
 ):
     """Verify that FileUploaderThread uploads concurrently, and respects the max_concurrent_uploads limit."""
@@ -844,7 +859,7 @@ def test_file_uploader_uploads_concurrently(
         async with lock:
             concurrent_uploads -= 1
 
-    mock_upload_file.side_effect = _upload_file
+    mock_upload_func.side_effect = _upload_file
 
     mock_operations_repository.get_file_upload_requests.side_effect = [
         [FileUploadRequest("no-such-file", "target/text.txt", "text/plain", 123, False, SequenceId(1))],
@@ -870,14 +885,14 @@ def test_file_uploader_uploads_concurrently(
     # Assert that we only pull the max concurrent number of uploads from the repository
     mock_operations_repository.get_file_upload_requests.assert_has_calls([call(3), call(3), call(3), call(3)])
     assert peak_uploads == 3, f"Peak concurrent uploads should be 3, but was {peak_uploads}"
-    assert mock_upload_file.call_count == 7
+    assert mock_upload_func.call_count == 7
 
 
 def test_file_uploader_thread_terminal_error(
     temp_dir,
     uploader_thread,
     mock_fetch_file_storage_urls,
-    mock_upload_file,
+    mock_upload_func,
     mock_operations_repository,
     mock_errors_queue,
     disk_upload_request,
@@ -894,7 +909,7 @@ def test_file_uploader_thread_terminal_error(
         [],
     ]
 
-    mock_upload_file.side_effect = [FileNotFoundError, None]
+    mock_upload_func.side_effect = [FileNotFoundError, None]
 
     uploader_thread.start()
     uploader_thread.interrupt(remaining_iterations=1)
@@ -909,7 +924,7 @@ def test_file_uploader_thread_terminal_error(
         call("no-such-file", "text/plain", "text-url"),
         call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
     ]
-    mock_upload_file.assert_has_calls(expected_calls)
+    mock_upload_func.assert_has_calls(expected_calls)
 
     # Both files should be deleted from the repository
     mock_operations_repository.delete_file_upload_requests.assert_has_calls(
@@ -923,26 +938,52 @@ def test_file_uploader_thread_terminal_error(
 
 
 @patch("neptune_scale.sync.sync_process.BlobClient")
-@pytest.mark.parametrize("upload_error", [AzureError(""), HttpResponseError, ClientAuthenticationError])
+@pytest.mark.parametrize(
+    "upload_error, is_temporary",
+    [
+        (AzureError(""), True),
+        (HttpResponseError, True),
+        (ClientAuthenticationError, True),
+        (ValueError, False),
+        (FileNotFoundError, False),
+        (PermissionError, False),
+    ],
+)
+def test_upload_to_azure_errors(mock_blob_client_cls, upload_error, is_temporary, disk_upload_request):
+    """Azure upload errors should raise NeptuneFileUploadTemporaryError for temporary errors,
+    and re-raise other errors."""
+
+    mock_blob_client = AsyncMock()
+    mock_blob_client.upload_blob.side_effect = upload_error
+    mock_blob_client_cls.from_blob_url.return_value = mock_blob_client
+
+    mock_blob_client.from_blob_url.return_value = mock_blob_client
+    mock_blob_client.upload_blob.side_effect = [upload_error, upload_error, None]
+
+    with pytest.raises(Exception) as exc:
+        asyncio.run(upload_to_azure(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"))
+
+    if is_temporary:
+        assert isinstance(exc.value, NeptuneFileUploadTemporaryError)
+    else:
+        assert not isinstance(exc.value, type(upload_error))
+
+
+@pytest.mark.parametrize("upload_error", [NeptuneFileUploadTemporaryError(), NeptuneRetryableError()])
 def test_file_uploader_thread_non_terminal_error(
-    mock_blob_client_cls,
     upload_error,
     temp_dir,
     uploader_thread,
     mock_fetch_file_storage_urls,
     mock_operations_repository,
     mock_errors_queue,
+    mock_upload_func,
     disk_upload_request,
 ):
-    """Uploader thread should retry uploads on any Azure errors."""
-
-    mock_blob_client = AsyncMock()
-    mock_blob_client.upload_blob.side_effect = upload_error
-    mock_blob_client_cls.from_blob_url.return_value = mock_blob_client
+    """Uploader thread should retry uploads on any non-terminal errors."""
 
     # We will fail 2 times before succeeding
-    mock_blob_client.from_blob_url.return_value = mock_blob_client
-    mock_blob_client.upload_blob.side_effect = [upload_error, upload_error, None]
+    mock_upload_func.side_effect = [upload_error, upload_error, None]
 
     mock_operations_repository.get_file_upload_requests.side_effect = [
         [disk_upload_request],
@@ -962,14 +1003,11 @@ def test_file_uploader_thread_non_terminal_error(
     )
 
     # An upload attempt should be made for 2 failures and the final success
-    assert mock_blob_client.upload_blob.call_count == 3
+    assert mock_upload_func.call_count == 3
 
     # The file request should be deleted from the repository only once
     mock_operations_repository.delete_file_upload_requests.assert_called_once_with([disk_upload_request.sequence_id])
 
-    # Two NeptuneFileUploadErrors should be reported
+    # Two errors of the type that was raised during upload should be reported
     assert mock_errors_queue.put.call_count == 2
-    assert all(
-        isinstance(call_args.args[0], NeptuneFileUploadTemporaryError)
-        for call_args in mock_errors_queue.put.call_args_list
-    )
+    assert all(isinstance(call_args.args[0], type(upload_error)) for call_args in mock_errors_queue.put.call_args_list)
