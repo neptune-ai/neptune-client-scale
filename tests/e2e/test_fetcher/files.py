@@ -20,9 +20,9 @@ from typing import (
 )
 
 from azure.storage.blob import BlobClient
+from neptune_api.api.storage import signed_url
 from neptune_api.client import AuthenticatedClient
-from neptune_storage_api.api import storagebridge
-from neptune_storage_api.models import (
+from neptune_api.models import (
     CreateSignedUrlsRequest,
     CreateSignedUrlsResponse,
     FileToSign,
@@ -126,7 +126,7 @@ def _fetch_signed_urls(
         ]
     )
 
-    response = storagebridge.signed_url.sync_detailed(client=client, body=body)
+    response = signed_url.sync_detailed(client=client, body=body)
 
     data: CreateSignedUrlsResponse = response.parsed
 
