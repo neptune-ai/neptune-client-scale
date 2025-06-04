@@ -32,7 +32,7 @@ def operations_repo(temp_db_path):
     repo.close(cleanup_files=True)
 
 
-def test__lag_tracker__callback_called(operations_repo, temp_db_path):
+def test__lag_tracker__callback_called(operations_repo):
     # given
     async_lag_threshold = 1.0
 
@@ -51,7 +51,7 @@ def test__lag_tracker__callback_called(operations_repo, temp_db_path):
 
     # and
     lag_tracker = LagTracker(
-        operations_repository_path=temp_db_path,
+        operations_repository=operations_repo,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback_with_event,
     )
@@ -68,7 +68,7 @@ def test__lag_tracker__callback_called(operations_repo, temp_db_path):
     callback.assert_called()
 
 
-def test__lag_tracker__not_called(operations_repo, temp_db_path):
+def test__lag_tracker__not_called(operations_repo):
     # given
     async_lag_threshold = 10.0
 
@@ -79,7 +79,7 @@ def test__lag_tracker__not_called(operations_repo, temp_db_path):
 
     # and
     lag_tracker = LagTracker(
-        operations_repository_path=temp_db_path,
+        operations_repository=operations_repo,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback,
     )
