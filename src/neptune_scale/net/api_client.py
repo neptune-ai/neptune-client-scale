@@ -142,34 +142,27 @@ def create_auth_api_client(
     )
 
 
+_ILLEGAL_CHARS = str.maketrans({c: "_" for c in " ();/"})
+
+
 def _generate_user_agent() -> str:
     import platform
     from importlib.metadata import version
 
-    package_name = "neptune-scale"
-    package_version = "unknown"
-    additional_metadata = {
-        "neptune-api": "unknown",
-        "python": "unknown",
-        "os": "unknown",
-    }
+    def sanitize(value: Callable[[], str]) -> str:
+        try:
+            result = value()
+            return result.translate(_ILLEGAL_CHARS)
+        except Exception:
+            return "unknown"
 
-    try:
-        package_version = version(package_name)
-    except Exception:
-        pass
-    try:
-        additional_metadata["neptune-api"] = version("neptune-api")
-    except Exception:
-        pass
-    try:
-        additional_metadata["python"] = platform.python_version()
-    except Exception:
-        pass
-    try:
-        additional_metadata["os"] = platform.platform()
-    except Exception:
-        pass
+    package_name = "neptune-scale"
+    package_version = sanitize(lambda: version(package_name))
+    additional_metadata = {
+        "neptune-api": sanitize(lambda: version("neptune-api")),
+        "python": sanitize(platform.python_version),
+        "os": sanitize(platform.system),
+    }
 
     additional_metadata_str = "; ".join(f"{k}={v}" for k, v in additional_metadata.items())
     return f"{package_name}/{package_version} ({additional_metadata_str})"
