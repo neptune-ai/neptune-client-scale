@@ -19,8 +19,8 @@ from typing import (
     Optional,
 )
 
-from azure.storage.blob import BlobClient
-from neptune_api.api.storage import signed_url
+import requests
+from neptune_api.api.storage import signed_url_generic
 from neptune_api.client import AuthenticatedClient
 from neptune_api.models import (
     CreateSignedUrlsRequest,
@@ -126,7 +126,7 @@ def _fetch_signed_urls(
         ]
     )
 
-    response = signed_url.sync_detailed(client=client, body=body)
+    response = signed_url_generic.sync_detailed(client=client, body=body)
 
     data: CreateSignedUrlsResponse = response.parsed
 
@@ -138,8 +138,7 @@ def _download_from_url(
     target_path: pathlib.Path,
 ) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(target_path, mode="wb") as opened:
-        blob_client = BlobClient.from_blob_url(signed_url)
-        download_stream = blob_client.download_blob()
-        for chunk in download_stream.chunks():
-            opened.write(chunk)
+    with open(target_path, mode="wb") as file:
+        response = requests.get(signed_url)
+        for chunk in response.iter_content(chunk_size=1024 * 1024 * 4):
+            file.write(chunk)

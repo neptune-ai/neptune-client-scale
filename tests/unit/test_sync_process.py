@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import datetime
 import itertools
 import multiprocessing
@@ -1011,3 +1012,50 @@ def test_file_uploader_thread_non_terminal_error(
     # Two errors of the type that was raised during upload should be reported
     assert mock_errors_queue.put.call_count == 2
     assert all(isinstance(call_args.args[0], type(upload_error)) for call_args in mock_errors_queue.put.call_args_list)
+
+
+@patch("neptune_scale.sync.sync_process.upload_to_gcp")
+@patch("neptune_scale.sync.sync_process.upload_to_azure")
+def test_file_uploader_thread_uploads_to_correct_provider(
+    mock_upload_to_azure, mock_upload_to_gcp, uploader_thread, mock_operations_repository, disk_upload_request
+):
+    """If Neptune storage API returns multiple providers in a single response, FileUploaderThread should
+    still call the correct upload function for each provider."""
+
+    with patch("neptune_scale.sync.sync_process.fetch_file_storage_urls") as mock_fetch_urls:
+        mock_fetch_urls.return_value = {
+            "azure-1.jpg": ("azure", "azure-url-1"),
+            "gcp-1.jpg": ("gcp", "gcp-url-1"),
+            "azure-2.jpg": ("azure", "azure-url-2"),
+            "gcp-2.jpg": ("gcp", "gcp-url-2"),
+        }
+
+        # The disk_upload_request is not a temporary file, so use it to create upload requests for
+        # attributes defined above
+        file_upload_requests = []
+        for seq, path in enumerate(mock_fetch_urls.return_value.keys(), start=10):
+            file_upload_requests.append(
+                dataclasses.replace(disk_upload_request, destination=path, sequence_id=SequenceId(seq))
+            )
+
+        mock_operations_repository.get_file_upload_requests.side_effect = [
+            file_upload_requests,
+            [],
+        ]
+
+        uploader_thread.start()
+        uploader_thread.interrupt(remaining_iterations=1)
+        uploader_thread.join()
+
+        local_path = disk_upload_request.source_path
+        mime_type = disk_upload_request.mime_type
+
+        assert mock_upload_to_azure.call_count == 2
+        mock_upload_to_azure.assert_has_calls(
+            [call(local_path, mime_type, "azure-url-1"), call(local_path, mime_type, "azure-url-2")]
+        )
+
+        assert mock_upload_to_gcp.call_count == 2
+        mock_upload_to_gcp.assert_has_calls(
+            [call(local_path, mime_type, "gcp-url-1"), call(local_path, mime_type, "gcp-url-2")]
+        )
