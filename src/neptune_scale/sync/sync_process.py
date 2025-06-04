@@ -275,6 +275,8 @@ class SenderThread(Daemon):
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
 
+        self._operations_repository.delete_operation_submissions(up_to_seq_id=None)
+
     @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
@@ -487,8 +489,8 @@ class StatusTrackingThread(Daemon):
                     logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
 
                     # TODO: delete in a single transaction
-                    self._operations_repository.delete_operation_submissions(up_to_seq_id=processed_sequence_id)
                     self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
+                    self._operations_repository.delete_operation_submissions(up_to_seq_id=processed_sequence_id)
 
                 if fatal_sync_error is not None:
                     raise fatal_sync_error

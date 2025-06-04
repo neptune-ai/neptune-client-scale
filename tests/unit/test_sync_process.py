@@ -294,6 +294,84 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
     assert len(operations_repo.get_operations(MAX_REQUEST_SIZE_BYTES)) == 10
 
 
+def test_sender_thread_processes_elements_with_nonempty_submissions(operations_repo):
+    # given
+    updates = []
+    for i in range(10):
+        update = UpdateRunSnapshot(assign={"key": Value(string=f"a{i}")})
+        updates.append(update)
+    last_sequence_id = operations_repo.save_update_run_snapshots(updates)
+    submissions = [
+        OperationSubmission(
+            sequence_id=SequenceId(last_sequence_id),
+            timestamp=int(datetime.datetime.now().timestamp() / 1000),
+            request_id=RequestId("id10"),
+        )
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # and
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="a" * 10,
+        family="test-family",
+        operations_repository=operations_repo,
+        errors_queue=errors_queue,
+    )
+    sender_thread._backend = backend
+    backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
+
+    # when
+    sender_thread.work()
+
+    # then
+    assert backend.submit.call_count == 1
+
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
+    assert len(tracking) == 1
+    assert tracking[0].sequence_id == last_sequence_id
+
+
+def test_sender_thread_processes_elements_with_nonempty_submissions_partial(operations_repo):
+    # given
+    updates = []
+    for i in range(10):
+        update = UpdateRunSnapshot(assign={"key": Value(string=f"a{i}")})
+        updates.append(update)
+    last_sequence_id = operations_repo.save_update_run_snapshots(updates)
+    submissions = [
+        OperationSubmission(
+            sequence_id=SequenceId(5),
+            timestamp=int(datetime.datetime.now().timestamp() / 1000),
+            request_id=RequestId("id5"),
+        )
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # and
+    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    backend = Mock()
+    sender_thread = SenderThread(
+        api_token="a" * 10,
+        family="test-family",
+        operations_repository=operations_repo,
+        errors_queue=errors_queue,
+    )
+    sender_thread._backend = backend
+    backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
+
+    # when
+    sender_thread.work()
+
+    # then
+    assert backend.submit.call_count == 1
+
+    tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
+    assert len(tracking) == 1
+    assert tracking[0].sequence_id == SequenceId(last_sequence_id)
+
+
 def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
     errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
     backend = Mock()
