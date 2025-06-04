@@ -281,6 +281,7 @@ class Run(AbstractContextManager):
         if mode == "async":
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
+            assert self._operations_repo is not None
 
             spawn_mp_context = multiprocessing.get_context("spawn")
 
@@ -311,7 +312,7 @@ class Run(AbstractContextManager):
             self._lag_tracker: Optional[LagTracker] = None
             if async_lag_threshold is not None and on_async_lag_callback is not None:
                 self._lag_tracker = LagTracker(
-                    operations_repository_path=operations_repository_path,
+                    operations_repository=self._operations_repo,
                     async_lag_threshold=async_lag_threshold,
                     on_async_lag_callback=on_async_lag_callback,
                 )
