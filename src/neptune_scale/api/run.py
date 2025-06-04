@@ -281,6 +281,7 @@ class Run(AbstractContextManager):
         if mode == "async":
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
+            assert self._operations_repo is not None
 
             spawn_mp_context = multiprocessing.get_context("spawn")
 
@@ -311,7 +312,7 @@ class Run(AbstractContextManager):
             self._lag_tracker: Optional[LagTracker] = None
             if async_lag_threshold is not None and on_async_lag_callback is not None:
                 self._lag_tracker = LagTracker(
-                    operations_repository_path=operations_repository_path,
+                    operations_repository=self._operations_repo,
                     async_lag_threshold=async_lag_threshold,
                     on_async_lag_callback=on_async_lag_callback,
                 )
@@ -1103,7 +1104,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        operations_count_limit = 1_000_000
+        operations_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None
@@ -1157,7 +1158,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        upload_count_limit = 1_000_000
+        upload_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None

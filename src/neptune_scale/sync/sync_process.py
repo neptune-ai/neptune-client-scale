@@ -156,6 +156,8 @@ def run_sync_process(
     signal.signal(signal.SIGTERM, ft.partial(_handle_stop_signal, stop_event))
 
     operations_repository = OperationsRepository(db_path=operations_repository_path)
+    operations_repository.delete_operation_submissions(up_to_seq_id=None)
+
     sender_thread = SenderThread(
         api_token=api_token,
         operations_repository=operations_repository,
@@ -270,7 +272,13 @@ class SenderThread(Daemon):
         self._family: str = family
         self._operations_repository: OperationsRepository = operations_repository
         self._errors_queue: ErrorsQueue = errors_queue
-        self._last_queued_seq: SequenceId = SequenceId(-1)
+
+        queued_range = operations_repository.get_operation_submission_sequence_id_range()
+        if queued_range is None:
+            last_queued_seq = SequenceId(-1)
+        else:
+            last_queued_seq = queued_range[1]
+        self._last_queued_seq: SequenceId = last_queued_seq
 
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
@@ -487,8 +495,8 @@ class StatusTrackingThread(Daemon):
                     logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
 
                     # TODO: delete in a single transaction
-                    self._operations_repository.delete_operation_submissions(up_to_seq_id=processed_sequence_id)
                     self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
+                    self._operations_repository.delete_operation_submissions(up_to_seq_id=processed_sequence_id)
 
                 if fatal_sync_error is not None:
                     raise fatal_sync_error

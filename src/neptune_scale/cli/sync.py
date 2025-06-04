@@ -95,7 +95,7 @@ class SyncRunner:
         self._log_seq_id_range = self._operations_repository.get_operations_sequence_id_range()
         self._file_upload_request_init_count = self._operations_repository.get_file_upload_requests_count()
 
-        if self._log_seq_id_range is None:
+        if self._log_seq_id_range is None and self._file_upload_request_init_count == 0:
             logger.info("No operations to process")
             return
 
