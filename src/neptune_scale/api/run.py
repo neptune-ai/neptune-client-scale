@@ -1103,7 +1103,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        operations_count_limit = 1_000_000
+        operations_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None
@@ -1157,7 +1157,7 @@ class Run(AbstractContextManager):
         if timeout is None and verbose:
             logger.warning("No timeout specified. Waiting indefinitely")
 
-        upload_count_limit = 1_000_000
+        upload_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
         last_print_timestamp: Optional[float] = None

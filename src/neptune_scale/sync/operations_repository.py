@@ -509,7 +509,7 @@ class OperationsRepository:
                     ORDER BY sequence_id ASC
                     LIMIT ?
                     """,
-                    (limit,) if limit is not None else (None,),
+                    (limit,),
                 )
 
                 rows = cursor.fetchall()
@@ -522,16 +522,19 @@ class OperationsRepository:
             for row in rows
         ]
 
-    def delete_operation_submissions(self, up_to_seq_id: SequenceId) -> int:
-        if up_to_seq_id <= 0:
+    def delete_operation_submissions(self, up_to_seq_id: Optional[SequenceId]) -> int:
+        if up_to_seq_id is not None and up_to_seq_id <= 0:
             return 0
 
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
-                cursor.execute(
-                    "DELETE FROM run_operation_submission WHERE sequence_id <= ?",
-                    (up_to_seq_id,),
-                )
+                if up_to_seq_id is None:
+                    cursor.execute("DELETE FROM run_operation_submission")
+                else:
+                    cursor.execute(
+                        "DELETE FROM run_operation_submission WHERE sequence_id <= ?",
+                        (up_to_seq_id,),
+                    )
 
                 return cursor.rowcount or 0
 
