@@ -54,7 +54,7 @@ def create_project(
 ) -> None:
     api_token = _get_api_token(api_token)
 
-    client = HostedApiClient(api_token=api_token, api_version="v0")
+    client = HostedApiClient(api_token=api_token)
     visibility = ProjectVisibility(visibility)
 
     body = {
@@ -92,7 +92,7 @@ def _safe_json(response: httpx.Response) -> Any:
 
 
 def get_project_list(*, api_token: Optional[str] = None) -> list[dict]:
-    client = HostedApiClient(api_token=_get_api_token(api_token), api_version="v0")
+    client = HostedApiClient(api_token=_get_api_token(api_token))
 
     params = {
         "userRelation": "viewerOrHigher",

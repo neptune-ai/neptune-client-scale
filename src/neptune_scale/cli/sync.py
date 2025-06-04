@@ -117,7 +117,6 @@ class SyncRunner:
             kwargs={
                 "project": metadata.project,
                 "family": metadata.run_id,
-                "api_version": "v0",
                 "operations_repository_path": self._run_log_file,
                 "errors_queue": self._errors_queue,
                 "api_token": self._api_token,

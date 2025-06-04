@@ -133,7 +133,6 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
     sender_thread = SenderThread(
         api_token="",
         family="",
-        api_version="test",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -161,7 +160,6 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
     sender_thread = SenderThread(
         api_token="",
         family="",
-        api_version="test",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -193,7 +191,6 @@ def test_sender_thread_processes_element_on_single_retryable_error(operations_re
     sender_thread = SenderThread(
         api_token="",
         family="",
-        api_version="test",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -230,7 +227,6 @@ def test_sender_thread_fails_on_regular_error():
     sender_thread = SenderThread(
         api_token="",
         family="",
-        api_version="test",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -266,7 +262,6 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
     sender_thread = SenderThread(
         api_token="",
         family="",
-        api_version="test",
         operations_repository=operations_repository_mock,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -301,7 +296,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_in_batch(oper
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
-        api_version="test",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -338,7 +332,6 @@ def test_sender_thread_processes_elements_with_multiple_operations_split_by_type
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
-        api_version="test",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -379,7 +372,6 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
-        api_version="test",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -418,7 +410,6 @@ def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_oper
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
-        api_version="test",
         operations_repository=operations_repo,
         status_tracking_queue=status_tracking_queue,
         errors_queue=errors_queue,
@@ -466,7 +457,6 @@ def test_status_thread_processes_element():
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
-        api_version="test",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
         status_tracking_queue=status_tracking_queue,
@@ -519,7 +509,6 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
-        api_version="test",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
         status_tracking_queue=status_tracking_queue,
@@ -571,7 +560,6 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
-        api_version="test",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
         status_tracking_queue=status_tracking_queue,
@@ -614,7 +602,6 @@ def test_status_thread_processes_element_sequence():
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
-        api_version="test",
         operations_repository=operations_repository,
         errors_queue=errors_queue,
         status_tracking_queue=status_tracking_queue,
@@ -762,7 +749,6 @@ def uploader_thread(
     thread = FileUploaderThread(
         project="workspace/project",
         api_token=api_token,
-        api_version="test",
         operations_repository=mock_operations_repository,
         errors_queue=mock_errors_queue,
     )
@@ -836,7 +822,6 @@ def test_file_uploader_uploads_concurrently(
     thread = FileUploaderThread(
         project="workspace/project",
         api_token=api_token,
-        api_version="test",
         operations_repository=mock_operations_repository,
         errors_queue=mock_errors_queue,
         max_concurrent_uploads=3,

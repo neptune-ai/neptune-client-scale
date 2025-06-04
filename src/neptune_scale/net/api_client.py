@@ -97,14 +97,13 @@ def get_config_and_token_urls(
     *,
     credentials: Credentials,
     verify_ssl: bool,
-    api_version: str,
 ) -> tuple[ClientConfig, TokenRefreshingURLs]:
     with Client(
         base_url=credentials.base_url,
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
-        headers={"User-Agent": _generate_user_agent(api_version)},
+        headers={"User-Agent": _generate_user_agent()},
     ) as client:
         try:
             config_response = get_client_config.sync_detailed(client=client)
@@ -129,7 +128,6 @@ def create_auth_api_client(
     config: ClientConfig,
     token_refreshing_urls: TokenRefreshingURLs,
     verify_ssl: bool,
-    api_version: str,
 ) -> AuthenticatedClient:
     return AuthenticatedClient(
         base_url=credentials.base_url,
@@ -140,18 +138,17 @@ def create_auth_api_client(
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
-        headers={"User-Agent": _generate_user_agent(api_version)},
+        headers={"User-Agent": _generate_user_agent()},
     )
 
 
-def _generate_user_agent(api_version: str) -> str:
+def _generate_user_agent() -> str:
     import platform
     from importlib.metadata import version
 
     package_name = "neptune-scale"
     package_version = "unknown"
     additional_metadata = {
-        "py-api": api_version,
         "neptune-api": "unknown",
         "python": "unknown",
         "os": "unknown",
@@ -197,21 +194,18 @@ class ApiClient(abc.ABC):
 
 
 class HostedApiClient(ApiClient):
-    def __init__(self, api_token: str, api_version: str) -> None:
+    def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
         verify_ssl: bool = os.environ.get(ALLOW_SELF_SIGNED_CERTIFICATE, "False").lower() in ("false", "0")
 
         logger.debug("Trying to connect to Neptune API")
-        config, token_urls = get_config_and_token_urls(
-            credentials=credentials, verify_ssl=verify_ssl, api_version=api_version
-        )
+        config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)
         self.backend = create_auth_api_client(
             credentials=credentials,
             config=config,
             token_refreshing_urls=token_urls,
             verify_ssl=verify_ssl,
-            api_version=api_version,
         )
         logger.debug("Connected to Neptune API")
 
@@ -244,8 +238,8 @@ class HostedApiClient(ApiClient):
         )
 
 
-def backend_factory(api_token: str, api_version: str) -> ApiClient:
-    return HostedApiClient(api_token=api_token, api_version=api_version)
+def backend_factory(api_token: str) -> ApiClient:
+    return HostedApiClient(api_token=api_token)
 
 
 def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
