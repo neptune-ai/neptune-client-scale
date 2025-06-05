@@ -32,6 +32,7 @@ from typing import (
 )
 
 import httpx
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 from httpx import Timeout
 from neptune_api import (
     AuthenticatedClient,
@@ -50,6 +51,7 @@ from neptune_api.errors import (
     InvalidApiTokenException,
     UnableToDeserializeApiKeyError,
     UnableToExchangeApiKeyError,
+    UnableToParseResponse,
     UnableToRefreshTokenError,
 )
 from neptune_api.models import (
@@ -252,7 +254,7 @@ def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:
             raise NeptuneUnableToAuthenticateError() from e
         except httpx.RequestError as e:
             raise NeptuneConnectionLostError() from e
-        except JSONDecodeError as e:
+        except (JSONDecodeError, ProtobufDecodeError, UnableToParseResponse) as e:
             raise NeptuneUnexpectedResponseError() from e
         except Exception as e:
             raise e
