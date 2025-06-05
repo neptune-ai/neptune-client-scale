@@ -93,13 +93,16 @@ class TokenRefreshingURLs:
 
 
 def get_config_and_token_urls(
-    *, credentials: Credentials, verify_ssl: bool
+    *,
+    credentials: Credentials,
+    verify_ssl: bool,
 ) -> tuple[ClientConfig, TokenRefreshingURLs]:
     with Client(
         base_url=credentials.base_url,
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
+        headers={"User-Agent": _generate_user_agent()},
     ) as client:
         try:
             config_response = get_client_config.sync_detailed(client=client)
@@ -119,7 +122,11 @@ def get_config_and_token_urls(
 
 
 def create_auth_api_client(
-    *, credentials: Credentials, config: ClientConfig, token_refreshing_urls: TokenRefreshingURLs, verify_ssl: bool
+    *,
+    credentials: Credentials,
+    config: ClientConfig,
+    token_refreshing_urls: TokenRefreshingURLs,
+    verify_ssl: bool,
 ) -> AuthenticatedClient:
     return AuthenticatedClient(
         base_url=credentials.base_url,
@@ -130,7 +137,34 @@ def create_auth_api_client(
         follow_redirects=True,
         verify_ssl=verify_ssl,
         timeout=Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT),
+        headers={"User-Agent": _generate_user_agent()},
     )
+
+
+_ILLEGAL_CHARS = str.maketrans({c: "_" for c in " ();/"})
+
+
+def _generate_user_agent() -> str:
+    import platform
+    from importlib.metadata import version
+
+    def sanitize(value: Callable[[], str]) -> str:
+        try:
+            result = value()
+            return result.translate(_ILLEGAL_CHARS)
+        except Exception:
+            return "unknown"
+
+    package_name = "neptune-scale"
+    package_version = sanitize(lambda: version(package_name))
+    additional_metadata = {
+        "neptune-api": sanitize(lambda: version("neptune-api")),
+        "python": sanitize(platform.python_version),
+        "os": sanitize(platform.system),
+    }
+
+    additional_metadata_str = "; ".join(f"{k}={v}" for k, v in additional_metadata.items())
+    return f"{package_name}/{package_version} ({additional_metadata_str})"
 
 
 class ApiClient(abc.ABC):
@@ -160,7 +194,10 @@ class HostedApiClient(ApiClient):
         logger.debug("Trying to connect to Neptune API")
         config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)
         self.backend = create_auth_api_client(
-            credentials=credentials, config=config, token_refreshing_urls=token_urls, verify_ssl=verify_ssl
+            credentials=credentials,
+            config=config,
+            token_refreshing_urls=token_urls,
+            verify_ssl=verify_ssl,
         )
         logger.debug("Connected to Neptune API")
 
