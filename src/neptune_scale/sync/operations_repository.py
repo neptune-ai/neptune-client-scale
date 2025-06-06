@@ -10,7 +10,6 @@ from neptune_scale.sync.parameters import (
 __all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId", "FileUploadRequest")
 
 import contextlib
-import datetime
 import os
 import sqlite3
 import threading
@@ -18,6 +17,7 @@ import time
 import typing
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import datetime
 from enum import IntEnum
 from typing import (
     Literal,
@@ -39,10 +39,11 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-DB_VERSION = "v3"
-BACKWARD_COMPATIBLE_DB_VERSIONS = ("v2", "v3")
+DB_VERSION = "v4"
+BACKWARD_COMPATIBLE_DB_VERSIONS = ("v4",)
 
 SequenceId = typing.NewType("SequenceId", int)
+RequestId = typing.NewType("RequestId", str)
 
 
 class OperationType(IntEnum):
@@ -59,8 +60,19 @@ class Operation:
     operation_size_bytes: int
 
     @property
-    def ts(self) -> datetime.datetime:
-        return datetime.datetime.fromtimestamp(self.timestamp / 1000)
+    def ts(self) -> datetime:
+        return datetime.fromtimestamp(self.timestamp / 1000)
+
+
+@dataclass(frozen=True)
+class OperationSubmission:
+    sequence_id: SequenceId
+    timestamp: int
+    request_id: RequestId
+
+    @property
+    def ts(self) -> datetime:
+        return datetime.fromtimestamp(self.timestamp / 1000)
 
 
 @dataclass(frozen=True)
@@ -147,6 +159,16 @@ class OperationsRepository:
                     project TEXT NOT NULL,
                     run_id TEXT NOT NULL
                 )"""
+            )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_operation_submission (
+                    sequence_id INTEGER PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    request_id TEXT NOT NULL
+                )
+                """
             )
 
             conn.execute(
@@ -248,7 +270,7 @@ class OperationsRepository:
         except NeptuneUnableToLogData:
             if self._log_failure_action == "raise":
                 raise
-            if self._log_failure_action == "drop":
+            else:
                 logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
                 return None
 
@@ -319,6 +341,49 @@ class OperationsRepository:
                 # Return the number of rows affected
                 return cursor.rowcount or 0
 
+    def get_operation_count(self, limit: Optional[int] = None) -> int:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                return self._get_table_count(cursor, "run_operations", limit=limit)
+
+    def get_operations_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT MIN(sequence_id), MAX(sequence_id)
+                    FROM run_operations
+                    """
+                )
+
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                min_seq_id, max_seq_id = row
+                if min_seq_id is None or max_seq_id is None:
+                    return None
+                return SequenceId(min_seq_id), SequenceId(max_seq_id)
+
+    def get_operations_min_timestamp(self) -> Optional[datetime]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT timestamp
+                    FROM run_operations
+                    ORDER BY sequence_id ASC
+                    LIMIT 1
+                    """
+                )
+
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                (timestamp,) = row
+                return datetime.fromtimestamp(timestamp / 1000)
+
     def save_metadata(self, project: str, run_id: str) -> None:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -362,25 +427,6 @@ class OperationsRepository:
                     raise NeptuneLocalStorageInUnsupportedVersion()
 
                 return Metadata(project=project, run_id=run_id)
-
-    def get_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
-        with self._get_connection() as conn:  # type: ignore
-            with contextlib.closing(conn.cursor()) as cursor:
-                cursor.execute(
-                    """
-                    SELECT MIN(sequence_id), MAX(sequence_id)
-                    FROM run_operations
-                    """
-                )
-
-                row = cursor.fetchone()
-                if not row:
-                    return None
-
-                min_seq_id, max_seq_id = row
-                if min_seq_id is None or max_seq_id is None:
-                    return None
-                return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
@@ -439,6 +485,82 @@ class OperationsRepository:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "file_upload_requests", limit=limit)
+
+    def save_operation_submissions(self, submissions: list[OperationSubmission]) -> SequenceId:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO run_operation_submission (sequence_id, timestamp, request_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    [(status.sequence_id, status.timestamp, status.request_id) for status in submissions],
+                )
+                cursor.execute("SELECT last_insert_rowid()")
+                return SequenceId(cursor.fetchone()[0])
+
+    def get_operation_submissions(self, limit: int) -> list[OperationSubmission]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT sequence_id, timestamp, request_id
+                    FROM run_operation_submission
+                    ORDER BY sequence_id ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+
+                rows = cursor.fetchall()
+        return [
+            OperationSubmission(
+                sequence_id=SequenceId(row[0]),
+                timestamp=row[1],
+                request_id=RequestId(row[2]),
+            )
+            for row in rows
+        ]
+
+    def delete_operation_submissions(self, up_to_seq_id: Optional[SequenceId]) -> int:
+        if up_to_seq_id is not None and up_to_seq_id <= 0:
+            return 0
+
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                if up_to_seq_id is None:
+                    cursor.execute("DELETE FROM run_operation_submission")
+                else:
+                    cursor.execute(
+                        "DELETE FROM run_operation_submission WHERE sequence_id <= ?",
+                        (up_to_seq_id,),
+                    )
+
+                return cursor.rowcount or 0
+
+    def get_operation_submission_count(self, limit: Optional[int] = None) -> int:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                return self._get_table_count(cursor, "run_operation_submission", limit=limit)
+
+    def get_operation_submission_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT MIN(sequence_id), MAX(sequence_id)
+                    FROM run_operation_submission
+                    """
+                )
+
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                min_seq_id, max_seq_id = row
+                if min_seq_id is None or max_seq_id is None:
+                    return None
+                return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
