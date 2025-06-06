@@ -100,6 +100,8 @@ warn_unused_ignores = "True"
 ignore_missing_imports = "True"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--doctest-modules -n auto"
 
 [tool.poetry.scripts]
