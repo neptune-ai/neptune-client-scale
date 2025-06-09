@@ -15,9 +15,8 @@
 #
 from __future__ import annotations
 
-__all__ = ("HostedApiClient", "ApiClient", "backend_factory", "with_api_errors_handling")
+__all__ = ("ApiClient", "with_api_errors_handling")
 
-import abc
 import functools
 import os
 from collections.abc import (
@@ -169,25 +168,7 @@ def _generate_user_agent() -> str:
     return f"{package_name}/{package_version} ({additional_metadata_str})"
 
 
-class ApiClient(abc.ABC):
-    @abc.abstractmethod
-    def submit(self, operation: RunOperation, family: str) -> Response[BinaryContent]: ...
-
-    @abc.abstractmethod
-    def check_batch(self, request_ids: list[str], project: str) -> Response[BinaryContent]: ...
-
-    def close(self) -> None: ...
-
-    @abc.abstractmethod
-    def fetch_file_storage_urls(
-        self,
-        paths: Iterable[str],
-        project: str,
-        mode: Literal["read", "write"],
-    ) -> Response[CreateSignedUrlsResponse]: ...
-
-
-class HostedApiClient(ApiClient):
+class ApiClient:
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
@@ -234,10 +215,6 @@ class HostedApiClient(ApiClient):
                 files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],
             ),
         )
-
-
-def backend_factory(api_token: str) -> ApiClient:
-    return HostedApiClient(api_token=api_token)
 
 
 def with_api_errors_handling(func: Callable[..., Any]) -> Callable[..., Any]:

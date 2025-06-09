@@ -686,8 +686,8 @@ def test_unknown_code_to_exception():
 
 
 @pytest.fixture
-def mock_backend_factory():
-    with patch("neptune_scale.sync.sync_process.backend_factory") as mock:
+def mock_api_client():
+    with patch("neptune_scale.sync.sync_process.ApiClient") as mock:
         yield mock
 
 
@@ -758,7 +758,7 @@ def disk_upload_request(temp_dir):
 @pytest.fixture
 def uploader_thread(
     api_token,
-    mock_backend_factory,
+    mock_api_client,
     mock_operations_repository,
     mock_errors_queue,
 ):
@@ -827,7 +827,7 @@ def test_file_uploader_thread_successful_upload_flow(
 
 def test_file_uploader_uploads_concurrently(
     api_token,
-    mock_backend_factory,
+    mock_api_client,
     mock_operations_repository,
     mock_errors_queue,
     mock_upload_func,
