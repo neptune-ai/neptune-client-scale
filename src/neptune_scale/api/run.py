@@ -82,7 +82,6 @@ from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
     OPERATION_REPOSITORY_POLL_SLEEP_TIME,
-    STOP_MESSAGE_FREQUENCY,
 )
 from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.sync_process import run_sync_process
@@ -93,7 +92,10 @@ from neptune_scale.util.envs import (
     PROJECT_ENV_NAME,
 )
 from neptune_scale.util.generate_run_id import generate_run_id
-from neptune_scale.util.logger import get_logger
+from neptune_scale.util.logger import (
+    ThrottledLogger,
+    get_logger,
+)
 from neptune_scale.util.timer import Timer
 
 logger = get_logger()
@@ -1023,6 +1025,7 @@ class Run(AbstractContextManager):
         verbose: bool = True,
     ) -> None:
         if timeout is not None and timeout <= 0:
+            logger.info("Skipping waiting for operation submission because timeout has already passed")
             return
 
         if verbose:
@@ -1033,7 +1036,7 @@ class Run(AbstractContextManager):
 
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
-        last_print_timestamp: Optional[float] = None
+        throttled_logger = ThrottledLogger(logger, enabled=verbose)
 
         while True:
             try:
@@ -1053,41 +1056,34 @@ class Run(AbstractContextManager):
                     operations_count = max(0, max_logged_sequence_id - max_submitted_sequence_id)
 
                     if operations_count > 0:
-                        last_print_timestamp = print_message(
+                        throttled_logger.info(
                             "Waiting for remaining %d operation(s) to be submitted",
                             operations_count,
-                            last_print=last_print_timestamp,
-                            verbose=verbose,
                         )
                 elif logged_sequence_id_range is not None:
                     min_logged_sequence_id, max_logged_sequence_id = logged_sequence_id_range
                     operations_count = max(0, max_logged_sequence_id - min_logged_sequence_id + 1)
 
                     if operations_count > 0:
-                        last_print_timestamp = print_message(
+                        throttled_logger.info(
                             "Waiting. No operations were submitted yet. Operations to sync: %s",
                             operations_count,
-                            last_print=last_print_timestamp,
-                            verbose=verbose,
                         )
                 else:
                     operations_count = 0
 
                 if operations_count > 0:
                     if timer.is_expired():
-                        if verbose:
-                            logger.info("Waiting interrupted because timeout was reached")
+                        logger.info("Waiting interrupted because timeout was reached")
                         break
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
-                    if verbose:
-                        logger.info("All operations were submitted")
+                    logger.info("All operations were submitted")
                     break
             except KeyboardInterrupt:
-                if verbose:
-                    logger.warning("Waiting interrupted by user")
+                logger.warning("Waiting interrupted by user")
                 return
 
     def _wait_for_operation_processing(
@@ -1096,6 +1092,7 @@ class Run(AbstractContextManager):
         verbose: bool = True,
     ) -> None:
         if timeout is not None and timeout <= 0:
+            logger.info("Skipping waiting for operation processing because timeout has already passed")
             return
 
         if verbose:
@@ -1107,7 +1104,7 @@ class Run(AbstractContextManager):
         operations_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
-        last_print_timestamp: Optional[float] = None
+        throttled_logger = ThrottledLogger(logger, enabled=verbose)
 
         while True:
             try:
@@ -1120,37 +1117,33 @@ class Run(AbstractContextManager):
                 operations_count = self._operations_repo.get_operation_count(limit=operations_count_limit)
 
                 if operations_count > 0:
-                    last_print_timestamp = print_message(
+                    throttled_logger.info(
                         "Waiting for remaining %d%s operation(s) to be processed",
                         operations_count,
                         "" if operations_count < operations_count_limit else "+",
-                        last_print=last_print_timestamp,
-                        verbose=verbose,
                     )
 
                     if timer.is_expired():
-                        if verbose:
-                            logger.info("Waiting interrupted because timeout was reached")
+                        logger.info("Waiting interrupted because timeout was reached")
                         break
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
-                    if verbose:
-                        logger.info("All operations were processed")
+                    logger.info("All operations were processed")
                     break
             except KeyboardInterrupt:
-                if verbose:
-                    logger.warning("Waiting interrupted by user")
+                logger.warning("Waiting interrupted by user")
                 return
 
     def _wait_for_file_upload(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> bool:
-        if self._operations_repo is None:
-            return True
+    ) -> None:
+        if timeout is not None and timeout <= 0:
+            logger.info("Skipping waiting for file upload because timeout has already passed")
+            return
 
         if verbose:
             logger.info("Waiting for all files to be uploaded")
@@ -1161,7 +1154,7 @@ class Run(AbstractContextManager):
         upload_count_limit = 10_000
         timer = Timer(timeout)
         sleep_time = float(OPERATION_REPOSITORY_POLL_SLEEP_TIME)
-        last_print_timestamp: Optional[float] = None
+        throttled_logger = ThrottledLogger(logger, enabled=verbose)
 
         while True:
             try:
@@ -1179,29 +1172,24 @@ class Run(AbstractContextManager):
                 upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
 
                 if upload_count > 0:
-                    last_print_timestamp = print_message(
+                    throttled_logger.info(
                         "Waiting for remaining %d%s file(s) to be uploaded",
                         upload_count,
                         "" if upload_count < upload_count_limit else "+",
-                        last_print=last_print_timestamp,
-                        verbose=verbose,
                     )
 
                     if timer.is_expired():
-                        if verbose:
-                            logger.info("Waiting interrupted because timeout was reached")
-                        return False
+                        logger.info("Waiting interrupted because timeout was reached")
+                        break
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
-                    if verbose:
-                        logger.info("All files were uploaded")
-                    return True
+                    logger.info("All files were uploaded")
+                    break
             except KeyboardInterrupt:
-                if verbose:
-                    logger.warning("Waiting interrupted by user")
-                return False
+                logger.warning("Waiting interrupted by user")
+                return
 
     def get_run_url(self) -> str:
         """
@@ -1220,16 +1208,6 @@ class Run(AbstractContextManager):
             raise ValueError("`experiment_name` was not provided during Run initialization")
 
         return _get_run_url(self._api_token, self._project, experiment_name=self._experiment_name)
-
-
-def print_message(msg: str, *args: Any, last_print: Optional[float] = None, verbose: bool = True) -> Optional[float]:
-    current_time = time.time()
-
-    if verbose and (last_print is None or current_time - last_print > STOP_MESSAGE_FREQUENCY):
-        logger.info(msg, *args)
-        return current_time
-
-    return last_print
 
 
 def _sanitize_path_component(component: str) -> str:
