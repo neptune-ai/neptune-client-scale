@@ -156,6 +156,8 @@ def run_sync_process(
     signal.signal(signal.SIGTERM, ft.partial(_handle_stop_signal, stop_event))
 
     operations_repository = OperationsRepository(db_path=operations_repository_path)
+    operations_repository.delete_operation_submissions(up_to_seq_id=None)
+
     sender_thread = SenderThread(
         api_token=api_token,
         operations_repository=operations_repository,
@@ -274,8 +276,6 @@ class SenderThread(Daemon):
 
         self._backend: Optional[ApiClient] = None
         self._metadata: Metadata = operations_repository.get_metadata()  # type: ignore
-
-        self._operations_repository.delete_operation_submissions(up_to_seq_id=None)
 
     @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
     @with_api_errors_handling

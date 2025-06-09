@@ -645,7 +645,7 @@ def test_get_operation_submission_sequence_id_range_empty_db(operations_repo):
     assert start_end is None
 
 
-def test_delete_operation_submission(operations_repo, temp_db_path):
+def test_delete_operation_submission_by_id(operations_repo, temp_db_path):
     # Given
     submissions = [
         OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
@@ -664,6 +664,27 @@ def test_delete_operation_submission(operations_repo, temp_db_path):
     # when
     result = operations_repo.get_operation_submissions(limit=10)
     assert len(result) == 2
+
+
+def test_delete_operation_submission_none(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
+
+    # When - delete the first 3 operations
+    deleted_count = operations_repo.delete_operation_submissions(up_to_seq_id=None)
+
+    # Then
+    assert deleted_count == 5
+
+    # when
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 0
 
 
 def test_delete_operation_submission_invalid_id(operations_repo, temp_db_path):
@@ -773,6 +794,33 @@ def test_cleanup_repository_nonempty_file_requests(temp_db_path, cleanup_files):
 
     # then
     assert os.path.exists(temp_db_path)
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_operation_submissions(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    repo.save_operation_submissions(
+        [
+            OperationSubmission(
+                sequence_id=SequenceId(0),
+                request_id=RequestId("r0"),
+                timestamp=0,
+            )
+        ]
+    )
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path) != cleanup_files
 
 
 @pytest.mark.skip(reason="We do not support the case of two processes owning the same repository")

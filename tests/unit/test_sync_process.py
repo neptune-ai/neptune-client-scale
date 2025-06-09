@@ -368,8 +368,8 @@ def test_sender_thread_processes_elements_with_nonempty_submissions_partial(oper
     assert backend.submit.call_count == 1
 
     tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
-    assert len(tracking) == 1
-    assert tracking[0].sequence_id == SequenceId(last_sequence_id)
+    assert len(tracking) == 2
+    assert [item.sequence_id for item in tracking] == [SequenceId(5), SequenceId(last_sequence_id)]
 
 
 def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
