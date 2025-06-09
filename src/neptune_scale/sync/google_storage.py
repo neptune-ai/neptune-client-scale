@@ -1,5 +1,3 @@
-import asyncio
-import random
 from pathlib import Path
 
 import backoff
@@ -16,10 +14,6 @@ from neptune_scale.util import get_logger
 __all__ = ["upload_to_gcp"]
 
 logger = get_logger()
-
-# Maximum number of retries for chunk upload. Note that this applies only to the actual data chunks.
-# Fetching upload session and querying resume position is retried separately using @backoff.
-MAX_RETRIES = 6
 
 
 async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chunk_size: int = 16 * 1024 * 1024) -> None:
@@ -59,7 +53,6 @@ async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chun
 
 async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, file_size: int, chunk_size: int) -> None:
     file_position = 0
-    num_retries = 0
 
     with open(file_path, "rb") as file:
         while file_position < file_size:
@@ -67,31 +60,19 @@ async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, fi
             if not chunk:
                 raise Exception("File truncated during upload")
 
-            try:
-                await _upload_chunk(client, session_uri, chunk, file_position, file_size)
-                file_position += len(chunk)
-                num_retries = 0
-                logger.debug(f"{file_position}/{file_size} bytes uploaded.")
-            except Exception as e:
-                logger.debug(f"Error uploading chunk: {e}")
+            upload_position = await _upload_chunk(client, session_uri, chunk, file_position, file_size)
+            file_position += len(chunk)
 
-                # HTTP status errors that are not 5xx should not be retried
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code // 100 != 5:
-                    raise
+            # If the server confirmed less that we uploaded, we need to track back to the reported position.
+            if file_position != upload_position:
+                logger.debug(
+                    f"Server returned a different upload position: {file_position=}, {upload_position=}. "
+                    f"Resuming from {upload_position}."
+                )
+                file.seek(upload_position)
+                file_position = upload_position
 
-                num_retries += 1
-                if num_retries > MAX_RETRIES:
-                    raise Exception("Max retries reached while uploading file to GCS") from e
-
-                # Retry after exponential backoff with jitter
-                sleep_time = (2**num_retries) + random.randint(0, 1000) / 1000.0
-                await asyncio.sleep(sleep_time)
-
-                file_position = await _query_resume_position(client, session_uri, file_size)
-                if file_position >= file_size:
-                    break
-
-                file.seek(file_position)
+            logger.debug(f"{file_position}/{file_size} bytes uploaded.")
 
 
 def _is_retryable_httpx_error(exc: Exception) -> bool:
@@ -114,10 +95,9 @@ async def _fetch_session_uri(client: AsyncClient, signed_url: str, content_type:
     """
     headers = {
         "X-goog-resumable": "start",
-        # Google docs say that X-Uploaded-Content-Type can be provided, but for some reason
-        # it doesn't work, however Content-Type works just fine.
+        # Google docs say that X-Upload-Content-Type should be provided to specify the content type of the file,
+        # but it does not work. Setting Content-Type header does work.
         "Content-Type": content_type,
-        "Host": "storage.googleapis.com",
     }
 
     response = await client.post(signed_url, headers=headers)
@@ -130,7 +110,15 @@ async def _fetch_session_uri(client: AsyncClient, signed_url: str, content_type:
     return str(session_uri)
 
 
-async def _upload_chunk(client: AsyncClient, session_uri: str, chunk: bytes, start: int, file_size: int) -> None:
+@backoff.on_predicate(backoff.expo, _is_retryable_httpx_error, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
+async def _upload_chunk(client: AsyncClient, session_uri: str, chunk: bytes, start: int, file_size: int) -> int:
+    """Upload a chunk of data indicating the start-end position and total size. Returns the total number of bytes
+    already uploaded to the server in a given session URI.
+
+    Note that the returned value could be smaller than the number of bytes uploaded so far, so we always need
+    to use the returned position to determine start position of the next chunk.
+    """
+
     end = start + len(chunk) - 1  # -1 because Content-Range represents an inclusive range
     headers = {
         "Content-Length": str(len(chunk)),
@@ -139,46 +127,23 @@ async def _upload_chunk(client: AsyncClient, session_uri: str, chunk: bytes, sta
 
     response = await client.put(session_uri, headers=headers, content=chunk)
 
-    if response.status_code in (308, 200, 201):
-        # 200 or 201 -> the upload is complete
-        # 308 -> chunk was saved: https://cloud.google.com/storage/docs/json_api/v1/status-codes#308_Resume_Incomplete
-        return
+    # 308 -> chunk was saved: https://cloud.google.com/storage/docs/json_api/v1/status-codes#308_Resume_Incomplete
+    if response.status_code == 308:
+        range_header = response.headers.get("Range")
+        # Nothing uploaded yet
+        if range_header is None:
+            return 0
+        elif range_header.startswith("bytes=0-"):
+            # Range header is 'bytes=0-LAST_BYTE_UPLOADED'. LAST_BYTE_UPLOADED is inclusive, so we need to add 1.
+            return int(range_header.split("-")[1]) + 1
+        else:
+            raise ValueError(f"Unexpected Range header format received from server: `{range_header}`")
+    # 2xx -> the upload is complete
+    elif response.status_code // 100 == 2:
+        return file_size
 
     response.raise_for_status()
-
-
-@backoff.on_predicate(backoff.expo, predicate=_is_retryable_httpx_error, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
-async def _query_resume_position(client: AsyncClient, session_uri: str, file_size: int) -> int:
-    """
-    Query Google Storage for the current upload position. If the upload is completed, return value larger
-    than file_size.
-
-    A request might've been processes by GCS correctly, but due to network issues we might not have
-    received the response -- so we always query the current position after a there is a chunk upload error.
-    """
-
-    headers = {
-        "Content-Range": f"bytes */{file_size}",
-        "Content-Length": "0",
-    }
-
-    response = await client.put(session_uri, headers=headers)
-    # 2xx - upload already completed
-    if response.status_code // 100 == 2:
-        return file_size + 1
-    elif response.status_code == 308:
-        range_header = response.headers.get("Range")
-        if not range_header:
-            return 0  # Nothing uploaded yet
-
-        if range_header.startswith("bytes=0-"):
-            # Range header is 'bytes=0-LAST_BYTE_UPLOADED'
-            return int(range_header.split("-")[1]) + 1  # +1 to resume from the next byte
-        else:
-            raise ValueError(f"Unexpected Range header format received from server: {range_header}")
-    else:
-        response.raise_for_status()
-        return -1  # keep mypy happy, the above line will always raise because status code is not 2xx
+    return -1  # keep mypy happy, the above line will always raise because status code is not 2xx or 308
 
 
 @backoff.on_exception(backoff.expo, httpx.RequestError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
