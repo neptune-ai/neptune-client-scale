@@ -106,6 +106,7 @@ def single_operation(update: UpdateRunSnapshot, sequence_id):
 def operations_repository_mock():
     repo = Mock()
     repo.get_metadata.side_effect = [metadata]
+    repo.get_operation_submission_sequence_id_range.return_value = None
     return repo
 
 
@@ -143,7 +144,6 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
 
 def test_sender_thread_processes_single_element(operations_repository_mock):
     # given
-
     errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
@@ -203,6 +203,7 @@ def test_sender_thread_fails_on_regular_error():
     # given
     operations_repository_mock = Mock()
     operations_repository_mock.get_metadata.side_effect = [metadata]
+    operations_repository_mock.get_operation_submission_sequence_id_range.return_value = None
     errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
@@ -326,7 +327,7 @@ def test_sender_thread_processes_elements_with_nonempty_submissions(operations_r
     sender_thread.work()
 
     # then
-    assert backend.submit.call_count == 1
+    assert backend.submit.call_count == 0
 
     tracking: list[OperationSubmission] = operations_repo.get_operation_submissions(10)
     assert len(tracking) == 1
