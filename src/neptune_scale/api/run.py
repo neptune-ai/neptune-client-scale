@@ -372,6 +372,9 @@ class Run(AbstractContextManager):
                 fork_step=fork_step,
             )
 
+            if mode == "async":
+                self._print_run_info()
+
         # enable stdout / stderr logging at the end of the constructor, when everything is ready
         if self._console_log_capture is not None:
             self._console_log_capture.start()
@@ -381,6 +384,12 @@ class Run(AbstractContextManager):
             if not self._is_closing:
                 if self._errors_queue is not None:
                     self._errors_queue.put(NeptuneSynchronizationStopped())
+
+    def _print_run_info(self) -> None:
+        try:
+            logger.info(f"View your run in the app:\n{self.get_run_url()}")
+        except Exception as e:
+            logger.debug(f"Error while printing run info: {e}")
 
     def _close(self, *, timeout: Optional[float] = None) -> None:
         timer = Timer(timeout)
