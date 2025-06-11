@@ -16,7 +16,7 @@ from neptune_scale.exceptions import (
     NeptuneProjectAlreadyExists,
 )
 from neptune_scale.net.api_client import (
-    HostedApiClient,
+    ApiClient,
     with_api_errors_handling,
 )
 from neptune_scale.util.envs import API_TOKEN_ENV_NAME
@@ -54,7 +54,7 @@ def create_project(
 ) -> None:
     api_token = _get_api_token(api_token)
 
-    client = HostedApiClient(api_token=api_token)
+    client = ApiClient(api_token=api_token)
     visibility = ProjectVisibility(visibility)
 
     body = {
@@ -92,7 +92,7 @@ def _safe_json(response: httpx.Response) -> Any:
 
 
 def get_project_list(*, api_token: Optional[str] = None) -> list[dict]:
-    client = HostedApiClient(api_token=_get_api_token(api_token))
+    client = ApiClient(api_token=_get_api_token(api_token))
 
     params = {
         "userRelation": "viewerOrHigher",

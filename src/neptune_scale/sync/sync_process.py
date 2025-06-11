@@ -89,7 +89,6 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.net.api_client import (
     ApiClient,
-    backend_factory,
     with_api_errors_handling,
 )
 from neptune_scale.sync.errors_tracking import ErrorsQueue
@@ -332,7 +331,7 @@ class SenderThread(Daemon):
     @with_api_errors_handling
     def submit(self, *, operation: RunOperation) -> Optional[SubmitResponse]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token)
+            self._backend = ApiClient(api_token=self._api_token)
 
         response = self._backend.submit(operation=operation, family=self._family)
 
@@ -505,7 +504,7 @@ class StatusTrackingThread(Daemon):
     @with_api_errors_handling
     def check_batch(self, *, request_ids: list[str]) -> Optional[BulkRequestStatus]:
         if self._backend is None:
-            self._backend = backend_factory(api_token=self._api_token)
+            self._backend = ApiClient(api_token=self._api_token)
 
         response = self._backend.check_batch(request_ids=request_ids, project=self._project)
 
@@ -620,7 +619,7 @@ class FileUploaderThread(Daemon):
     def work(self) -> None:
         try:
             if self._api_client is None:
-                self._api_client = backend_factory(api_token=self._neptune_api_token)
+                self._api_client = ApiClient(api_token=self._neptune_api_token)
                 asyncio.set_event_loop(self._aio_loop)
 
             while file_upload_requests := self._operations_repository.get_file_upload_requests(
