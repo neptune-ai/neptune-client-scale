@@ -1010,6 +1010,9 @@ class Run(AbstractContextManager):
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> bool:
+        if wait_seq is None or self._sequence_tracker is None:
+            return True
+
         if timeout is not None and timeout <= 0:
             return False
 
@@ -1027,11 +1030,15 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
-                        logger.warning("Waiting interrupted because sync process is not running")
-                        return False
-
-                    assert wait_seq is not None
-                    assert self._sequence_tracker is not None
+                        with wait_seq:
+                            value = wait_seq.value
+                        if value >= self._sequence_tracker.last_sequence_id:
+                            if verbose:
+                                logger.info(f"All operations were {phrase}")
+                            return True
+                        else:
+                            logger.warning("Waiting interrupted because sync process is not running")
+                            return False
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.
                     # Otherwise, we would unnecessarily block, waiting on a notify_all() that never happens.
@@ -1129,6 +1136,9 @@ class Run(AbstractContextManager):
         timeout: Optional[float] = None,
         verbose: bool = True,
     ) -> bool:
+        if self._operations_repo is None:
+            return True
+
         if timeout is not None and timeout <= 0:
             return False
 
@@ -1147,9 +1157,14 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
-                        logger.warning("Waiting interrupted because sync process is not running")
-                        return False
-                assert self._operations_repo is not None
+                        upload_count = self._operations_repo.get_file_upload_requests_count(limit=1)
+                        if upload_count == 0:
+                            if verbose:
+                                logger.info("All files were uploaded")
+                            return True
+                        else:
+                            logger.warning("Waiting interrupted because sync process is not running")
+                            return False
 
                 upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
 

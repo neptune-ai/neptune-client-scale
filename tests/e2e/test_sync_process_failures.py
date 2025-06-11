@@ -56,6 +56,7 @@ def test_warning_callback_after_sync_process_dies():
 def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing, wait_for_file_upload):
     run = Run()
     run._sync_process.join()
+    assert not run._sync_process.is_alive()
 
     run.log_metrics({"metric": 2}, step=1)
     if wait_for_submission:
