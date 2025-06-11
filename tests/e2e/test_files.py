@@ -1,12 +1,14 @@
 import logging
 import os
 import pathlib
+import random
 import re
 import time
 from typing import Any
 
 import pytest
 
+from neptune_scale import Run
 from neptune_scale.exceptions import NeptuneAttributePathEmpty
 from neptune_scale.sync.files import NO_STEP_PLACEHOLDER
 from neptune_scale.types import File
@@ -52,7 +54,7 @@ SYNC_TIMEOUT = 30
         },
         {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
-        {"test_files/file_large1": b"a" * (10 * 1024 * 1024)},
+        {"test_files/file_large1": random.randbytes(10 * 1024 * 1024)},
         {"test_files/file_empty1": "e2e/resources/empty_file"},
         {"test_files/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
         {"test_files/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
@@ -382,7 +384,7 @@ def test_assign_files_error_no_access(run, client, project_name, temp_dir):
         },
         {"test_file_series/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_file_series/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
-        {"test_file_series/file_large1": b"a" * (10 * 1024 * 1024)},
+        {"test_file_series/file_large1": random.randbytes(10 * 1024 * 1024)},
         {"test_file_series/file_empty1": "e2e/resources/empty_file"},
         {"test_file_series/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
         {"test_file_series/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
@@ -706,6 +708,28 @@ def test_log_files_multiple(caplog, run, client, project_name, run_init_kwargs, 
     for i, attribute_series in enumerate(attribute_series.values()):
         for step, content in attribute_series.items():
             compare_content(actual_path=temp_dir / str(i) / f"{step:19.6f}", expected_content=content)
+
+
+def test_log_files_in_chunks(monkeypatch, client, project_name, run_init_kwargs, temp_dir):
+    """Test downloading files larger than the chunk size."""
+
+    monkeypatch.setenv("NEPTUNE_FILE_UPLOAD_CHUNK_SIZE", str(1024 * 1024))
+    ensure_test_directory()
+    file_data = random.randbytes(5 * 1024 * 1024)
+
+    run = Run(**run_init_kwargs)
+    run.assign_files({"test_files/test_chunks": file_data})
+    run.wait_for_processing(SYNC_TIMEOUT)
+    extra_wait()
+
+    fetch_files(
+        client,
+        project_name,
+        custom_run_id=run._run_id,
+        attributes_targets={"test_files/test_chunks": temp_dir / "test_chunks"},
+    )
+
+    compare_content(temp_dir / "test_chunks", file_data)
 
 
 def compare_content(actual_path, expected_content):

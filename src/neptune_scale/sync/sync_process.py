@@ -609,6 +609,11 @@ class FileUploaderThread(Daemon):
         self._max_concurrent_uploads = max_concurrent_uploads or envs.get_positive_int(
             envs.MAX_CONCURRENT_FILE_UPLOADS, 50
         )
+        self._upload_chunk_size = envs.get_positive_int("NEPTUNE_FILE_UPLOAD_CHUNK_SIZE", 16 * 1024 * 1024)
+        logger.debug(f"{self._upload_chunk_size=}")
+        # This is enforced by GCP, enforcing this for other providers is consistent.
+        if self._upload_chunk_size % (256 * 1024) != 0:
+            raise ValueError("NEPTUNE_FILE_UPLOAD_CHUNK_SIZE must be a multiple of 256 KiB")
 
         self._api_client: Optional[ApiClient] = None
 
@@ -653,9 +658,9 @@ class FileUploaderThread(Daemon):
     async def _upload_file(self, file: FileUploadRequest, provider: str, storage_url: str) -> None:
         try:
             if provider == Provider.AZURE:
-                await upload_to_azure(file.source_path, file.mime_type, storage_url)
+                await upload_to_azure(file.source_path, file.mime_type, storage_url, chunk_size=self._upload_chunk_size)
             elif provider == Provider.GCP:
-                await upload_to_gcp(file.source_path, file.mime_type, storage_url)
+                await upload_to_gcp(file.source_path, file.mime_type, storage_url, chunk_size=self._upload_chunk_size)
             else:
                 raise NeptuneUnexpectedError(f"Unsupported file storage provider: {provider}")
 
@@ -691,6 +696,7 @@ def fetch_file_storage_urls(
     response = client.fetch_file_storage_urls(paths=destination_paths, project=project, mode="write")
     status_code = response.status_code
     if status_code != 200:
+        logger.debug(f"{response.content=!r}")
         _raise_exception(status_code)
 
     if response.parsed is None:
@@ -699,14 +705,19 @@ def fetch_file_storage_urls(
     return {file.path: (file.provider, file.url) for file in response.parsed.files or []}
 
 
-async def upload_to_azure(local_path: str, mime_type: str, storage_url: str) -> None:
-    logger.debug(f"Starting upload to Azure: {local_path}")
+async def upload_to_azure(local_path: str, mime_type: str, storage_url: str, chunk_size: int = 4 * 1024 * 1024) -> None:
+    logger.debug(f"Starting upload to Azure: {local_path}, {mime_type=}, {chunk_size=}")
 
     try:
         size_bytes = Path(local_path).stat().st_size
         with open(local_path, "rb") as file:
             client = BlobClient.from_blob_url(
-                storage_url, initial_backoff=5, increment_base=3, retry_total=5, transport=AsyncioRequestsTransport()
+                storage_url,
+                max_block_size=chunk_size,
+                max_initial_backoff=5,
+                increment_base=3,
+                retry_total=5,
+                transport=AsyncioRequestsTransport(),
             )
             async with client:
                 # Upload with default concurrency settings
@@ -720,6 +731,7 @@ async def upload_to_azure(local_path: str, mime_type: str, storage_url: str) -> 
         logger.debug(f"Azure SDK error, will retry uploading file {local_path}: {e}")
         raise NeptuneFileUploadTemporaryError() from e
     except Exception as e:
+        logger.debug(f"Failed to upload file {local_path}: {e}")
         raise e
 
     logger.debug(f"Finished upload to Azure: {local_path}")

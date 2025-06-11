@@ -28,7 +28,7 @@ async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chun
     chunk_size must be a multiple of 256 KiB (256 * 1024 bytes) (GCS requirement)
     """
 
-    logger.debug(f"Starting upload to GCS: {file_path}")
+    logger.debug(f"Starting upload to GCS: {file_path}, {content_type=}, {chunk_size=}")
 
     try:
         async with AsyncClient(timeout=httpx.Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT)) as client:
@@ -41,8 +41,10 @@ async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chun
 
             await _upload_file(client, session_uri, file_path, file_size, chunk_size)
     except httpx.RequestError as e:
+        logger.debug(f"Temporary error while uploading {file_path}: {e}")
         raise NeptuneFileUploadTemporaryError() from e
     except httpx.HTTPStatusError as e:
+        logger.debug(f"HTTP {e.response.status_code} error while uploading {file_path}: {e}, {e.response.content=!r}")
         # Internal server errors (5xx) are temporary
         if e.response.status_code // 100 == 5:
             raise NeptuneFileUploadTemporaryError() from e

@@ -10,6 +10,7 @@ import time
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import (
+    ANY,
     AsyncMock,
     Mock,
     call,
@@ -806,8 +807,8 @@ def test_file_uploader_thread_successful_upload_flow(
     )
 
     expected_calls = [
-        call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url"),
-        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
+        call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url", chunk_size=ANY),
+        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
     ]
     # All files should be uploaded
     mock_upload_func.assert_has_calls(expected_calls)
@@ -847,7 +848,7 @@ def test_file_uploader_uploads_concurrently(
     concurrent_uploads = 0
     peak_uploads = 0
 
-    async def _upload_file(local_path, mime_type, storage_url):
+    async def _upload_file(local_path, mime_type, storage_url, chunk_size):
         """Track the number of concurrent uploads and the peak number of concurrent uploads."""
         nonlocal peak_uploads, concurrent_uploads
 
@@ -922,8 +923,8 @@ def test_file_uploader_thread_terminal_error(
 
     # An upload attempt should be made for both files
     expected_calls = [
-        call("no-such-file", "text/plain", "text-url"),
-        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
+        call("no-such-file", "text/plain", "text-url", chunk_size=ANY),
+        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
     ]
     mock_upload_func.assert_has_calls(expected_calls)
 
@@ -1052,10 +1053,16 @@ def test_file_uploader_thread_uploads_to_correct_provider(
 
         assert mock_upload_to_azure.call_count == 2
         mock_upload_to_azure.assert_has_calls(
-            [call(local_path, mime_type, "azure-url-1"), call(local_path, mime_type, "azure-url-2")]
+            [
+                call(local_path, mime_type, "azure-url-1", chunk_size=ANY),
+                call(local_path, mime_type, "azure-url-2", chunk_size=ANY),
+            ]
         )
 
         assert mock_upload_to_gcp.call_count == 2
         mock_upload_to_gcp.assert_has_calls(
-            [call(local_path, mime_type, "gcp-url-1"), call(local_path, mime_type, "gcp-url-2")]
+            [
+                call(local_path, mime_type, "gcp-url-1", chunk_size=ANY),
+                call(local_path, mime_type, "gcp-url-2", chunk_size=ANY),
+            ]
         )
