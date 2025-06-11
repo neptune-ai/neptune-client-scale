@@ -3,7 +3,6 @@ import tempfile
 from unittest.mock import (
     ANY,
     AsyncMock,
-    MagicMock,
     Mock,
     call,
     patch,
@@ -14,6 +13,7 @@ import pytest
 
 from neptune_scale.exceptions import NeptuneFileUploadTemporaryError
 from neptune_scale.sync.google_storage import (
+    _fetch_session_uri,
     _is_retryable_httpx_error,
     _upload_chunk,
     upload_to_gcp,
@@ -22,13 +22,13 @@ from neptune_scale.sync.google_storage import (
 
 @pytest.fixture
 def mock_file():
-    """Yields a mock for files opened using `with open(...) as foo:`"""
+    """Yields a mock for files opened using `with aiofiles.open(...) as foo:`"""
 
-    with patch("builtins.open") as mock_open, patch("neptune_scale.sync.google_storage.Path.stat") as mock_path_stat:
-        mock_file = MagicMock(wraps=io.BytesIO(b"ABCDEFGH"))
+    with patch("aiofiles.open") as mock_open, patch("neptune_scale.sync.google_storage.Path.stat") as mock_path_stat:
+        mock_file = AsyncMock(wraps=io.BytesIO(b"ABCDEFGH"))
         mock_path_stat.return_value.st_size = 8
         # We need to mock the context manager for open
-        mock_open.return_value.__enter__.return_value = mock_file
+        mock_open.return_value.__aenter__.return_value = mock_file
 
         yield mock_file
 
@@ -117,6 +117,14 @@ async def test_upload_chunk_returns_correct_position(range_header, expected_posi
     client.put.return_value = Mock(status_code=308, headers={"Range": range_header} if range_header else {})
     position = await _upload_chunk(client, "session-uri", b"test", 0, 100)
     assert position == expected_position
+
+
+async def test_fetch_session_uri_reads_location_header():
+    client = AsyncMock()
+    client.post.return_value = Mock(status_code=200, headers={"Location": "http://session.url"})
+    uri = await _fetch_session_uri(client, "signed_url", "text/plain")
+
+    assert uri == "http://session.url"
 
 
 @pytest.mark.parametrize(

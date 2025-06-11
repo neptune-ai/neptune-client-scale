@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import aiofiles
 import backoff
 import httpx
 from httpx import AsyncClient
@@ -54,9 +55,9 @@ async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chun
 async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, file_size: int, chunk_size: int) -> None:
     file_position = 0
 
-    with open(file_path, "rb") as file:
+    async with aiofiles.open(file_path, "rb") as file:
         while file_position < file_size:
-            chunk = file.read(chunk_size)
+            chunk = await file.read(chunk_size)
             if not chunk:
                 raise Exception("File truncated during upload")
 
@@ -69,7 +70,7 @@ async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, fi
                     f"Server returned a different upload position: {file_position=}, {upload_position=}. "
                     f"Resuming from {upload_position}."
                 )
-                file.seek(upload_position)
+                await file.seek(upload_position)
                 file_position = upload_position
 
             logger.debug(f"{file_position}/{file_size} bytes uploaded.")
