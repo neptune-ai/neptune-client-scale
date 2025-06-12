@@ -132,9 +132,11 @@ async def test_fetch_session_uri_reads_location_header():
     (
         (httpx.RequestError("Connection error"), True),
         (httpx.HTTPStatusError("Internal server error", request=Mock(), response=Mock(status_code=500)), True),
+        (httpx.HTTPStatusError("Too Many Requests", request=Mock(), response=Mock(status_code=429)), True),
+        (httpx.HTTPStatusError("Bad Request", request=Mock(), response=Mock(status_code=400)), True),
         (httpx.HTTPError("Base HTTP Error"), False),
         (httpx.HTTPStatusError("Moved temporarily", request=Mock(), response=Mock(status_code=302)), False),
-        (httpx.HTTPStatusError("Bad Request", request=Mock(), response=Mock(status_code=400)), False),
+        (httpx.HTTPStatusError("Unauthorized", request=Mock(), response=Mock(status_code=401)), False),
         (Exception(), False),
     ),
 )

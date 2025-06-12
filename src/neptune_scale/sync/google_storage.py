@@ -78,15 +78,18 @@ async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, fi
 
 
 def _is_retryable_httpx_error(exc: Exception) -> bool:
-    """Used in @backoff.on_predicate to determine if an error is retryable. All network-related errors
-    and HTTP 500 errors are considered retryable."""
+    """Used to determine if an error is retryable. Retryable errors are:
+    - All network-related errors
+    - HTTP 5xx errors
+    - HTTP 429 Too Many Requests
+    - HTTP 400 Bad Request which covers errors related to signed URLs, see:
+         https://cloud.google.com/storage/docs/xml-api/reference-status#400%E2%80%94bad
+    """
     if isinstance(exc, httpx.RequestError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        # HTTP 429 Too Many Requests or any 5xx error is considered retryable
         status_code = exc.response.status_code
-        # For some reason mypy claims we're returning Any here.
-        return status_code == 429 or status_code // 100 == 5  # type: ignore[no-any-return]
+        return status_code in (400, 429) or status_code // 100 == 5
 
     return False
 
