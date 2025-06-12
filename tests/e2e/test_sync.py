@@ -218,7 +218,6 @@ def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
         run.log_configs(data={"str-value": "hello-world"})
-        run.log_configs(data={"int-value": 13})
         run.assign_files(files={"a-file": b"content"})
 
     runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)

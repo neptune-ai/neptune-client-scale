@@ -1034,9 +1034,7 @@ class Run(AbstractContextManager):
                             value = wait_seq.value
                         if value >= self._sequence_tracker.last_sequence_id:
                             if verbose:
-                                logger.info(
-                                    f"All operations were {phrase} ({value}, {self._sequence_tracker.last_sequence_id})"
-                                )
+                                logger.info(f"All operations were {phrase}")
                             return True
                         else:
                             logger.warning("Waiting interrupted because sync process is not running")
