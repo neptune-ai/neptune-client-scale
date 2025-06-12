@@ -193,7 +193,7 @@ def run_sync_process(
     last_ack_seq: SharedInt,
     last_ack_timestamp: SharedFloat,
 ) -> None:
-    logger.info("Data synchronization started")
+    logger.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] Data synchronization started")
     stop_event = threading.Event()
     signal.signal(signal.SIGTERM, ft.partial(_handle_stop_signal, stop_event))
 
@@ -274,16 +274,18 @@ def run_sync_process(
                 break
 
             if not _is_process_running(parent_process):
-                logger.error("SyncProcess: parent process closed unexpectedly. Exiting")
+                logger.error(
+                    f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] SyncProcess: parent process closed unexpectedly. Exiting"
+                )
                 break
 
     except KeyboardInterrupt:
         logger.debug("KeyboardInterrupt received")
     finally:
-        logger.info("Data synchronization stopping")
+        logger.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] Data synchronization stopping")
         close_all_threads()
         operations_repository.close(cleanup_files=False)
-    logger.info("Data synchronization finished")
+    logger.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] Data synchronization finished")
 
 
 def _is_process_running(process: Optional[psutil.Process]) -> bool:

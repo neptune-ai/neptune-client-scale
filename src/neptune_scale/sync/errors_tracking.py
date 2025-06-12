@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ("ErrorsQueue", "ErrorsMonitor")
 
 import multiprocessing
+import os
 import queue
 import time
 from collections.abc import Callable
@@ -44,7 +45,7 @@ class ErrorsQueue:
 
 
 def default_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
-    logger.error(error)
+    logger.error(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] handling error {error}")
 
 
 def default_network_error_callback(error: BaseException, last_seen_at: Optional[float]) -> None:

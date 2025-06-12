@@ -6,8 +6,10 @@ from datetime import (
     datetime,
     timezone,
 )
+from unittest.mock import patch
 
 import numpy as np
+import pytest
 from pytest import mark
 
 from neptune_scale.api.run import Run
@@ -158,3 +160,26 @@ def test_async_lag_callback():
         # Second callback should be called after logging configs
         event.wait(timeout=60)
         assert event.is_set()
+
+
+@pytest.mark.skip
+def test_concurrent(client, project_name):
+    """Set atoms to a value, make sure it's equal when fetched"""
+    with patch("multiprocessing.context.SpawnProcess.terminate"):
+        run_1 = Run()
+        # for i in range(10):
+        #     run_1.log_configs({f"test_concurrent/int-value-{i}": i * 2})
+        # assert run_1.wait_for_processing(SYNC_TIMEOUT)
+        run_1.close(timeout=1)
+
+        run_2 = Run()
+        for i in range(10):
+            run_2.log_configs({f"test_concurrent/int-value-{i}": i * 2 + 1})
+        assert run_2.wait_for_processing(SYNC_TIMEOUT)
+        run_2.close(timeout=1)
+
+    keys = [f"test_concurrent/int-value-{i}" for i in range(10)]
+    # fetched = fetch_attribute_values(client, project_name, custom_run_id=run_1._run_id, attributes=keys)
+    # assert list(fetched.values()) == [i * 2 for i in range(10)]
+    fetched = fetch_attribute_values(client, project_name, custom_run_id=run_2._run_id, attributes=keys)
+    assert list(fetched.values()) == [i * 2 + 1 for i in range(10)]

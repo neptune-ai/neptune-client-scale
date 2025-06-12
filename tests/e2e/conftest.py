@@ -129,8 +129,10 @@ def client() -> AuthenticatedClient:
 
 
 def sleep_3s(**kwargs):
+    logging.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] running mocked run_sync_process - sleep 3s")
     time.sleep(3)
 
 
 def sleep_10s(**kwargs):
+    logging.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] running mocked run_sync_process - sleep 10s")
     time.sleep(10)

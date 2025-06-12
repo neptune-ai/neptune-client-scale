@@ -14,10 +14,14 @@ from neptune_scale.sync.operations_repository import (
     OperationType,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
-from neptune_scale.util import envs
+from neptune_scale.util import (
+    envs,
+    get_logger,
+)
 from tests.e2e.conftest import sleep_3s
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
+logger = get_logger()
 
 # Timeout value for all the tests.
 #
@@ -91,6 +95,7 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(
     wait_for_submission, wait_for_processing, wait_for_file_upload
 ):
     """Make sure we're not blocked forever if the sync process dies before completing all the work."""
+    logger.error(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] starting test")
 
     run = Run()
     run.log_metrics({"metric": 2}, step=1)

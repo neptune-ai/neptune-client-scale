@@ -377,6 +377,7 @@ class Run(AbstractContextManager):
             self._console_log_capture.start()
 
     def _handle_sync_process_death(self) -> None:
+        logger.info(f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] Handling sync process death.")
         with self._lock:
             if not self._is_closing:
                 if self._errors_queue is not None:
@@ -1034,10 +1035,18 @@ class Run(AbstractContextManager):
                             value = wait_seq.value
                         if value >= self._sequence_tracker.last_sequence_id:
                             if verbose:
-                                logger.info(f"All operations were {phrase}")
+                                logger.info(
+                                    f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] "
+                                    f"All operations were {phrase} (state: "
+                                    f"{value} >= {self._sequence_tracker.last_sequence_id})"
+                                )
                             return True
                         else:
-                            logger.warning("Waiting interrupted because sync process is not running")
+                            logger.warning(
+                                f"[{os.environ.get('PYTEST_XDIST_TESTRUNUID')}] "
+                                f"Waiting interrupted because sync process is not running (state: "
+                                f"{value} < {self._sequence_tracker.last_sequence_id})"
+                            )
                             return False
 
                     # Handle the case where we get notified on `wait_seq` before we actually wait.

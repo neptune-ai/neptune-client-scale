@@ -209,6 +209,7 @@ def test_sync_wait_timeout(run_init_kwargs, timeout):
 @pytest.mark.parametrize(
     "hung_method",
     [
+        "multiprocessing.context.SpawnProcess.terminate",
         "neptune_scale.sync.errors_tracking.ErrorsMonitor.interrupt",
     ],
 )
@@ -219,6 +220,8 @@ def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
         db_path = run._operations_repo._db_path
         run.log_configs(data={"str-value": "hello-world"})
         run.assign_files(files={"a-file": b"content"})
+        for i in range(15):  # 17 logs in total
+            run.log_configs(data={f"int-value-{i}": i})
 
     runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
     runner.start()
