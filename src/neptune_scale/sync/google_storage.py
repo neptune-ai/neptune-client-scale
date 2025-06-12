@@ -45,8 +45,7 @@ async def upload_to_gcp(file_path: str, content_type: str, signed_url: str, chun
         raise NeptuneFileUploadTemporaryError() from e
     except httpx.HTTPStatusError as e:
         logger.debug(f"HTTP {e.response.status_code} error while uploading {file_path}: {e}, {e.response.content=!r}")
-        # Internal server errors (5xx) are temporary
-        if e.response.status_code // 100 == 5:
+        if _is_retryable_httpx_error(e):
             raise NeptuneFileUploadTemporaryError() from e
         else:
             raise
@@ -83,8 +82,12 @@ def _is_retryable_httpx_error(exc: Exception) -> bool:
     and HTTP 500 errors are considered retryable."""
     if isinstance(exc, httpx.RequestError):
         return True
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code // 100 == 5:
-        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        # HTTP 429 Too Many Requests or any 5xx error is considered retryable
+        status_code = exc.response.status_code
+        # For some reason mypy claims we're returning Any here.
+        return status_code == 429 or status_code // 100 == 5  # type: ignore[no-any-return]
+
     return False
 
 
