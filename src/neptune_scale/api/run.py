@@ -268,7 +268,7 @@ class Run(AbstractContextManager):
             self._sequence_tracker: Optional[SequenceTracker] = SequenceTracker()
             self._console_log_capture: Optional[ConsoleLogCaptureThread] = (
                 None
-                if True
+                if not enable_console_log_capture
                 else ConsoleLogCaptureThread(
                     run_id=run_id,
                     runtime_namespace=runtime_namespace.rstrip("/") if runtime_namespace else "runtime",
