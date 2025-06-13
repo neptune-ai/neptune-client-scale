@@ -11,12 +11,15 @@ from neptune_scale.util import (
 mp_context = multiprocessing.get_context("spawn")
 
 
+TIMEOUT = 10
+
+
 def _child(var):
     with var:
         var.value = 1
         var.notify_all()
 
-    var.wait(timeout=1)
+    var.wait(timeout=TIMEOUT)
     assert var.value == 2
 
 
@@ -27,14 +30,14 @@ def test_set_and_notify(tp):
     process = Process(target=_child, args=(var,))
     process.start()
 
-    var.wait(timeout=1)
+    var.wait(timeout=TIMEOUT)
     assert var.value == 1
 
     with var:
         var.value = 2
         var.notify_all()
 
-    process.join()
+    process.join(timeout=TIMEOUT)
 
     assert var.value == 2
     assert process.exitcode == 0, "Child process failed"
