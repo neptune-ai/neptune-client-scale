@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import threading
@@ -9,22 +10,26 @@ from datetime import (
 from unittest.mock import patch
 
 import numpy as np
-import pytest
 from pytest import mark
 
 from neptune_scale.api.run import Run
+from neptune_scale.cli.sync import SyncRunner
+from neptune_scale.util import get_logger
 
 from .conftest import (
     random_series,
-    unique_path,
+    unique_path, sleep_3s,
 )
 from .test_fetcher import (
     fetch_attribute_values,
     fetch_metric_values,
 )
+from .test_sync import API_TOKEN
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 30
+
+logger = get_logger()
 
 
 def test_atoms(run, client, project_name):
@@ -162,24 +167,33 @@ def test_async_lag_callback():
         assert event.is_set()
 
 
-@pytest.mark.skip
-def test_concurrent(client, project_name):
-    """Set atoms to a value, make sure it's equal when fetched"""
-    with patch("multiprocessing.context.SpawnProcess.terminate"):
-        run_1 = Run()
-        # for i in range(10):
-        #     run_1.log_configs({f"test_concurrent/int-value-{i}": i * 2})
-        # assert run_1.wait_for_processing(SYNC_TIMEOUT)
-        run_1.close(timeout=1)
+def test_concurrent(client, project_name, run_init_kwargs):
+    logger.info("Phase 1") ###
 
-        run_2 = Run()
-        for i in range(10):
-            run_2.log_configs({f"test_concurrent/int-value-{i}": i * 2 + 1})
-        assert run_2.wait_for_processing(SYNC_TIMEOUT)
-        run_2.close(timeout=1)
+    def in_thread():
+        with Run(mode="offline") as run_1:
+            db_path = run_1._operations_repo._db_path
+            for i in range(10_000):
+                run_1.log_configs(data={f"int-value-{i}": i})
 
-    keys = [f"test_concurrent/int-value-{i}" for i in range(10)]
-    # fetched = fetch_attribute_values(client, project_name, custom_run_id=run_1._run_id, attributes=keys)
-    # assert list(fetched.values()) == [i * 2 for i in range(10)]
-    fetched = fetch_attribute_values(client, project_name, custom_run_id=run_2._run_id, attributes=keys)
-    assert list(fetched.values()) == [i * 2 + 1 for i in range(10)]
+        runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
+        runner.start()
+        time.sleep(2)
+
+    thread = threading.Thread(target=in_thread)
+    thread.start()
+    thread.join(timeout=SYNC_TIMEOUT)
+
+    logger.info("Phase 2") ###
+
+    run_2 = Run(resume=True)
+    run_2._sync_process.terminate()
+    run_2._sync_process.join()
+
+    for i in range(5):
+        run_2.log_configs({f"test_concurrent/int-value-{i}": i * 2 + 1})
+
+    time.sleep(5)
+
+    logger.info("Phase 3") ###
+    assert not run_2.wait_for_processing(SYNC_TIMEOUT)

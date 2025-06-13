@@ -105,6 +105,9 @@ from neptune_scale.util.timer import Timer
 
 logger = get_logger()
 
+# Global multiprocessing context for the whole program
+GLOBAL_MP_CONTEXT = multiprocessing.get_context("spawn")
+
 
 class Run(AbstractContextManager):
     """
@@ -292,7 +295,7 @@ class Run(AbstractContextManager):
             if self._api_token is None:
                 raise NeptuneApiTokenNotProvided()
 
-            spawn_mp_context = multiprocessing.get_context("spawn")
+            spawn_mp_context = GLOBAL_MP_CONTEXT
 
             self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue(spawn_mp_context)
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
@@ -386,7 +389,7 @@ class Run(AbstractContextManager):
     def _close(self, *, timeout: Optional[float] = None) -> None:
         timer = Timer(timeout)
 
-        # Console log capture is actually a produced of logged data, so let's flush it before closing.
+        # Console log capture is actually a producer of logged data, so let's flush it before closing.
         # This allows to log tracebacks of the potential exception that caused the run to fail.
         if self._console_log_capture is not None:
             self._console_log_capture.interrupt(remaining_iterations=0 if timer.is_expired() else 1)

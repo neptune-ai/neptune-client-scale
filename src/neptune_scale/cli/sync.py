@@ -25,6 +25,7 @@ from typing import Optional
 
 from tqdm import tqdm
 
+from neptune_scale.api.run import GLOBAL_MP_CONTEXT
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
@@ -85,7 +86,7 @@ class SyncRunner:
         self._run_log_file: Path = run_log_file
         self._operations_repository: OperationsRepository = OperationsRepository(db_path=run_log_file)
 
-        self._spawn_mp_context = multiprocessing.get_context("spawn")
+        self._spawn_mp_context = GLOBAL_MP_CONTEXT
         self._errors_queue: ErrorsQueue = ErrorsQueue(self._spawn_mp_context)
         self._last_queued_seq = SharedInt(self._spawn_mp_context, -1)
         self._last_ack_seq = SharedInt(self._spawn_mp_context, -1)

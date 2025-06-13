@@ -100,7 +100,7 @@ warn_unused_ignores = "True"
 ignore_missing_imports = "True"
 
 [tool.pytest.ini_options]
-addopts = "--doctest-modules -n 1"
+addopts = "--doctest-modules -n auto -o log_cli=true --log-cli-level=DEBUG --log-level=DEBUG"
 
 [tool.poetry.scripts]
 neptune = "neptune_scale.cli.commands:main"
