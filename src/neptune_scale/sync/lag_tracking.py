@@ -5,58 +5,36 @@ __all__ = ("LagTracker",)
 import time
 from collections.abc import Callable
 
-from neptune_scale.sync.parameters import (
-    LAG_TRACKER_THREAD_SLEEP_TIME,
-    LAG_TRACKER_TIMEOUT,
-)
-from neptune_scale.sync.sequence_tracker import SequenceTracker
-from neptune_scale.util import (
-    Daemon,
-    SharedFloat,
-)
+from neptune_scale.sync.operations_repository import OperationsRepository
+from neptune_scale.sync.parameters import LAG_TRACKER_THREAD_SLEEP_TIME
+from neptune_scale.util import Daemon
 
 
 class LagTracker(Daemon):
     def __init__(
         self,
-        sequence_tracker: SequenceTracker,
-        last_ack_timestamp: SharedFloat,
+        operations_repository: OperationsRepository,
         async_lag_threshold: float,
         on_async_lag_callback: Callable[[], None],
     ) -> None:
         super().__init__(name="LagTracker", sleep_time=LAG_TRACKER_THREAD_SLEEP_TIME)
 
-        self._sequence_tracker: SequenceTracker = sequence_tracker
-        self._last_ack_timestamp: SharedFloat = last_ack_timestamp
+        self._operations_repository = operations_repository
         self._async_lag_threshold: float = async_lag_threshold
         self._on_async_lag_callback: Callable[[], None] = on_async_lag_callback
 
         self._callback_triggered: bool = False
 
     def work(self) -> None:
-        with self._last_ack_timestamp:
-            self._last_ack_timestamp.wait(timeout=LAG_TRACKER_TIMEOUT)
-            last_ack_timestamp = self._last_ack_timestamp.value
-            last_queued_timestamp = self._sequence_tracker.last_timestamp
+        oldest_queued_timestamp = self._operations_repository.get_operations_min_timestamp()
+        current_timestamp = time.time()
 
-            # No operations were put into the queue
-            if last_queued_timestamp is None:
-                return
-
-            # No operations were processed by server
-            if last_ack_timestamp < 0 and not self._callback_triggered:
-                if time.time() - last_queued_timestamp > self._async_lag_threshold:
-                    self._callback_triggered = True
-                    self._on_async_lag_callback()
-                    return
-
-                self._callback_triggered = False
-            else:
-                # Some operations were processed by server
-                if last_queued_timestamp - last_ack_timestamp > self._async_lag_threshold:
-                    if not self._callback_triggered:
-                        self._callback_triggered = True
-                        self._on_async_lag_callback()
-                        return
-
-                    self._callback_triggered = False
+        if (
+            oldest_queued_timestamp is not None
+            and current_timestamp - oldest_queued_timestamp.timestamp() > self._async_lag_threshold
+        ):
+            if not self._callback_triggered:
+                self._on_async_lag_callback()
+                self._callback_triggered = True
+        else:
+            self._callback_triggered = False

@@ -21,7 +21,9 @@ from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
     OperationsRepository,
+    OperationSubmission,
     OperationType,
+    RequestId,
     SequenceId,
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
@@ -230,7 +232,7 @@ def test_get_sequence_id_range_single(operations_repo):
     operations_repo.save_update_run_snapshots(snapshots)
 
     # When
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
 
     # Then
     assert start_end == (1, 1)
@@ -243,7 +245,7 @@ def test_get_sequence_id_range_multiple(operations_repo):
         operations_repo.save_update_run_snapshots(snapshots)
 
     # When
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
 
     # Then
     assert start_end == (1, 5)
@@ -251,7 +253,7 @@ def test_get_sequence_id_range_multiple(operations_repo):
 
 def test_get_sequence_id_range_empty_db(operations_repo):
     # Given
-    start_end = operations_repo.get_sequence_id_range()
+    start_end = operations_repo.get_operations_sequence_id_range()
     assert start_end is None
 
 
@@ -599,6 +601,108 @@ def test_delete_file_upload_requests_empty(operations_repo):
     assert len(requests) == 3
 
 
+@pytest.mark.parametrize("limit", [0, 1, 3, 5, 10])
+def test_get_operation_submissions(operations_repo, limit):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When - get operations up to a size that should include the first 2 operations
+    result = operations_repo.get_operation_submissions(limit=limit)
+
+    # Then
+    assert result == submissions[:limit]
+
+
+def test_get_operation_submissions_empty_db(operations_repo):
+    # Given
+    submissions = operations_repo.get_operation_submissions(limit=10)
+
+    assert len(submissions) == 0
+
+
+@pytest.mark.parametrize("range_from, range_to", [(1, 5), (2, 4), (0, 10)])
+def test_get_operation_submission_sequence_id_range(operations_repo, range_from, range_to):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i)
+        for i in range(range_from, range_to + 1)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When
+    start_end = operations_repo.get_operation_submission_sequence_id_range()
+
+    # Then
+    assert start_end == (range_from, range_to)
+
+
+def test_get_operation_submission_sequence_id_range_empty_db(operations_repo):
+    # Given
+    start_end = operations_repo.get_operation_submission_sequence_id_range()
+    assert start_end is None
+
+
+def test_delete_operation_submission_by_id(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
+
+    # When - delete the first 3 operations
+    deleted_count = operations_repo.delete_operation_submissions(up_to_seq_id=result[2].sequence_id)
+
+    # Then
+    assert deleted_count == 3
+
+    # when
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 2
+
+
+def test_delete_operation_submission_none(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
+
+    # When - delete the first 3 operations
+    deleted_count = operations_repo.delete_operation_submissions(up_to_seq_id=None)
+
+    # Then
+    assert deleted_count == 5
+
+    # when
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 0
+
+
+def test_delete_operation_submission_invalid_id(operations_repo, temp_db_path):
+    # Given
+    submissions = [
+        OperationSubmission(sequence_id=SequenceId(i), request_id=RequestId(f"r{i}"), timestamp=i) for i in range(5, 10)
+    ]
+    operations_repo.save_operation_submissions(submissions)
+
+    # When - try to delete with a non-positive sequence ID
+    deleted_count = operations_repo.delete_operations(up_to_seq_id=SequenceId(0))
+
+    # Then
+    assert deleted_count == 0
+    result = operations_repo.get_operation_submissions(limit=10)
+    assert len(result) == 5
+
+
 @pytest.mark.parametrize("cleanup_files", [True, False])
 def test_cleanup_repository_empty(temp_db_path, cleanup_files):
     # given
@@ -690,6 +794,33 @@ def test_cleanup_repository_nonempty_file_requests(temp_db_path, cleanup_files):
 
     # then
     assert os.path.exists(temp_db_path)
+
+
+@pytest.mark.parametrize("cleanup_files", [True, False])
+def test_cleanup_repository_nonempty_operation_submissions(temp_db_path, cleanup_files):
+    # given
+    repo = OperationsRepository(db_path=Path(temp_db_path))
+
+    # when
+    repo.init_db()
+    repo.save_operation_submissions(
+        [
+            OperationSubmission(
+                sequence_id=SequenceId(0),
+                request_id=RequestId("r0"),
+                timestamp=0,
+            )
+        ]
+    )
+
+    # then
+    assert os.path.exists(temp_db_path)
+
+    # when
+    repo.close(cleanup_files=cleanup_files)
+
+    # then
+    assert os.path.exists(temp_db_path) != cleanup_files
 
 
 @pytest.mark.skip(reason="We do not support the case of two processes owning the same repository")
@@ -788,7 +919,7 @@ def test_concurrent_reads(temp_db_path):
 
         operations_repo.get_operations(up_to_bytes=MAX_SINGLE_OPERATION_SIZE_BYTES)
         operations_repo.get_metadata()
-        operations_repo.get_sequence_id_range()
+        operations_repo.get_operations_sequence_id_range()
     operations_repo.close(cleanup_files=True)
 
 

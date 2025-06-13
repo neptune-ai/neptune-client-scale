@@ -12,6 +12,12 @@ from neptune_scale.api.run import Run
 from neptune_scale.cli import sync
 from neptune_scale.cli.sync import SyncRunner
 from neptune_scale.exceptions import NeptuneUnableToLogData
+from neptune_scale.sync.operations_repository import (
+    OperationsRepository,
+    OperationSubmission,
+    RequestId,
+    SequenceId,
+)
 
 from .conftest import (
     random_series,
@@ -174,6 +180,32 @@ def test_sync_all_types_combined(run_init_kwargs, temp_dir):
 
     # then
     assert not db_path.exists()
+
+
+def test_sync_nonempty_submissions(run_init_kwargs, client, project_name):
+    # given
+    run_id = run_init_kwargs["run_id"]
+    with Run(**run_init_kwargs, mode="offline") as run:
+        db_path = run._operations_repo._db_path
+        now = time.time()
+        data = {
+            "test_sync_nonempty_submissions/int-value": int(now),
+            "test_sync_nonempty_submissions/float-value": now,
+        }
+        run.log_configs(data)
+    operations_repository = OperationsRepository(db_path=db_path)
+    operations_repository.save_operation_submissions(
+        [OperationSubmission(sequence_id=SequenceId(1), request_id=RequestId("r1"), timestamp=1)]
+    )
+
+    # when
+    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+
+    # then
+    assert not db_path.exists()
+    fetched = fetch_attribute_values(client=client, project=project_name, custom_run_id=run_id, attributes=data.keys())
+    for key, value in data.items():
+        assert fetched[key] == value, f"Value for {key} does not match"
 
 
 @pytest.mark.parametrize("timeout", [0, 1, 5])

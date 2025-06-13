@@ -2,9 +2,14 @@ __all__ = ("get_logger",)
 
 import logging
 import os
+import time
 import warnings
-from typing import Optional
+from typing import (
+    Any,
+    Optional,
+)
 
+from neptune_scale.sync.parameters import STOP_MESSAGE_FREQUENCY
 from neptune_scale.util.envs import (
     DEBUG_MODE,
     LOGGER_LEVEL,
@@ -85,3 +90,20 @@ def _logger_level_from_env() -> Optional[str]:
         raise ValueError(f"{LOGGER_LEVEL} must be one of: none, {', '.join(_valid_levels)}.")
 
     return level.upper()
+
+
+class ThrottledLogger:
+    def __init__(self, logger: logging.Logger, enabled: bool = True) -> None:
+        self._logger = logger
+        self._enabled = enabled
+        self._last_print_timestamp: Optional[float] = None
+
+    def info(self, msg: str, *args: Any) -> None:
+        if not self._enabled:
+            return
+
+        current_time = time.time()
+
+        if self._last_print_timestamp is None or current_time - self._last_print_timestamp > STOP_MESSAGE_FREQUENCY:
+            self._logger.info(msg, *args)
+            self._last_print_timestamp = current_time
