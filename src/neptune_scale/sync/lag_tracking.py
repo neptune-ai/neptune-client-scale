@@ -14,6 +14,7 @@ from neptune_scale.util import (
     Daemon,
     SharedFloat,
 )
+from neptune_scale.util.daemon import WorkResult
 
 
 class LagTracker(Daemon):
@@ -33,7 +34,7 @@ class LagTracker(Daemon):
 
         self._callback_triggered: bool = False
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         with self._last_ack_timestamp:
             self._last_ack_timestamp.wait(timeout=LAG_TRACKER_TIMEOUT)
             last_ack_timestamp = self._last_ack_timestamp.value
@@ -41,14 +42,14 @@ class LagTracker(Daemon):
 
             # No operations were put into the queue
             if last_queued_timestamp is None:
-                return
+                return WorkResult.NO_WORK
 
             # No operations were processed by server
             if last_ack_timestamp < 0 and not self._callback_triggered:
                 if time.time() - last_queued_timestamp > self._async_lag_threshold:
                     self._callback_triggered = True
                     self._on_async_lag_callback()
-                    return
+                    return WorkResult.NO_WORK
 
                 self._callback_triggered = False
             else:
@@ -57,6 +58,8 @@ class LagTracker(Daemon):
                     if not self._callback_triggered:
                         self._callback_triggered = True
                         self._on_async_lag_callback()
-                        return
+                        return WorkResult.NO_WORK
 
                     self._callback_triggered = False
+
+            return WorkResult.NO_WORK

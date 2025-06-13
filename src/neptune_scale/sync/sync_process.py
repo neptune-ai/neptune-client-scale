@@ -107,6 +107,7 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
+from neptune_scale.util.daemon import WorkResult
 
 T = TypeVar("T")
 
@@ -340,7 +341,7 @@ class SenderThread(Daemon):
 
         return SubmitResponse.FromString(response.content)
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         try:
             max_operations_size = (
                 MAX_REQUEST_SIZE_BYTES
@@ -351,56 +352,57 @@ class SenderThread(Daemon):
             with self._last_queued_seq:
                 sequence_id = SequenceId(self._last_queued_seq.value)
 
-            while operations := self._operations_repository.get_operations(
+            operations = self._operations_repository.get_operations(
                 from_exclusive=sequence_id, up_to_bytes=max_operations_size
-            ):
-                partitioned_operations = _partition_by_type_and_size(
-                    operations, self._metadata.run_id, self._metadata.project, max_operations_size
-                )
+            )
+            if not operations:
+                return WorkResult.NO_WORK
 
-                logger.debug(
-                    "Start: submit %d RunOperations. Last queued seq: #%d",
-                    len(partitioned_operations),
-                    sequence_id,
-                )
+            partitioned_operations = _partition_by_type_and_size(
+                operations, self._metadata.run_id, self._metadata.project, max_operations_size
+            )
 
-                for run_operation, sequence_id, timestamp in partitioned_operations:
-                    try:
-                        request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
+            logger.debug(
+                "Start: submit %d RunOperations. Last queued seq: #%d",
+                len(partitioned_operations),
+                sequence_id,
+            )
 
-                        if request_ids is None or not request_ids.request_ids:
-                            raise NeptuneUnexpectedError("Server response is empty")
+            for run_operation, sequence_id, timestamp in partitioned_operations:
+                try:
+                    request_ids: Optional[SubmitResponse] = self.submit(operation=run_operation)
 
-                        last_request_id = request_ids.request_ids[-1]
+                    if request_ids is None or not request_ids.request_ids:
+                        raise NeptuneUnexpectedError("Server response is empty")
 
-                        self._status_tracking_queue.put(
-                            StatusTrackingElement(
-                                sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp
-                            )
-                        )
+                    last_request_id = request_ids.request_ids[-1]
 
-                        # Update Last PUT sequence id and notify threads in the main process
-                        with self._last_queued_seq:
-                            self._last_queued_seq.value = sequence_id
-                            self._last_queued_seq.notify_all()
-                    except NeptuneRetryableError as e:
-                        self._errors_queue.put(e)
-                        # Sleep before retry
-                        return
-
-                if logger.isEnabledFor(logging.DEBUG):
-                    # Don't access multiprocessing.Value if not in debug mode
-                    logger.debug(
-                        "Done: submit %d RunOperations. Last queued seq: #%d",
-                        len(partitioned_operations),
-                        self._last_queued_seq.value,
+                    self._status_tracking_queue.put(
+                        StatusTrackingElement(sequence_id=sequence_id, request_id=last_request_id, timestamp=timestamp)
                     )
 
+                    # Update Last PUT sequence id and notify threads in the main process
+                    with self._last_queued_seq:
+                        self._last_queued_seq.value = sequence_id
+                        self._last_queued_seq.notify_all()
+                except NeptuneRetryableError as e:
+                    self._errors_queue.put(e)
+                    # Sleep before retry
+                    return WorkResult.NO_WORK
+
+            if logger.isEnabledFor(logging.DEBUG):
+                # Don't access multiprocessing.Value if not in debug mode
+                logger.debug(
+                    "Done: submit %d RunOperations. Last queued seq: #%d",
+                    len(partitioned_operations),
+                    self._last_queued_seq.value,
+                )
+
+            return WorkResult.HAS_MORE_WORK
         except Exception as e:
             self._errors_queue.put(e)
             with self._last_queued_seq:
                 self._last_queued_seq.notify_all()
-            self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
     def close(self) -> None:
@@ -514,74 +516,73 @@ class StatusTrackingThread(Daemon):
 
         return BulkRequestStatus.FromString(response.content)
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         try:
-            while (batch := self.get_next()) is not None:
-                request_ids = [element.request_id for element in batch]
-                sequence_ids = [element.sequence_id for element in batch]
-                timestamps = [element.timestamp for element in batch]
+            if (batch := self.get_next()) is None:
+                return WorkResult.NO_WORK
 
-                try:
-                    response = self.check_batch(request_ids=request_ids)
-                    if response is None:
-                        raise NeptuneUnexpectedError("Server response is empty")
-                except NeptuneRetryableError as e:
-                    self._errors_queue.put(e)
-                    # Small give up, sleep before retry
+            request_ids = [element.request_id for element in batch]
+            sequence_ids = [element.sequence_id for element in batch]
+            timestamps = [element.timestamp for element in batch]
+
+            try:
+                response = self.check_batch(request_ids=request_ids)
+                if response is None:
+                    raise NeptuneUnexpectedError("Server response is empty")
+            except NeptuneRetryableError as e:
+                self._errors_queue.put(e)
+                # Small give up, sleep before retry
+                return WorkResult.NO_WORK
+
+            operations_to_commit, processed_sequence_id, processed_timestamp, fatal_sync_error = 0, None, None, None
+            for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
+                if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
+                    logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
+                    # Request status not ready yet, sleep and retry
                     break
 
-                operations_to_commit, processed_sequence_id, processed_timestamp, fatal_sync_error = 0, None, None, None
-                for request_status, request_sequence_id, timestamp in zip(response.statuses, sequence_ids, timestamps):
-                    if any(code_status.code == Code.UNAVAILABLE for code_status in request_status.code_by_count):
-                        logger.debug(f"Operation #{request_sequence_id} is not yet processed.")
-                        # Request status not ready yet, sleep and retry
-                        break
+                errors = [
+                    code_to_exception(status.detail)
+                    for status in request_status.code_by_count
+                    if status.code != Code.OK
+                ]
 
-                    errors = [
-                        code_to_exception(status.detail)
-                        for status in request_status.code_by_count
-                        if status.code != Code.OK
-                    ]
-
-                    fatal_sync_error = next(filter(self._is_fatal_error, errors), None)
-                    if fatal_sync_error is not None:
-                        break
-
-                    for error in errors:
-                        self._errors_queue.put(error)
-
-                    operations_to_commit += 1
-                    processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
-
-                if operations_to_commit > 0:
-                    self._status_tracking_queue.commit(operations_to_commit)
-
-                    # Update Last ACK sequence id and notify threads in the main process
-                    if processed_sequence_id is not None:
-                        logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
-
-                        self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
-
-                        with self._last_ack_seq:
-                            self._last_ack_seq.value = processed_sequence_id
-                            self._last_ack_seq.notify_all()
-
-                    # Update Last ACK timestamp and notify threads in the main process
-                    if processed_timestamp is not None:
-                        with self._last_ack_timestamp:
-                            self._last_ack_timestamp.value = processed_timestamp.timestamp()
-                            self._last_ack_timestamp.notify_all()
-
+                fatal_sync_error = next(filter(self._is_fatal_error, errors), None)
                 if fatal_sync_error is not None:
-                    raise fatal_sync_error
-
-                if operations_to_commit == 0:
-                    # Sleep before retry
                     break
+
+                for error in errors:
+                    self._errors_queue.put(error)
+
+                operations_to_commit += 1
+                processed_sequence_id, processed_timestamp = request_sequence_id, timestamp
+
+            if operations_to_commit > 0:
+                self._status_tracking_queue.commit(operations_to_commit)
+
+                # Update Last ACK sequence id and notify threads in the main process
+                if processed_sequence_id is not None:
+                    logger.debug(f"Operations up to #{processed_sequence_id} are completed.")
+
+                    self._operations_repository.delete_operations(up_to_seq_id=processed_sequence_id)
+
+                    with self._last_ack_seq:
+                        self._last_ack_seq.value = processed_sequence_id
+                        self._last_ack_seq.notify_all()
+
+                # Update Last ACK timestamp and notify threads in the main process
+                if processed_timestamp is not None:
+                    with self._last_ack_timestamp:
+                        self._last_ack_timestamp.value = processed_timestamp.timestamp()
+                        self._last_ack_timestamp.notify_all()
+
+            if fatal_sync_error is not None:
+                raise fatal_sync_error
+
+            return WorkResult.NO_WORK if operations_to_commit == 0 else WorkResult.HAS_MORE_WORK
 
         except Exception as e:
             self._errors_queue.put(e)
-            self.interrupt()
             self._last_ack_seq.notify_all()
             raise NeptuneSynchronizationStopped() from e
 
@@ -615,34 +616,36 @@ class FileUploaderThread(Daemon):
         # so we do it in work() when also initializing the API client.
         self._aio_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         try:
             if self._api_client is None:
                 self._api_client = backend_factory(api_token=self._neptune_api_token)
                 asyncio.set_event_loop(self._aio_loop)
 
-            while file_upload_requests := self._operations_repository.get_file_upload_requests(
-                self._max_concurrent_uploads
-            ):
-                logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
+            file_upload_requests = self._operations_repository.get_file_upload_requests(self._max_concurrent_uploads)
+            if not file_upload_requests:
+                return WorkResult.NO_WORK
 
-                destination_paths = [file.destination for file in file_upload_requests]
-                storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
+            logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
-                # Fan out file uploads as async tasks, and block until all tasks are done.
-                # Note that self._upload_file() should not raise an exception, as they are handled
-                # in the method itself. However, we still pass return_exceptions=True to make sure asyncio.gather()
-                # waits for all the tasks to finish regardless of any exceptions.
-                tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
-                self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            destination_paths = [file.destination for file in file_upload_requests]
+            storage_urls = fetch_file_storage_urls(self._api_client, self._project, destination_paths)
 
-                logger.debug("Upload tasks completed for the current batch")
+            # Fan out file uploads as async tasks, and block until all tasks are done.
+            # Note that self._upload_file() should not raise an exception, as they are handled
+            # in the method itself. However, we still pass return_exceptions=True to make sure asyncio.gather()
+            # waits for all the tasks to finish regardless of any exceptions.
+            tasks = [self._upload_file(file, storage_urls[file.destination]) for file in file_upload_requests]
+            self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            logger.debug("Upload tasks completed for the current batch")
+
+            return WorkResult.HAS_MORE_WORK
         except NeptuneRetryableError as e:
             self._errors_queue.put(e)
+            return WorkResult.NO_WORK
         except Exception as e:
             logger.error("Fatal error in file uploader thread", exc_info=e)
             self._errors_queue.put(e)
-            self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
     async def _upload_file(self, file: FileUploadRequest, storage_url: str) -> None:

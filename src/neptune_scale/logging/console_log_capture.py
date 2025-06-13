@@ -22,6 +22,7 @@ from neptune_scale.logging.logging_utils import (
 from neptune_scale.sync.metadata_splitter import decompose_step
 from neptune_scale.sync.parameters import MAX_STRING_SERIES_DATA_POINT_LENGTH
 from neptune_scale.util import Daemon
+from neptune_scale.util.daemon import WorkResult
 
 STREAM_BUFFER_CHAR_CAPACITY = 100_000_000
 
@@ -186,8 +187,9 @@ class ConsoleLogCaptureThread(Daemon):
         self._stderr_attribute = f"{runtime_namespace}/stderr"
         self._stderr_step = StepTracker(initial_step)
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         self._process_captured_data(max_delay_before_flush=timedelta(seconds=5))
+        return WorkResult.NO_WORK
 
     def close(self) -> None:
         self._process_captured_data(max_delay_before_flush=timedelta(seconds=0))

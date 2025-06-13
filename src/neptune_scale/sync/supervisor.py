@@ -11,6 +11,7 @@ from neptune_scale.util import (
     Daemon,
     get_logger,
 )
+from neptune_scale.util.daemon import WorkResult
 
 logger = get_logger()
 
@@ -22,7 +23,7 @@ class ProcessSupervisor(Daemon):
         self._callback: Callable[[], None] = callback
         self._last_is_alive: Optional[bool] = None
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
         is_alive = self._process.is_alive()
 
         if self._last_is_alive and not is_alive:
@@ -30,3 +31,5 @@ class ProcessSupervisor(Daemon):
             self._callback()
 
         self._last_is_alive = is_alive
+
+        return WorkResult.NO_WORK
