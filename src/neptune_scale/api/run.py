@@ -990,7 +990,7 @@ class Run(AbstractContextManager):
 
         return result
 
-    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> None:
+    def wait_for_submission(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
         Waits until all metadata is submitted to Neptune for processing.
 
@@ -1002,8 +1002,9 @@ class Run(AbstractContextManager):
             verbose (bool): If True (default), prints messages about the waiting process.
         """
         timer = Timer(timeout)
-        self._wait_for_operation_submission(timeout=timer.remaining_time(), verbose=verbose)
-        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
+        submission_status = self._wait_for_operation_submission(timeout=timer.remaining_time(), verbose=verbose)
+        files_status = self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
+        return submission_status and files_status
 
     def wait_for_processing(self, timeout: Optional[float] = None, verbose: bool = True) -> bool:
         """
@@ -1016,17 +1017,17 @@ class Run(AbstractContextManager):
             verbose (bool): If True (default), prints messages about the waiting process.
         """
         timer = Timer(timeout)
-        self._wait_for_operation_processing(timeout=timer.remaining_time(), verbose=verbose)
-        self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
+        processing_status = self._wait_for_operation_processing(timeout=timer.remaining_time(), verbose=verbose)
+        file_status = self._wait_for_file_upload(timeout=timer.remaining_time(), verbose=verbose)
+        return processing_status and file_status
 
     def _wait_for_operation_submission(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> None:
-        if timeout is not None and timeout <= 0:
-            logger.info("Skipping waiting for operation submission because timeout has already passed")
-            return
+    ) -> bool:
+        if self._operations_repo is None:
+            return True
 
         if verbose:
             logger.info("Waiting for all operations to be processed")
@@ -1043,8 +1044,7 @@ class Run(AbstractContextManager):
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
                         logger.warning("Waiting interrupted because sync process is not running")
-                        break
-                    assert self._operations_repo is not None
+                        timer = Timer(0)  # reset timer to avoid waiting indefinitely
 
                 # assumption: submissions are always behind or equal to the logged operations
                 submitted_sequence_id_range = self._operations_repo.get_operation_submission_sequence_id_range()
@@ -1075,25 +1075,24 @@ class Run(AbstractContextManager):
                 if operations_count > 0:
                     if timer.is_expired():
                         logger.info("Waiting interrupted because timeout was reached")
-                        break
+                        return False
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
                     logger.info("All operations were submitted")
-                    break
+                    return True
             except KeyboardInterrupt:
                 logger.warning("Waiting interrupted by user")
-                return
+                return False
 
     def _wait_for_operation_processing(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> None:
-        if timeout is not None and timeout <= 0:
-            logger.info("Skipping waiting for operation processing because timeout has already passed")
-            return
+    ) -> bool:
+        if self._operations_repo is None:
+            return True
 
         if verbose:
             logger.info("Waiting for all operations to be processed")
@@ -1111,8 +1110,7 @@ class Run(AbstractContextManager):
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
                         logger.warning("Waiting interrupted because sync process is not running")
-                        break
-                    assert self._operations_repo is not None
+                        timer = Timer(0)  # reset timer to avoid waiting indefinitely
 
                 operations_count = self._operations_repo.get_operation_count(limit=operations_count_limit)
 
@@ -1125,25 +1123,24 @@ class Run(AbstractContextManager):
 
                     if timer.is_expired():
                         logger.info("Waiting interrupted because timeout was reached")
-                        break
+                        return False
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
                     logger.info("All operations were processed")
-                    break
+                    return True
             except KeyboardInterrupt:
                 logger.warning("Waiting interrupted by user")
-                return
+                return False
 
     def _wait_for_file_upload(
         self,
         timeout: Optional[float] = None,
         verbose: bool = True,
-    ) -> None:
-        if timeout is not None and timeout <= 0:
-            logger.info("Skipping waiting for file upload because timeout has already passed")
-            return
+    ) -> bool:
+        if self._operations_repo is None:
+            return True
 
         if verbose:
             logger.info("Waiting for all files to be uploaded")
@@ -1160,14 +1157,8 @@ class Run(AbstractContextManager):
             try:
                 with self._lock:
                     if self._sync_process is None or not self._sync_process.is_alive():
-                        upload_count = self._operations_repo.get_file_upload_requests_count(limit=1)
-                        if upload_count == 0:
-                            if verbose:
-                                logger.info("All files were uploaded")
-                            return True
-                        else:
-                            logger.warning("Waiting interrupted because sync process is not running")
-                            return False
+                        logger.warning("Waiting interrupted because sync process is not running")
+                        timer = Timer(0)  # reset timer to avoid waiting indefinitely
 
                 upload_count = self._operations_repo.get_file_upload_requests_count(limit=upload_count_limit)
 
@@ -1180,16 +1171,16 @@ class Run(AbstractContextManager):
 
                     if timer.is_expired():
                         logger.info("Waiting interrupted because timeout was reached")
-                        break
+                        return False
                     sleep_time = min(sleep_time, timer.remaining_time_or_inf())
 
                     time.sleep(sleep_time)
                 else:
                     logger.info("All files were uploaded")
-                    break
+                    return True
             except KeyboardInterrupt:
                 logger.warning("Waiting interrupted by user")
-                return
+                return False
 
     def get_run_url(self) -> str:
         """

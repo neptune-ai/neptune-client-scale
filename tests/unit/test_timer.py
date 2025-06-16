@@ -15,6 +15,8 @@ from neptune_scale.util.timer import Timer
         (1, 0.5, 0.5),
         (1, 1, 0),
         (1, 2, 0),
+        (0, 0, 0),
+        (-1, 0, 0),
     ),
 )
 def test_timer_remaining_time(timeout, sleep, remaining_time):
@@ -37,6 +39,8 @@ def test_timer_remaining_time(timeout, sleep, remaining_time):
         (1, 0.5, 0.5),
         (1, 1, 0),
         (1, 2, 0),
+        (0, 0, 0),
+        (-1, 0, 0),
     ),
 )
 def test_timer_remaining_time_or_inf(timeout, sleep, remaining_time):
@@ -59,6 +63,8 @@ def test_timer_remaining_time_or_inf(timeout, sleep, remaining_time):
         (2, 0.5, False),
         (1, 1, True),
         (1, 2, True),
+        (0, 0, True),
+        (-1, 0, True),
     ),
 )
 def test_timer_is_expired(timeout, sleep, is_expired):
@@ -73,6 +79,7 @@ def test_timer_is_expired(timeout, sleep, is_expired):
     "timeout, is_finite",
     (
         (None, False),
+        (-1, True),
         (0, True),
         (1, True),
         (2, True),
