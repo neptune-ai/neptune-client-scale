@@ -21,7 +21,10 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.sync.parameters import ERRORS_MONITOR_THREAD_SLEEP_TIME
 from neptune_scale.util import get_logger
-from neptune_scale.util.daemon import Daemon
+from neptune_scale.util.daemon import (
+    Daemon,
+    WorkResult,
+)
 
 logger = get_logger()
 
@@ -96,8 +99,13 @@ class ErrorsMonitor(Daemon):
         except queue.Empty:
             return None
 
-    def work(self) -> None:
+    def work(self) -> WorkResult:
+        # Always drain the error queue to ensure that all errors are processed
+        errors = []
         while (error := self.get_next()) is not None:
+            errors.append(error)
+
+        for error in errors:
             last_raised_at = self._last_raised_timestamps.get(type(error), None)
             self._last_raised_timestamps[type(error)] = time.time()
 
@@ -121,3 +129,5 @@ class ErrorsMonitor(Daemon):
             except Exception as e:
                 # Don't let user errors kill the process
                 logger.error(f"An exception occurred in user callback function: {e}")
+
+        return WorkResult.NO_WORK

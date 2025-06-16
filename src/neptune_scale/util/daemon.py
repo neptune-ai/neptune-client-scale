@@ -1,12 +1,23 @@
-__all__ = ["Daemon"]
+__all__ = ["Daemon", "WorkResult"]
 
 import abc
 import threading
+from enum import (
+    Enum,
+    auto,
+)
 from typing import Optional
 
 from neptune_scale.util.logger import get_logger
 
 logger = get_logger()
+
+
+class WorkResult(Enum):
+    """Returned from Daemon.work() to indicate the status of the worker thread."""
+
+    NO_WORK = auto()  # The thread currently has no work to do
+    HAS_MORE_WORK = auto()  # There is still work to be done
 
 
 class Daemon(threading.Thread):
@@ -35,19 +46,21 @@ class Daemon(threading.Thread):
         try:
             while True:
                 with self._wait_condition:
-                    do_work = self._remaining_iterations is None or self._remaining_iterations > 0
+                    is_done = self._remaining_iterations is not None and self._remaining_iterations <= 0
                     if self._remaining_iterations is not None:
                         self._remaining_iterations -= 1
 
-                if do_work:
-                    self.work()
-
-                    with self._wait_condition:
-                        if self._remaining_iterations is None or self._remaining_iterations > 0:
-                            self._wait_condition.wait(timeout=self._sleep_time)
-                else:
+                if is_done:
                     self.close()
                     break
+
+                if self.work() == WorkResult.HAS_MORE_WORK:
+                    # Continue calling work() until it returns NO_WORK or the thread is interrupted
+                    continue
+
+                with self._wait_condition:
+                    if self._remaining_iterations is None or self._remaining_iterations > 0:
+                        self._wait_condition.wait(timeout=self._sleep_time)
         finally:
             logger.debug(f"Thread {self.name} is finished.")
 
@@ -59,4 +72,4 @@ class Daemon(threading.Thread):
         pass
 
     @abc.abstractmethod
-    def work(self) -> None: ...
+    def work(self) -> WorkResult: ...

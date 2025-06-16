@@ -59,6 +59,7 @@ from neptune_scale.sync.sync_process import (
     StatusTrackingThread,
     code_to_exception,
 )
+from neptune_scale.util.daemon import WorkResult
 from neptune_scale.util.shared_var import (
     SharedFloat,
     SharedInt,
@@ -66,6 +67,11 @@ from neptune_scale.util.shared_var import (
 
 metadata = Metadata(project="project", run_id="run_id")
 mp_context = multiprocessing.get_context("spawn")
+
+
+def call_work_until_done(daemon_thread):
+    while daemon_thread.work() == WorkResult.HAS_MORE_WORK:
+        pass
 
 
 def response(request_ids: list[str], status_code: int = 200):
@@ -387,7 +393,7 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
     last_sequence_id = operations_repo.save_update_run_snapshots(updates)
 
     # when
-    sender_thread.work()
+    call_work_until_done(sender_thread)
 
     # then
     assert backend.submit.call_count == 3
@@ -433,7 +439,7 @@ def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_oper
     last_sequence_id = operations_repo.save_update_run_snapshots([small_op for _ in range(num_ops)])
 
     # when
-    sender_thread.work()
+    call_work_until_done(sender_thread)
 
     # then
     assert backend.submit.call_count > 1
@@ -477,7 +483,7 @@ def test_status_thread_processes_element():
     ]
 
     # when
-    status_thread.work()
+    call_work_until_done(status_thread)
 
     # then
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=SequenceId(0))
@@ -529,7 +535,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     ]
 
     # when
-    status_thread.work()
+    call_work_until_done(status_thread)
 
     # then
     errors_queue.put.assert_called_once()
@@ -581,7 +587,7 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
 
     # when
     with pytest.raises(NeptuneSynchronizationStopped):
-        status_thread.work()
+        call_work_until_done(status_thread)
 
     # then
     errors_queue.put.assert_called_once()
@@ -643,7 +649,7 @@ def test_status_thread_processes_element_sequence():
 
     # when
     with pytest.raises(NeptuneSynchronizationStopped):
-        status_thread.work()
+        call_work_until_done(status_thread)
 
     # then
     operations_repository.delete_operations.assert_has_calls(
@@ -864,7 +870,7 @@ def test_file_uploader_uploads_concurrently(
     ]
 
     thread.start()
-    thread.interrupt(remaining_iterations=1)
+    thread.interrupt(remaining_iterations=4)
     thread.join()
 
     # Assert that we only pull the max concurrent number of uploads from the repository
@@ -953,7 +959,7 @@ def test_file_uploader_thread_non_terminal_error(
     ]
 
     uploader_thread.start()
-    uploader_thread.interrupt(remaining_iterations=1)
+    uploader_thread.interrupt(remaining_iterations=3)
     uploader_thread.join()
 
     # Signed urls should be requested for each attempt
