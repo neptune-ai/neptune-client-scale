@@ -56,18 +56,19 @@ def test_warning_callback_after_sync_process_dies():
 def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing, wait_for_file_upload):
     run = Run()
     run._sync_process.join()
+    assert not run._sync_process.is_alive()
 
     run.log_metrics({"metric": 2}, step=1)
     if wait_for_submission:
-        run.wait_for_submission()
+        assert not run.wait_for_submission()
 
     run.log_metrics({"metric": 4}, step=2)
     if wait_for_processing:
-        run.wait_for_processing()
+        assert not run.wait_for_processing()
 
     run.assign_files(files={"a-file": b"content"})
     if wait_for_file_upload:
-        run._wait_for_file_upload()
+        assert not run._wait_for_file_upload()
 
     run.close()
 
@@ -78,7 +79,7 @@ def test_sync_process_dies_after_sync_thread_dies():
 
     # fake token should cause SyncThread to die
 
-    run.wait_for_processing()  # assert that it ends
+    assert not run.wait_for_processing()  # assert that it ends
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)
@@ -96,13 +97,13 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(
     run.assign_files(files={"a-file": b"content"})
 
     if wait_for_submission:
-        run.wait_for_submission()
+        assert not run.wait_for_submission()
 
     if wait_for_processing:
-        run.wait_for_processing()
+        assert not run.wait_for_processing()
 
     if wait_for_file_upload:
-        run._wait_for_file_upload()
+        assert not run._wait_for_file_upload()
 
     # only assert the process is dead if we did actually wait
     if wait_for_processing or wait_for_submission or wait_for_file_upload:

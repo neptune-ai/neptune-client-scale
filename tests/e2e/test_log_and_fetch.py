@@ -40,7 +40,7 @@ def test_atoms(run, client, project_name):
     }
 
     run.log_configs(data)
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_attribute_values(client, project_name, custom_run_id=run._run_id, attributes=data.keys())
     for key, value in data.items():
@@ -72,7 +72,7 @@ def test_metric(run, client, project_name):
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
     assert list(fetched[path].keys()) == steps
@@ -84,7 +84,7 @@ def test_multiple_metrics(run, client, project_name):
     data = {f"{path_base}-{i}": i for i in range(20)}
 
     run.log_metrics(data, step=1)
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(
         client=client, project=project_name, custom_run_id=run._run_id, attributes=data.keys()
@@ -106,7 +106,7 @@ def test_metric_fetch_and_append(run, client, project_name):
     for step, value in zip(steps, values):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
     assert list(fetched[path].keys()) == steps
@@ -117,7 +117,7 @@ def test_metric_fetch_and_append(run, client, project_name):
     for step, value in zip(steps2, values2):
         run.log_metrics(data={path: value}, step=step)
 
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
     assert list(fetched[path].keys()) == steps + steps2
@@ -129,7 +129,7 @@ def test_single_non_finite_metric(run, client, project_name, value):
     path = unique_path("test_series/non_finite")
 
     run.log_metrics(data={path: value}, step=1)
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
     assert path not in fetched
@@ -142,7 +142,7 @@ def test_async_lag_callback():
         async_lag_threshold=0.000001,
         on_async_lag_callback=lambda: event.set(),
     ) as run:
-        run.wait_for_processing(SYNC_TIMEOUT)
+        assert run.wait_for_processing(SYNC_TIMEOUT)
 
         # First callback should be called after run creation
         event.wait(timeout=60)
