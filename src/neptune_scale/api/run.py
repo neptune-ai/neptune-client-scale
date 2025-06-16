@@ -1139,9 +1139,6 @@ class Run(AbstractContextManager):
         if self._operations_repo is None:
             return True
 
-        if timeout is not None and timeout <= 0:
-            return False
-
         if verbose:
             logger.info("Waiting for all files to be uploaded")
 
