@@ -264,3 +264,5 @@ def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
 
     # then
     assert timeout <= elapsed_time < timeout + 1
+
+    runner.stop()
