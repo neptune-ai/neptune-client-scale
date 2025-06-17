@@ -35,7 +35,12 @@ jobs:
         run: pip install poetry poetry-dynamic-versioning
 
       - name: Build package
-        run: poetry build
+        run: |
+          # TODO: Remove this workaround once https://github.com/orgs/community/discussions/4924 gets resolved
+          # poetry-dynamic-versioning requires annotated tags to them by creation time
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          echo "VERSION=${VERSION}"
+          POETRY_DYNAMIC_VERSIONING_BYPASS="$VERSION" poetry build
 
       - uses: actions/upload-artifact@v4
         with:
