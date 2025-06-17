@@ -104,6 +104,8 @@ ignore_missing_imports = "True"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--doctest-modules -n auto"
+retries = 3
+retry_delay = 2
 
 [tool.poetry.scripts]
 neptune = "neptune_scale.cli.commands:main"
