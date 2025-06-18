@@ -61,7 +61,7 @@ class _ProgressStatus:
     max_progress: int
 
     @property
-    def finished(self) -> bool:
+    def is_finished(self) -> bool:
         return self.progress >= self.max_progress
 
     def updated(self, progress: int) -> "_ProgressStatus":
@@ -69,6 +69,9 @@ class _ProgressStatus:
             progress=progress,
             max_progress=self.max_progress,
         )
+
+    def finished(self) -> "_ProgressStatus":
+        return self.updated(progress=self.max_progress)
 
 
 class SyncRunner:
@@ -129,7 +132,7 @@ class SyncRunner:
         )
         file_progress = _ProgressStatus(progress=0, max_progress=self._file_upload_request_init_count or 0)
 
-        if operation_progress.finished and file_progress.finished:
+        if operation_progress.is_finished and file_progress.is_finished:
             return
 
         if timeout is not None and timeout <= 0:
@@ -165,7 +168,7 @@ class SyncRunner:
 
                     progress_bar.update(operation_progress.progress + file_progress.progress - progress_bar.n)
 
-                    if operation_progress.finished and file_progress.finished:
+                    if operation_progress.is_finished and file_progress.is_finished:
                         break
 
                 except KeyboardInterrupt:
@@ -173,7 +176,7 @@ class SyncRunner:
                     return
 
     def _wait_operation_submit(self, last_progress: _ProgressStatus, wait_time: float) -> _ProgressStatus:
-        if last_progress.finished:
+        if last_progress.is_finished:
             return last_progress
         assert self._log_seq_id_range is not None
 
@@ -182,13 +185,12 @@ class SyncRunner:
         if log_seq_id_range is not None:
             acked_count = log_seq_id_range[0] - self._log_seq_id_range[0]
             time.sleep(wait_time)
+            return last_progress.updated(progress=acked_count)
         else:
-            acked_count = self._log_seq_id_range[1] - self._log_seq_id_range[0] + 1
-
-        return last_progress.updated(progress=acked_count)
+            return last_progress.finished()
 
     def _wait_file_upload(self, last_progress: _ProgressStatus, wait_time: float) -> _ProgressStatus:
-        if last_progress.finished:
+        if last_progress.is_finished:
             return last_progress
         assert self._file_upload_request_init_count is not None
 
