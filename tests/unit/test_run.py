@@ -21,8 +21,6 @@ def short_timeouts():
     patch = pytest.MonkeyPatch()
     timeout = 0.05
     for name in (
-        "MINIMAL_WAIT_FOR_PUT_SLEEP_TIME",
-        "MINIMAL_WAIT_FOR_ACK_SLEEP_TIME",
         "STATUS_TRACKING_THREAD_SLEEP_TIME",
         "SYNC_THREAD_SLEEP_TIME",
         "ERRORS_MONITOR_THREAD_SLEEP_TIME",

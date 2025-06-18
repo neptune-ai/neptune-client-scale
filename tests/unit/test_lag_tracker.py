@@ -1,27 +1,21 @@
 import multiprocessing
 import time
+from datetime import datetime
 from threading import Event
 from unittest.mock import Mock
 
-from freezegun import freeze_time
-
 from neptune_scale.sync.lag_tracking import LagTracker
-from neptune_scale.sync.sequence_tracker import SequenceTracker
-from neptune_scale.util import SharedFloat
 
 mp_context = multiprocessing.get_context("spawn")
 
 
-@freeze_time("2024-09-01 00:00:00")
 def test__lag_tracker__callback_called():
     # given
-    lag = 5.0
     async_lag_threshold = 1.0
 
     # and
-    sequence_tracker = SequenceTracker()
-    sequence_tracker.update_sequence_id(1)  # This will set last_timestamp
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=time.time() - lag)
+    operations_repository = Mock()
+    operations_repository.get_operations_min_timestamp.return_value = datetime.now()
     callback = Mock()
 
     # Synchronization event
@@ -34,8 +28,7 @@ def test__lag_tracker__callback_called():
 
     # and
     lag_tracker = LagTracker(
-        sequence_tracker=sequence_tracker,
-        last_ack_timestamp=last_ack_timestamp,
+        operations_repository=operations_repository,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback_with_event,
     )
@@ -52,22 +45,18 @@ def test__lag_tracker__callback_called():
     callback.assert_called()
 
 
-@freeze_time("2024-09-01 00:00:00")
 def test__lag_tracker__not_called():
     # given
-    lag = 5.0
     async_lag_threshold = 10.0
 
     # and
-    sequence_tracker = SequenceTracker()
-    sequence_tracker.update_sequence_id(1)  # This will set last_timestamp to current time
-    last_ack_timestamp = SharedFloat(multiprocessing_context=mp_context, initial_value=time.time() - lag)
+    operations_repository = Mock()
+    operations_repository.get_operations_min_timestamp.return_value = datetime.now()
     callback = Mock()
 
     # and
     lag_tracker = LagTracker(
-        sequence_tracker=sequence_tracker,
-        last_ack_timestamp=last_ack_timestamp,
+        operations_repository=operations_repository,
         async_lag_threshold=async_lag_threshold,
         on_async_lag_callback=callback,
     )

@@ -57,7 +57,7 @@ def test_atoms(run, client, project_name):
     }
 
     run.log_configs(updated_data)
-    run.wait_for_processing(SYNC_TIMEOUT)
+    assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_attribute_values(client, project_name, custom_run_id=run._run_id, attributes=data.keys())
     for key, value in updated_data.items():
