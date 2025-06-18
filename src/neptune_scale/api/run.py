@@ -408,15 +408,15 @@ class Run(AbstractContextManager):
 
             logger.debug(f"Run is closing, timeout={timeout}")
 
+        if self._sync_process_supervisor is not None:
+            self._sync_process_supervisor.interrupt()
+            self._sync_process_supervisor.join(timeout=timer.remaining_time())
+
         if self._sync_process is not None and self._sync_process.is_alive():
             self.wait_for_processing(timeout=timer.remaining_time())
 
             self._sync_process.terminate()
             self._sync_process.join(timeout=timer.remaining_time())
-
-        if self._sync_process_supervisor is not None:
-            self._sync_process_supervisor.interrupt()
-            self._sync_process_supervisor.join(timeout=timer.remaining_time())
 
         if self._lag_tracker is not None:
             self._lag_tracker.interrupt()
