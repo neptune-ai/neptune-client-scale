@@ -17,7 +17,8 @@ jobs:
     runs-on: arc-runner-set
     strategy:
       matrix:
-        python-version: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python-version: [ "3.9", "3.13" ]
+        env_target: [ "AZURE", "GCP" ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,18 +36,19 @@ jobs:
       - name: Run tests
         timeout-minutes: 30
         env:
-          NEPTUNE_API_TOKEN: ${{ secrets.E2E_API_TOKEN }}
-          NEPTUNE_PROJECT: ${{ secrets.E2E_PROJECT }}
-          NEPTUNE_E2E_PROJECT: ${{ secrets.E2E_PROJECT }}
+          NEPTUNE_API_TOKEN: ${{ secrets[format('E2E_API_TOKEN_{0}', matrix.env_target)] }}
+          NEPTUNE_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
+          NEPTUNE_E2E_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
           NEPTUNE_E2E_CUSTOM_RUN_ID: ${{ vars.E2E_CUSTOM_RUN_ID }}
           NEPTUNE_FILE_API_ENABLED: ${{ vars.NEPTUNE_FILE_API_ENABLED }}
+          NEPTUNE_ALLOW_SELF_SIGNED_CERTIFICATE: true
         run: pytest --junitxml="test-results/test-e2e-${{ matrix.python-version }}.xml" tests/e2e
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-artifacts-${{ matrix.python-version }}-${{ github.run_id }}
+          name: test-artifacts-${{ matrix.env_target }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: "./test-results/"
 
       - name: Report
