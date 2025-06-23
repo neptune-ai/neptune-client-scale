@@ -20,6 +20,7 @@ tqdm = "^4.21.0"
 filetype = "^1.2.0"
 azure-storage-blob = "^12.7.0"
 requests = ">=2.21.0"
+aiofiles = ">=22.1.0"
 
 [tool.poetry]
 name = "neptune-scale"
@@ -100,7 +101,11 @@ warn_unused_ignores = "True"
 ignore_missing_imports = "True"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--doctest-modules -n auto"
+retries = 3
+retry_delay = 2
 
 [tool.poetry.scripts]
 neptune = "neptune_scale.cli.commands:main"
