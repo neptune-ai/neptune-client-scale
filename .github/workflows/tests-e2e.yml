@@ -41,7 +41,6 @@ jobs:
           NEPTUNE_E2E_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
           NEPTUNE_E2E_CUSTOM_RUN_ID: ${{ vars.E2E_CUSTOM_RUN_ID }}
           NEPTUNE_FILE_API_ENABLED: ${{ vars.NEPTUNE_FILE_API_ENABLED }}
-          NEPTUNE_ALLOW_SELF_SIGNED_CERTIFICATE: true
         run: pytest --junitxml="test-results/test-e2e-${{ matrix.python-version }}.xml" tests/e2e
 
       - name: Upload test reports
