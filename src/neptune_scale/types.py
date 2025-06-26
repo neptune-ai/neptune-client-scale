@@ -109,15 +109,15 @@ class Histogram:
     counts: Optional[ArrayLike[int]] = None
     densities: Optional[ArrayLike[Union[float, int]]] = None
 
-    def bin_edges_as_list(self) -> list[Union[float, int]]:
-        if not isinstance(self.bin_edges, _VALID_ARRAYLIKE_TYPES):
-            raise TypeError(f"Bin edges must be of type list or np.ndarray, got {type(self.bin_edges)}")
-        return _as_list(self.bin_edges)
-
     def counts_as_list(self) -> list[int]:
         if not isinstance(self.counts, _VALID_ARRAYLIKE_TYPES):
             raise TypeError(f"Counts must be of type list or np.ndarray, got {type(self.counts)}")
         return _as_list(self.counts)
+
+    def bin_edges_as_list(self) -> list[Union[float, int]]:
+        if not isinstance(self.bin_edges, _VALID_ARRAYLIKE_TYPES):
+            raise TypeError(f"Bin edges must be of type list or np.ndarray, got {type(self.bin_edges)}")
+        return _as_list(self.bin_edges)
 
     def densities_as_list(self) -> list[Union[float, int]]:
         if not isinstance(self.densities, _VALID_ARRAYLIKE_TYPES):
