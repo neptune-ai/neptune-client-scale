@@ -14,7 +14,7 @@ on:
 
 jobs:
   test:
-    runs-on: arc-runner-set
+    runs-on: tools-gha-runners
     strategy:
       matrix:
         python-version: [ "3.9", "3.13" ]

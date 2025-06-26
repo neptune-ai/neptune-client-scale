@@ -10,7 +10,7 @@ jobs:
   pre-commit:
     timeout-minutes: 10
 
-    runs-on: ubuntu-latest
+    runs-on: tools-gha-runners
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
