@@ -11,6 +11,9 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - '.github/**'
+      - 'dev_requirements.txt'
+      - 'pyproject.toml'
 
 jobs:
   test:
@@ -40,7 +43,7 @@ jobs:
           NEPTUNE_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
           NEPTUNE_E2E_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
           NEPTUNE_E2E_CUSTOM_RUN_ID: ${{ vars.E2E_CUSTOM_RUN_ID }}
-          NEPTUNE_FILE_API_ENABLED: ${{ vars.NEPTUNE_FILE_API_ENABLED }}
+          NEPTUNE_ALLOW_SELF_SIGNED_CERTIFICATE: ${{ matrix.env_target == 'GCP' }}
         run: pytest --junitxml="test-results/test-e2e-${{ matrix.python-version }}.xml" tests/e2e
 
       - name: Upload test reports
@@ -59,3 +62,23 @@ jobs:
           include_passed: true
           annotate_notice: true
           job_name: "e2e tests"
+
+      - name: Notify Slack on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+            const payload = {
+              username: "GitHub Actions",
+              text: `E2E tests failed in the repository: <https://github.com/${context.repo.owner}/${context.repo.repo}|${context.repo.owner}/${context.repo.repo}>. Please check the details.`
+            };
+            await fetch(webhookUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            });
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
