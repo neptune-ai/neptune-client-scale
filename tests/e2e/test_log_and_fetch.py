@@ -22,7 +22,7 @@ from .test_fetcher import (
 )
 
 NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
-SYNC_TIMEOUT = 30
+SYNC_TIMEOUT = 60
 
 
 def test_atoms(run, client, project_name):
