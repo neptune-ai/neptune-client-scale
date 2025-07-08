@@ -32,7 +32,7 @@ def stringify_unsupported(d: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
                 _stringify_unsupported(d=value, prefix=new_key)
             elif isinstance(value, (list, set, tuple)):
                 flattened[new_key] = str(value)
-            elif type(value) in allowed_datatypes:
+            elif isinstance(value, tuple(allowed_datatypes)):
                 flattened[new_key] = value
             elif value is not None:
                 flattened[new_key] = str(value)
