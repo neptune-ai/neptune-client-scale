@@ -20,9 +20,9 @@ def test_stringify_unsupported_basic_types():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["string"] == "hello"
-    assert result["integer"] == 42
-    assert result["float"] == 3.14
+    assert result["string"] == test_cases["string"]
+    assert result["integer"] == test_cases["integer"]
+    assert result["float"] == test_cases["float"]
     assert result["boolean"] is True
     assert "none_value" not in result
     assert isinstance(result["datetime"], datetime)
@@ -39,10 +39,10 @@ def test_stringify_unsupported_collections():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["list"] == "['a', 'b', 'c']"
-    assert result["tuple"] == "(1, 2, 3)"
-    assert result["set"] == "{1, 2, 3}"
-    assert result["frozenset"] == "frozenset({1, 2, 3})"
+    assert result["list"] == str(test_cases["list"])
+    assert result["tuple"] == str(test_cases["tuple"])
+    assert result["set"] == str(test_cases["set"])
+    assert result["frozenset"] == str(test_cases["frozenset"])
 
 
 def test_stringify_unsupported_nested():
@@ -51,7 +51,7 @@ def test_stringify_unsupported_nested():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["top/middle/bottom"] == "value"
+    assert result["top/middle/bottom"] == test_cases["top"]["middle"]["bottom"]
 
 
 def test_stringify_unsupported_mixed_types():
@@ -65,10 +65,10 @@ def test_stringify_unsupported_mixed_types():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["mixed_list"] == "[1, 'two', 3.0, True, None]"
-    assert result["mixed_dict/str"] == "value"
-    assert result["mixed_dict/int"] == 123
-    assert result["mixed_dict/list"] == "[1, 2, 3]"
+    assert result["mixed_list"] == str(test_cases["mixed_list"])
+    assert result["mixed_dict/str"] == test_cases["mixed_dict"]["str"]
+    assert result["mixed_dict/int"] == test_cases["mixed_dict"]["int"]
+    assert result["mixed_dict/list"] == str(test_cases["mixed_dict"]["list"])
     assert "mixed_dict/none" not in result
     assert result["mixed_set"] == str(test_cases["mixed_set"])
     assert result["mixed_tuple"] == str(test_cases["mixed_tuple"])
@@ -88,13 +88,13 @@ def test_stringify_unsupported_edge_cases():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["empty_list"] == "[]"
+    assert result["empty_list"] == str(test_cases["empty_list"])
     assert "empty_dict" not in result
-    assert result["empty_string"] == ""
+    assert result["empty_string"] == str(test_cases["empty_string"])
     assert result["zero"] == 0
     assert result["false"] is False
-    assert result["empty_set"] == "set()"
-    assert result["empty_tuple"] == "()"
+    assert result["empty_set"] == str(test_cases["empty_set"])
+    assert result["empty_tuple"] == str(test_cases["empty_tuple"])
 
 
 def test_stringify_unsupported_complex_nested():
@@ -113,12 +113,12 @@ def test_stringify_unsupported_complex_nested():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["complex/list_of_dicts"] == "[{'id': 1, 'name': 'one'}, {'id': 2, 'name': 'two'}]"
-    assert result["complex/mixed_nested/list"] == "[1, {'a': 2}, 3, None]"
-    assert result["complex/mixed_nested/dict/a"] == "[1, 2]"
-    assert result["complex/mixed_nested/dict/b/c"] == 3
-    assert result["complex/mixed_nested/set"] == "{1, 2, 3}"
-    assert result["complex/mixed_nested/tuple"] == "(1, 2, 3)"
+    assert result["complex/list_of_dicts"] == str(test_cases["complex"]["list_of_dicts"])
+    assert result["complex/mixed_nested/list"] == str(test_cases["complex"]["mixed_nested"]["list"])
+    assert result["complex/mixed_nested/dict/a"] == str(test_cases["complex"]["mixed_nested"]["dict"]["a"])
+    assert result["complex/mixed_nested/dict/b/c"] == test_cases["complex"]["mixed_nested"]["dict"]["b"]["c"]
+    assert result["complex/mixed_nested/set"] == str(test_cases["complex"]["mixed_nested"]["set"])
+    assert result["complex/mixed_nested/tuple"] == str(test_cases["complex"]["mixed_nested"]["tuple"])
 
 
 def test_stringify_unsupported_custom_objects():
@@ -146,12 +146,12 @@ def test_stringify_unsupported_none_values():
 
     result = stringify_unsupported(test_cases)
 
-    assert result["list_with_none"] == "[1, None, 3]"
-    assert result["dict_with_none/a"] == 1
+    assert result["list_with_none"] == str(test_cases["list_with_none"])
+    assert result["dict_with_none/a"] == test_cases["dict_with_none"]["a"]
     assert "dict_with_none/b" not in result
-    assert result["dict_with_none/c"] == 3
-    assert result["set_with_none"] == "{None, 1, 3}"
-    assert result["tuple_with_none"] == "(1, None, 3)"
+    assert result["dict_with_none/c"] == test_cases["dict_with_none"]["c"]
+    assert result["set_with_none"] == str(test_cases["set_with_none"])
+    assert result["tuple_with_none"] == str(test_cases["tuple_with_none"])
 
 
 def test_stringify_unsupported_empty_input():
