@@ -98,6 +98,8 @@ from neptune_scale.util.logger import (
 )
 from neptune_scale.util.timer import Timer
 
+ConfigValue = Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]
+
 logger = get_logger()
 
 
@@ -569,9 +571,48 @@ class Run(AbstractContextManager):
             ),
         )
 
+    def _flatten(self, d: dict[str, Any]) -> dict[str, Any]:
+        flattened = {}
+
+        def _flatten(d: dict[str, Any], prefix: str = "") -> None:
+            for key, value in d.items():
+                new_key = f"{prefix}/{key}" if prefix else key
+                if isinstance(value, dict):
+                    _flatten(d=value, prefix=new_key)
+                else:
+                    flattened[new_key] = value
+
+        _flatten(d)
+        return flattened
+
+    def _cast_unsupported(self, d: dict[str, Any]) -> dict[str, ConfigValue]:
+        result: dict[str, ConfigValue] = {}
+        for k, v in d.items():
+            # If value is None, store as empty string
+            if v is None:
+                result[k] = ""
+            elif isinstance(v, (list, set, tuple)):
+                # If all items are strings, keep as is
+                if all(isinstance(item, str) for item in v):
+                    result[k] = v
+                # Otherwise, cast each item to string, drop None
+                elif isinstance(v, list):
+                    result[k] = [str(item) for item in v if item is not None]
+                elif isinstance(v, set):
+                    result[k] = {str(item) for item in v if item is not None}
+                elif isinstance(v, tuple):
+                    result[k] = tuple(str(item) for item in v if item is not None)
+            elif isinstance(v, (float, bool, int, str, datetime)):
+                result[k] = v
+            else:
+                result[k] = str(v)
+        return result
+
     def log_configs(
         self,
-        data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        data: Optional[dict[str, Any]] = None,
+        flatten: bool = True,
+        cast_unsupported: bool = True,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
@@ -588,8 +629,10 @@ class Run(AbstractContextManager):
         Args:
             data: Dictionary of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
+                Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
+            flatten: Flattens nested dictionaries before logging. Default is True.
+            cast_unsupported: Casts unsupported types to strings before logging. Default is True.
 
-        Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
 
         Example:
             ```
@@ -604,6 +647,16 @@ class Run(AbstractContextManager):
                 )
             ```
         """
+
+        if not isinstance(data, dict) and data is not None:
+            raise TypeError(f"configs must be a `dict` or `NoneType` (was {type(data)})")
+
+        if flatten and data is not None:
+            data = self._flatten(data)
+
+        if cast_unsupported and data is not None:
+            data = self._cast_unsupported(data)
+
         self._log(configs=data)
 
     def log_string_series(
@@ -649,7 +702,11 @@ class Run(AbstractContextManager):
         self._log(timestamp=timestamp, step=step, string_series=data)
 
     def log_histograms(
-        self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
+        self,
+        histograms: dict[str, Histogram],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
     ) -> None:
         """Logs the specified histograms at a particular step.
 
@@ -794,7 +851,7 @@ class Run(AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        configs: Optional[dict[str, ConfigValue]] = None,
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
@@ -821,7 +878,7 @@ class Run(AbstractContextManager):
         self,
         timestamp: Optional[datetime] = None,
         step: Optional[Union[float, int]] = None,
-        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        configs: Optional[dict[str, ConfigValue]] = None,
         metrics: Optional[Metrics] = None,
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         string_series: Optional[dict[str, str]] = None,
@@ -931,7 +988,9 @@ class Run(AbstractContextManager):
         )
 
     def _prepare_files_for_upload(
-        self, files: Optional[dict[str, Union[str, Path, bytes, File]]], step: Optional[Union[float, int]] = None
+        self,
+        files: Optional[dict[str, Union[str, Path, bytes, File]]],
+        step: Optional[Union[float, int]] = None,
     ) -> list[tuple[str, FileUploadRequest]]:
         """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
 
@@ -947,7 +1006,12 @@ class Run(AbstractContextManager):
         for attr_name, file in files.items():
             try:
                 if isinstance(file, File):
-                    source, mime_type, destination, size = file.source, file.mime_type, file.destination, file.size
+                    source, mime_type, destination, size = (
+                        file.source,
+                        file.mime_type,
+                        file.destination,
+                        file.size,
+                    )
                 else:
                     source = file
                     mime_type = size = destination = None
@@ -1233,7 +1297,10 @@ def _resolve_run_storage_directory_path(
 
 
 def _get_run_url(
-    api_token: Optional[str], project_name: str, run_id: Optional[str] = None, experiment_name: Optional[str] = None
+    api_token: Optional[str],
+    project_name: str,
+    run_id: Optional[str] = None,
+    experiment_name: Optional[str] = None,
 ) -> str:
     assert not (run_id and experiment_name)
     if api_token is None:
