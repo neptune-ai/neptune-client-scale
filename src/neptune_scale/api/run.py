@@ -4,58 +4,38 @@ Python package
 
 from __future__ import annotations
 
+import atexit
 import base64
 import binascii
 import itertools
 import json
 import mimetypes
 import multiprocessing
+import os
 import re
+import threading
+import time
 import uuid
+from collections.abc import (
+    Callable,
+    Mapping,
+)
+from contextlib import AbstractContextManager
+from dataclasses import (
+    asdict,
+    is_dataclass,
+)
+from datetime import datetime
 from multiprocessing.process import BaseProcess
 from pathlib import Path
 from types import TracebackType
-from urllib.parse import quote_plus
-
-from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
-from neptune_scale.sync.files import (
-    generate_destination,
-    guess_mime_type_from_bytes,
-    guess_mime_type_from_file,
-)
-from neptune_scale.sync.metadata_splitter import (
-    FileRefData,
-    MetadataSplitter,
-    Metrics,
-    datetime_to_proto,
-    histograms_to_update_run_snapshots,
-    make_step,
-    string_series_to_update_run_snapshots,
-)
-from neptune_scale.sync.operations_repository import (
-    FileUploadRequest,
-    OperationsRepository,
-)
-from neptune_scale.types import (
-    File,
-    Histogram,
-)
-
-__all__ = ["Run"]
-
-import atexit
-import os
-import threading
-import time
-from collections.abc import Callable
-from contextlib import AbstractContextManager
-from datetime import datetime
 from typing import (
     Any,
     Literal,
     Optional,
     Union,
 )
+from urllib.parse import quote_plus
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
@@ -73,11 +53,30 @@ from neptune_scale.exceptions import (
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
 )
+from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+from neptune_scale.sync.files import (
+    generate_destination,
+    guess_mime_type_from_bytes,
+    guess_mime_type_from_file,
+)
 from neptune_scale.sync.lag_tracking import LagTracker
+from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
+    MetadataSplitter,
+    Metrics,
+    datetime_to_proto,
+    histograms_to_update_run_snapshots,
+    make_step,
+    string_series_to_update_run_snapshots,
+)
+from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
+    OperationsRepository,
+)
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
@@ -85,6 +84,10 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.sync_process import run_sync_process
+from neptune_scale.types import (
+    File,
+    Histogram,
+)
 from neptune_scale.util import envs
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
@@ -97,6 +100,8 @@ from neptune_scale.util.logger import (
     get_logger,
 )
 from neptune_scale.util.timer import Timer
+
+__all__ = ["Run"]
 
 ConfigValue = Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]
 
@@ -571,22 +576,28 @@ class Run(AbstractContextManager):
             ),
         )
 
-    def _flatten(self, d: dict[str, Any]) -> dict[str, Any]:
+    def _flatten(self, d: Union[Mapping[str, Any], Any]) -> dict[str, Any]:
         flattened = {}
 
-        def _flatten(d: dict[str, Any], prefix: str = "") -> None:
+        def _flatten_inner(d: Any, prefix: str = "") -> None:
+            if is_dataclass(d):
+                d = asdict(d)  # type: ignore
+            if not isinstance(d, dict):
+                raise TypeError(f"Expected dict or dataclass, got {type(d)}")
             for key, value in d.items():
                 new_key = f"{prefix}/{key}" if prefix else key
-                if isinstance(value, dict):
-                    _flatten(d=value, prefix=new_key)
+                if isinstance(value, dict) or is_dataclass(value):
+                    _flatten_inner(value, prefix=new_key)
                 else:
                     flattened[new_key] = value
 
-        _flatten(d)
+        _flatten_inner(d)
         return flattened
 
-    def _cast_unsupported(self, d: dict[str, Any]) -> dict[str, ConfigValue]:
+    def _cast_unsupported(self, d: Union[Mapping[str, Any], Any]) -> dict[str, ConfigValue]:
         result: dict[str, ConfigValue] = {}
+        if is_dataclass(d):
+            d = asdict(d)  # type: ignore
         for k, v in d.items():
             # If value is None, store as empty string
             if v is None:
@@ -595,13 +606,13 @@ class Run(AbstractContextManager):
                 # If all items are strings, keep as is
                 if all(isinstance(item, str) for item in v):
                     result[k] = v
-                # Otherwise, cast each item to string, drop None
+                # Otherwise, cast each item to string, log empty string for None
                 elif isinstance(v, list):
-                    result[k] = [str(item) for item in v if item is not None]
+                    result[k] = [str(item) if item is not None else "" for item in v]
                 elif isinstance(v, set):
-                    result[k] = {str(item) for item in v if item is not None}
+                    result[k] = {str(item) if item is not None else "" for item in v}
                 elif isinstance(v, tuple):
-                    result[k] = tuple(str(item) for item in v if item is not None)
+                    result[k] = tuple(str(item) if item is not None else "" for item in v)
             elif isinstance(v, (float, bool, int, str, datetime)):
                 result[k] = v
             else:
@@ -610,14 +621,14 @@ class Run(AbstractContextManager):
 
     def log_configs(
         self,
-        data: Optional[dict[str, Any]] = None,
+        data: Optional[Union[Mapping[str, Any], Any]] = None,
         flatten: bool = True,
         cast_unsupported: bool = True,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
-        You can log configurations or other single values. Pass the metadata as a dictionary {key: value} with
+        You can log configurations or other single values. Pass the metadata as a dataclass or a dictionary {key: value} with
 
         - key: path to where the metadata should be stored in the run.
         - value: configuration or other single value to log.
@@ -627,10 +638,10 @@ class Run(AbstractContextManager):
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            data: Dictionary of configs or other values to log.
+            data: Dataclass or Dictionary of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
                 Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
-            flatten: Flattens nested dictionaries before logging. Default is True.
+            flatten: Flattens nested dictionaries and dataclasses before logging. Default is True.
             cast_unsupported: Casts unsupported types to strings before logging. Default is True.
 
 
@@ -648,8 +659,8 @@ class Run(AbstractContextManager):
             ```
         """
 
-        if not isinstance(data, dict) and data is not None:
-            raise TypeError(f"configs must be a `dict` or `NoneType` (was {type(data)})")
+        if not isinstance(data, Mapping) and not is_dataclass(data) and data is not None:
+            raise TypeError(f"configs must be a `Mapping` or `dataclass` or `NoneType` (was {type(data)})")
 
         if flatten and data is not None:
             data = self._flatten(data)
@@ -657,7 +668,7 @@ class Run(AbstractContextManager):
         if cast_unsupported and data is not None:
             data = self._cast_unsupported(data)
 
-        self._log(configs=data)
+        self._log(configs=data)  # type: ignore
 
     def log_string_series(
         self,
