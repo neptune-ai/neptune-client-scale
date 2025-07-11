@@ -580,9 +580,10 @@ class Run(AbstractContextManager):
             if is_dataclass(d):
                 d = asdict(d)  # type: ignore
             if not isinstance(d, dict):
-                raise TypeError(f"Expected dict or dataclass, got {type(d)}")
+                raise TypeError(f"Cannot flatten value of type {type(d)}. Try `flatten=False`.")
             for key, value in d.items():
-                new_key = f"{prefix}/{key}" if prefix else key
+                str_key = str(key)
+                new_key = f"{prefix}/{str_key}" if prefix else str_key
                 if isinstance(value, dict) or is_dataclass(value):
                     _flatten_inner(value, prefix=new_key)
                 else:
@@ -656,12 +657,10 @@ class Run(AbstractContextManager):
                 )
             ```
         """
+        if data is None:
+            return
 
-        if (
-            data is not None
-            and not is_dataclass(data)
-            and not (hasattr(data, "items") and callable(getattr(data, "items")))
-        ):
+        if not is_dataclass(data) and not (hasattr(data, "items") and callable(getattr(data, "items"))):
             raise TypeError(
                 f"configs must be a mapping-like object with an `.items()` method, a `dataclass`, or `NoneType` (was {type(data)})"
             )
