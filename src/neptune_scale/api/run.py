@@ -16,10 +16,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import (
-    Callable,
-    Mapping,
-)
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import (
     asdict,
@@ -576,7 +573,7 @@ class Run(AbstractContextManager):
             ),
         )
 
-    def _flatten(self, d: Union[Mapping[str, Any], Any]) -> dict[str, Any]:
+    def _flatten(self, d: Any) -> dict[str, Any]:
         flattened = {}
 
         def _flatten_inner(d: Any, prefix: str = "") -> None:
@@ -594,7 +591,7 @@ class Run(AbstractContextManager):
         _flatten_inner(d)
         return flattened
 
-    def _cast_unsupported(self, d: Union[Mapping[str, Any], Any]) -> dict[str, ConfigValue]:
+    def _cast_unsupported(self, d: Any) -> dict[str, ConfigValue]:
         result: dict[str, ConfigValue] = {}
         if is_dataclass(d):
             d = asdict(d)  # type: ignore
@@ -621,14 +618,15 @@ class Run(AbstractContextManager):
 
     def log_configs(
         self,
-        data: Optional[Union[Mapping[str, Any], Any]] = None,
+        data: Optional[Any] = None,
         flatten: bool = True,
         cast_unsupported: bool = True,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
-        You can log configurations or other single values. Pass the metadata as a dataclass or a dictionary {key: value} with
+        You can log configurations or other single values.
+        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method {key: value} with
 
         - key: path to where the metadata should be stored in the run.
         - value: configuration or other single value to log.
@@ -659,8 +657,14 @@ class Run(AbstractContextManager):
             ```
         """
 
-        if not isinstance(data, Mapping) and not is_dataclass(data) and data is not None:
-            raise TypeError(f"configs must be a `Mapping` or `dataclass` or `NoneType` (was {type(data)})")
+        if (
+            data is not None
+            and not is_dataclass(data)
+            and not (hasattr(data, "items") and callable(getattr(data, "items")))
+        ):
+            raise TypeError(
+                f"configs must be a mapping-like object with an `.items()` method, a `dataclass`, or `NoneType` (was {type(data)})"
+            )
 
         if flatten and data is not None:
             data = self._flatten(data)
@@ -668,7 +672,7 @@ class Run(AbstractContextManager):
         if cast_unsupported and data is not None:
             data = self._cast_unsupported(data)
 
-        self._log(configs=data)  # type: ignore
+        self._log(configs=data)
 
     def log_string_series(
         self,
