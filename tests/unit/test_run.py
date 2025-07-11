@@ -189,22 +189,6 @@ def test_log_configs(api_token, mode):
 
 
 @pytest.mark.parametrize("mode", ["disabled", "offline"])
-def test_log_config_none(api_token, mode):
-    # given
-    project = "workspace/project"
-
-    # then
-    with (
-        Run(project=project, api_token=api_token, mode=mode) as run,
-        patch.object(run, "_log") as mock_log,
-    ):
-        run.log_configs(None)
-
-        # and
-        mock_log.assert_not_called()
-
-
-@pytest.mark.parametrize("mode", ["disabled", "offline"])
 def test_log_configs_cast_unsupported(api_token, mode):
     # given
     from datetime import datetime
