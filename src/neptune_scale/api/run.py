@@ -627,7 +627,9 @@ class Run(AbstractContextManager):
         Logs the specified metadata to a Neptune run.
 
         You can log configurations or other single values.
-        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method {key: value} with
+        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method {key: value}, where:
+        - key: A string representing the path to where the metadata should be stored in the run.
+        - value: The configuration or other single value to log.
 
         - key: path to where the metadata should be stored in the run.
         - value: configuration or other single value to log.
@@ -662,7 +664,7 @@ class Run(AbstractContextManager):
 
         if not is_dataclass(data) and not (hasattr(data, "items") and callable(getattr(data, "items"))):
             raise TypeError(
-                f"configs must be a mapping-like object with an `.items()` method, a `dataclass`, or `NoneType` (was {type(data)})"
+                f"configs must be a mapping-like object (e.g., `dict`) with an `.items()` method, a `dataclass` instance, or `NoneType` (was {type(data)})"
             )
 
         if flatten and data is not None:
