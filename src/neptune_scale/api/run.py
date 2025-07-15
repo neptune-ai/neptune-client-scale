@@ -16,7 +16,10 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from contextlib import AbstractContextManager
 from dataclasses import (
     asdict,
@@ -31,6 +34,7 @@ from typing import (
     Literal,
     Optional,
     Union,
+    cast,
 )
 from urllib.parse import quote_plus
 
@@ -99,8 +103,6 @@ from neptune_scale.util.logger import (
 from neptune_scale.util.timer import Timer
 
 __all__ = ["Run"]
-
-ConfigValue = Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]
 
 logger = get_logger()
 
@@ -573,29 +575,31 @@ class Run(AbstractContextManager):
             ),
         )
 
-    def _flatten(self, d: Any) -> dict[str, Any]:
+    @staticmethod
+    def _flatten(data: Any) -> dict[str, Any]:
         flattened = {}
 
         def _flatten_inner(d: Any, prefix: str = "") -> None:
             if is_dataclass(d):
                 d = asdict(d)  # type: ignore
-            if not isinstance(d, dict):
+            if not isinstance(d, Mapping):
                 raise TypeError(f"Cannot flatten value of type {type(d)}. Try `flatten=False`.")
             for key, value in d.items():
                 str_key = str(key)
                 new_key = f"{prefix}/{str_key}" if prefix else str_key
-                if isinstance(value, dict) or is_dataclass(value):
+                if isinstance(value, Mapping) or is_dataclass(value):
                     _flatten_inner(value, prefix=new_key)
                 else:
                     flattened[new_key] = value
 
-        _flatten_inner(d)
+        _flatten_inner(data)
         return flattened
 
-    def _cast_unsupported(self, d: Any) -> dict[str, ConfigValue]:
-        result: dict[str, ConfigValue] = {}
-        if is_dataclass(d):
-            d = asdict(d)  # type: ignore
+    def _cast_unsupported(
+        self, d: Any
+    ) -> dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]:
+        result: dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]] = {}
+
         for k, v in d.items():
             # If value is None, store as empty string
             if v is None:
@@ -619,31 +623,36 @@ class Run(AbstractContextManager):
 
     def log_configs(
         self,
-        data: Optional[Any] = None,
-        flatten: bool = True,
-        cast_unsupported: bool = True,
+        data: Optional[
+            Union[
+                Mapping[
+                    str,
+                    Union[str, float, int, bool, datetime, list[Any], set[Any], tuple[Any, ...]],
+                ],
+                Any,
+            ]
+        ],
+        flatten: bool = False,
+        cast_unsupported: bool = False,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
         You can log configurations or other single values.
-        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method {key: value}, where:
+        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method (e.g., `dict`) {key: value}, where:
         - key: A string representing the path to where the metadata should be stored in the run.
         - value: The configuration or other single value to log.
-
-        - key: path to where the metadata should be stored in the run.
-        - value: configuration or other single value to log.
 
         For example, {"parameters/learning_rate": 0.001}.
         In the attribute path, each forward slash "/" nests the attribute under a namespace.
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            data: Dataclass or Dictionary of configs or other values to log.
+            data: Dataclass or mapping-like object with an `.items()` method (e.g., `dict`) of configs or other values to log.
                 Available types: float, integer, Boolean, string, and datetime.
                 Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
-            flatten: Flattens nested dictionaries and dataclasses before logging. Default is True.
-            cast_unsupported: Casts unsupported types to strings before logging. Default is True.
+            flatten: Flattens nested dictionaries and dataclasses before logging. Default is False.
+            cast_unsupported: Casts unsupported types to strings before logging. Default is False.
 
 
         Example:
@@ -662,17 +671,23 @@ class Run(AbstractContextManager):
         if data is None:
             return
 
-        if not is_dataclass(data) and not (hasattr(data, "items") and callable(getattr(data, "items"))):
+        if is_dataclass(data):
+            data = asdict(data)  # type: ignore
+        elif not (hasattr(data, "items") and callable(getattr(data, "items"))):
             raise TypeError(
-                f"configs must be a mapping-like object (e.g., `dict`) with an `.items()` method, a `dataclass` instance, or `NoneType` (was {type(data)})"
+                f"configs must be a mapping-like object with an `.items()` method (e.g., `dict`) or a `dataclass` instance, or `NoneType` (was {type(data)})"
             )
 
-        if flatten and data is not None:
-            data = self._flatten(data)
+        if flatten:
+            data = Run._flatten(data)
 
-        if cast_unsupported and data is not None:
+        if cast_unsupported:
             data = self._cast_unsupported(data)
 
+        data = cast(
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]],
+            data,
+        )
         self._log(configs=data)
 
     def log_string_series(
@@ -867,7 +882,9 @@ class Run(AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[dict[str, ConfigValue]] = None,
+        configs: Optional[
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]
+        ] = None,
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
@@ -894,7 +911,9 @@ class Run(AbstractContextManager):
         self,
         timestamp: Optional[datetime] = None,
         step: Optional[Union[float, int]] = None,
-        configs: Optional[dict[str, ConfigValue]] = None,
+        configs: Optional[
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]
+        ] = None,
         metrics: Optional[Metrics] = None,
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         string_series: Optional[dict[str, str]] = None,

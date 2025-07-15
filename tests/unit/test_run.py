@@ -223,45 +223,45 @@ def test_log_configs_cast_unsupported(api_token, mode):
             "str": "abc",
             "datetime": now,
         }
-        run.log_configs(configs, flatten=False)
+        run.log_configs(configs, cast_unsupported=True)
         mock_log.assert_called_with(configs=configs)
         mock_log.reset_mock()
 
         # None becomes ""
-        run.log_configs({"none": None}, flatten=False)
+        run.log_configs({"none": None}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"none": ""})
         mock_log.reset_mock()
 
         # Homogeneous string list/set/tuple are preserved
-        run.log_configs({"str_list": ["a", "b"]}, flatten=False)
+        run.log_configs({"str_list": ["a", "b"]}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"str_list": ["a", "b"]})
-        run.log_configs({"str_set": {"a", "b"}}, flatten=False)
+        run.log_configs({"str_set": {"a", "b"}}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"str_set": {"a", "b"}})
-        run.log_configs({"str_tuple": ("a", "b")}, flatten=False)
+        run.log_configs({"str_tuple": ("a", "b")}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"str_tuple": ("a", "b")})
         mock_log.reset_mock()
 
         # Mixed or non-string list/set/tuple are cast per-item
-        run.log_configs({"mixed_list": [1, "b", None]}, flatten=False)
+        run.log_configs({"mixed_list": [1, "b", None]}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"mixed_list": ["1", "b", ""]})
-        run.log_configs({"mixed_set": {1, "b"}}, flatten=False)
+        run.log_configs({"mixed_set": {1, "b"}}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"mixed_set": {"1", "b"}})
-        run.log_configs({"mixed_tuple": (1, "b")}, flatten=False)
+        run.log_configs({"mixed_tuple": (1, "b")}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"mixed_tuple": ("1", "b")})
         mock_log.reset_mock()
 
         # Custom object becomes str
-        run.log_configs({"custom": Custom()}, flatten=False)
+        run.log_configs({"custom": Custom()}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"custom": "custom_obj"})
         mock_log.reset_mock()
 
         # Dict becomes str
-        run.log_configs({"dict": {"a": 1}}, flatten=False)
+        run.log_configs({"dict": {"a": 1}}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"dict": "{'a': 1}"})
         mock_log.reset_mock()
 
         # Custom dataclass becomes str
-        run.log_configs(custom_dataclass, flatten=False)
+        run.log_configs(custom_dataclass, cast_unsupported=True)
         mock_log.assert_called_with(configs={"a": 1, "b": "abc", "c": "{'a': 1, 'b': 2}", "d": ""})
         mock_log.reset_mock()
 
@@ -288,12 +288,12 @@ def test_log_configs_flatten(api_token, mode):
         Run(project=project, api_token=api_token, mode=mode) as run,
         patch.object(run, "_log") as mock_log,
     ):
-        run.log_configs({"a": {"b": 1, "c": {"d": 2}}}, cast_unsupported=False)
+        run.log_configs({"a": {"b": 1, "c": {"d": 2}}}, flatten=True)
         mock_log.assert_called_with(configs={"a/b": 1, "a/c/d": 2})
         mock_log.reset_mock()
 
         # Nested dataclass becomes dict
-        run.log_configs(custom_dataclass, cast_unsupported=False)
+        run.log_configs(custom_dataclass, flatten=True)
         mock_log.assert_called_with(configs={"a": 1, "b": "abc", "c/a": 1, "c/b": 2, "d": None})
         mock_log.reset_mock()
 
