@@ -1,5 +1,5 @@
 # Input validation
-MAX_RUN_ID_LENGTH = 128
+MAX_RUN_ID_LENGTH = 730
 MAX_EXPERIMENT_NAME_LENGTH = 730
 
 # Threads
