@@ -595,12 +595,13 @@ class Run(AbstractContextManager):
         _flatten_inner(data)
         return flattened
 
+    @staticmethod
     def _cast_unsupported(
-        self, d: Any
+        data: Any,
     ) -> dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]:
         result: dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]] = {}
 
-        for k, v in d.items():
+        for k, v in data.items():
             if (
                 isinstance(v, (float, bool, int, str, datetime))
                 or isinstance(v, (list, set, tuple))
@@ -663,7 +664,7 @@ class Run(AbstractContextManager):
 
         if is_dataclass(data):
             data = asdict(data)  # type: ignore
-        elif not (hasattr(data, "items") and callable(getattr(data, "items"))):
+        elif not isinstance(data, Mapping):
             raise TypeError(
                 f"configs must be a mapping-like object with an `.items()` method (e.g., `dict`) or a `dataclass` instance, or `NoneType` (was {type(data)})"
             )
