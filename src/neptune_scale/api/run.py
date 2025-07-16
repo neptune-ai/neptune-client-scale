@@ -673,7 +673,7 @@ class Run(AbstractContextManager):
             data = Run._flatten(data)
 
         if cast_unsupported:
-            data = self._cast_unsupported(data)
+            data = Run._cast_unsupported(data)
 
         data = cast(
             dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]],
