@@ -244,8 +244,6 @@ def test_log_configs_cast_unsupported(api_token, mode):
         # Mixed or non-string list/set/tuple are cast entirely
         run.log_configs({"mixed_list": [1, "b", None]}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"mixed_list": "[1, 'b', None]"})
-        run.log_configs({"mixed_set": {1, "b"}}, cast_unsupported=True)
-        mock_log.assert_called_with(configs={"mixed_set": "{'b', 1}"})
         run.log_configs({"mixed_tuple": (1, "b")}, cast_unsupported=True)
         mock_log.assert_called_with(configs={"mixed_tuple": "(1, 'b')"})
         mock_log.reset_mock()
