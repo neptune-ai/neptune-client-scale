@@ -601,24 +601,14 @@ class Run(AbstractContextManager):
         result: dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]] = {}
 
         for k, v in d.items():
-            # If value is None, store as empty string
-            if v is None:
-                result[k] = ""
-            elif isinstance(v, (list, set, tuple)):
-                # If all items are strings, keep as is
-                if all(isinstance(item, str) for item in v):
-                    result[k] = v
-                # Otherwise, cast each item to string, log empty string for None
-                elif isinstance(v, list):
-                    result[k] = [str(item) if item is not None else "" for item in v]
-                elif isinstance(v, set):
-                    result[k] = {str(item) if item is not None else "" for item in v}
-                elif isinstance(v, tuple):
-                    result[k] = tuple(str(item) if item is not None else "" for item in v)
-            elif isinstance(v, (float, bool, int, str, datetime)):
+            if (
+                isinstance(v, (float, bool, int, str, datetime))
+                or isinstance(v, (list, set, tuple))
+                and all(isinstance(item, str) for item in v)
+            ):
                 result[k] = v
             else:
-                result[k] = str(v)
+                result[k] = "" if v is None else str(v)  # If value is None, store as empty string
         return result
 
     def log_configs(
