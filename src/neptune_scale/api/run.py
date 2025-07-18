@@ -4,58 +4,39 @@ Python package
 
 from __future__ import annotations
 
+import atexit
 import base64
 import binascii
 import itertools
 import json
 import mimetypes
 import multiprocessing
+import os
 import re
+import threading
+import time
 import uuid
+from collections.abc import (
+    Callable,
+    Mapping,
+)
+from contextlib import AbstractContextManager
+from dataclasses import (
+    asdict,
+    is_dataclass,
+)
+from datetime import datetime
 from multiprocessing.process import BaseProcess
 from pathlib import Path
 from types import TracebackType
-from urllib.parse import quote_plus
-
-from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
-from neptune_scale.sync.files import (
-    generate_destination,
-    guess_mime_type_from_bytes,
-    guess_mime_type_from_file,
-)
-from neptune_scale.sync.metadata_splitter import (
-    FileRefData,
-    MetadataSplitter,
-    Metrics,
-    datetime_to_proto,
-    histograms_to_update_run_snapshots,
-    make_step,
-    string_series_to_update_run_snapshots,
-)
-from neptune_scale.sync.operations_repository import (
-    FileUploadRequest,
-    OperationsRepository,
-)
-from neptune_scale.types import (
-    File,
-    Histogram,
-)
-
-__all__ = ["Run"]
-
-import atexit
-import os
-import threading
-import time
-from collections.abc import Callable
-from contextlib import AbstractContextManager
-from datetime import datetime
 from typing import (
     Any,
     Literal,
     Optional,
     Union,
+    cast,
 )
+from urllib.parse import quote_plus
 
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
 from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
@@ -73,11 +54,30 @@ from neptune_scale.exceptions import (
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
 )
+from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
 from neptune_scale.sync.errors_tracking import (
     ErrorsMonitor,
     ErrorsQueue,
 )
+from neptune_scale.sync.files import (
+    generate_destination,
+    guess_mime_type_from_bytes,
+    guess_mime_type_from_file,
+)
 from neptune_scale.sync.lag_tracking import LagTracker
+from neptune_scale.sync.metadata_splitter import (
+    FileRefData,
+    MetadataSplitter,
+    Metrics,
+    datetime_to_proto,
+    histograms_to_update_run_snapshots,
+    make_step,
+    string_series_to_update_run_snapshots,
+)
+from neptune_scale.sync.operations_repository import (
+    FileUploadRequest,
+    OperationsRepository,
+)
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_RUN_ID_LENGTH,
@@ -85,6 +85,10 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.sync.supervisor import ProcessSupervisor
 from neptune_scale.sync.sync_process import run_sync_process
+from neptune_scale.types import (
+    File,
+    Histogram,
+)
 from neptune_scale.util import envs
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
@@ -97,6 +101,8 @@ from neptune_scale.util.logger import (
     get_logger,
 )
 from neptune_scale.util.timer import Timer
+
+__all__ = ["Run"]
 
 logger = get_logger()
 
@@ -569,27 +575,76 @@ class Run(AbstractContextManager):
             ),
         )
 
+    @staticmethod
+    def _flatten(data: Any) -> dict[str, Any]:
+        flattened = {}
+
+        def _flatten_inner(d: Any, prefix: str = "") -> None:
+            if is_dataclass(d):
+                d = asdict(d)  # type: ignore
+            if not isinstance(d, Mapping):
+                raise TypeError(f"Cannot flatten value of type {type(d)}. Try `flatten=False`.")
+            for key, value in d.items():
+                str_key = str(key)
+                new_key = f"{prefix}/{str_key}" if prefix else str_key
+                if isinstance(value, Mapping) or is_dataclass(value):
+                    _flatten_inner(value, prefix=new_key)
+                else:
+                    flattened[new_key] = value
+
+        _flatten_inner(data)
+        return flattened
+
+    @staticmethod
+    def _cast_unsupported(
+        data: Any,
+    ) -> dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]:
+        result: dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]] = {}
+
+        for k, v in data.items():
+            if (
+                isinstance(v, (float, bool, int, str, datetime))
+                or isinstance(v, (list, set, tuple))
+                and all(isinstance(item, str) for item in v)
+            ):
+                result[k] = v
+            else:
+                result[k] = "" if v is None else str(v)  # If value is None, store as empty string
+        return result
+
     def log_configs(
         self,
-        data: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        data: Optional[
+            Union[
+                Mapping[
+                    str,
+                    Union[str, float, int, bool, datetime, list[Any], set[Any], tuple[Any, ...]],
+                ],
+                Any,
+            ]
+        ],
+        flatten: bool = False,
+        cast_unsupported: bool = False,
     ) -> None:
         """
         Logs the specified metadata to a Neptune run.
 
-        You can log configurations or other single values. Pass the metadata as a dictionary {key: value} with
-
-        - key: path to where the metadata should be stored in the run.
-        - value: configuration or other single value to log.
+        You can log configurations or other single values.
+        Pass the data as a dataclass or a mapping-like object, where:
+        - keys are strings specifying the path to the metadata in the run structure.
+        - values are the configurations or other single values to log.
 
         For example, {"parameters/learning_rate": 0.001}.
         In the attribute path, each forward slash "/" nests the attribute under a namespace.
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            data: Dictionary of configs or other values to log.
+            data: Configs or other values to log, as a `dict`, dataclass, or other mapping-like object with an `.items()` method.
                 Available types: float, integer, Boolean, string, and datetime.
+                Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
+            flatten: Flattens nested dictionaries and dataclasses before logging. Defaults to False.
+            cast_unsupported: Casts unsupported types to strings before logging. Defaults to False.
 
-        Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
 
         Example:
             ```
@@ -604,6 +659,26 @@ class Run(AbstractContextManager):
                 )
             ```
         """
+        if data is None:
+            return
+
+        if is_dataclass(data):
+            data = asdict(data)  # type: ignore
+        elif not isinstance(data, Mapping):
+            raise TypeError(
+                f"configs must be a mapping-like object with an `.items()` method (e.g., `dict`) or a `dataclass` instance, or `NoneType` (was {type(data)})"
+            )
+
+        if flatten:
+            data = Run._flatten(data)
+
+        if cast_unsupported:
+            data = Run._cast_unsupported(data)
+
+        data = cast(
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]],
+            data,
+        )
         self._log(configs=data)
 
     def log_string_series(
@@ -649,7 +724,11 @@ class Run(AbstractContextManager):
         self._log(timestamp=timestamp, step=step, string_series=data)
 
     def log_histograms(
-        self, histograms: dict[str, Histogram], step: Union[float, int], *, timestamp: Optional[datetime] = None
+        self,
+        histograms: dict[str, Histogram],
+        step: Union[float, int],
+        *,
+        timestamp: Optional[datetime] = None,
     ) -> None:
         """Logs the specified histograms at a particular step.
 
@@ -794,7 +873,9 @@ class Run(AbstractContextManager):
         self,
         step: Optional[Union[float, int]] = None,
         timestamp: Optional[datetime] = None,
-        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        configs: Optional[
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]
+        ] = None,
         metrics: Optional[dict[str, Union[float, int]]] = None,
         tags_add: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
         tags_remove: Optional[dict[str, Union[list[str], set[str], tuple[str]]]] = None,
@@ -821,7 +902,9 @@ class Run(AbstractContextManager):
         self,
         timestamp: Optional[datetime] = None,
         step: Optional[Union[float, int]] = None,
-        configs: Optional[dict[str, Union[float, bool, int, str, datetime, list, set, tuple]]] = None,
+        configs: Optional[
+            dict[str, Union[str, float, int, bool, datetime, list[str], set[str], tuple[str, ...]]]
+        ] = None,
         metrics: Optional[Metrics] = None,
         files: Optional[dict[str, Union[str, Path, bytes, File]]] = None,
         string_series: Optional[dict[str, str]] = None,
@@ -931,7 +1014,9 @@ class Run(AbstractContextManager):
         )
 
     def _prepare_files_for_upload(
-        self, files: Optional[dict[str, Union[str, Path, bytes, File]]], step: Optional[Union[float, int]] = None
+        self,
+        files: Optional[dict[str, Union[str, Path, bytes, File]]],
+        step: Optional[Union[float, int]] = None,
     ) -> list[tuple[str, FileUploadRequest]]:
         """Process user input to produce a list of (attribute-name, FileUploadRequest tuples)
 
@@ -947,7 +1032,12 @@ class Run(AbstractContextManager):
         for attr_name, file in files.items():
             try:
                 if isinstance(file, File):
-                    source, mime_type, destination, size = file.source, file.mime_type, file.destination, file.size
+                    source, mime_type, destination, size = (
+                        file.source,
+                        file.mime_type,
+                        file.destination,
+                        file.size,
+                    )
                 else:
                     source = file
                     mime_type = size = destination = None
@@ -1233,7 +1323,10 @@ def _resolve_run_storage_directory_path(
 
 
 def _get_run_url(
-    api_token: Optional[str], project_name: str, run_id: Optional[str] = None, experiment_name: Optional[str] = None
+    api_token: Optional[str],
+    project_name: str,
+    run_id: Optional[str] = None,
+    experiment_name: Optional[str] = None,
 ) -> str:
     assert not (run_id and experiment_name)
     if api_token is None:

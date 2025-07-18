@@ -1,5 +1,6 @@
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -182,6 +183,117 @@ def test_log_configs(api_token, mode):
         run.log_configs({"string": "test"})
         run.log_configs({"datetime": datetime.now()})
         run.log_configs({"string_list": ["a", "b", "c"]})
+
+    # and
+    assert True
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_configs_cast_unsupported(api_token, mode):
+    # given
+    from datetime import datetime
+
+    project = "workspace/project"
+
+    class Custom:
+        def __str__(self):
+            return "custom_obj"
+
+    @dataclass
+    class CustomDataclass:
+        a: int
+        b: str
+        c: dict[str, int]
+        d: None
+
+    custom_dataclass = CustomDataclass(a=1, b="abc", c={"a": 1, "b": 2}, d=None)
+
+    now = datetime.now()
+
+    # then
+    with (
+        Run(project=project, api_token=api_token, mode=mode) as run,
+        patch.object(run, "_log") as mock_log,
+    ):
+        # Supported types
+        configs = {
+            "int": 1,
+            "float": 2.5,
+            "bool": False,
+            "str": "abc",
+            "datetime": now,
+        }
+        run.log_configs(configs, cast_unsupported=True)
+        mock_log.assert_called_with(configs=configs)
+        mock_log.reset_mock()
+
+        # None becomes ""
+        run.log_configs({"none": None}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"none": ""})
+        mock_log.reset_mock()
+
+        # Homogeneous string list/set/tuple are preserved
+        run.log_configs({"str_list": ["a", "b"]}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"str_list": ["a", "b"]})
+        run.log_configs({"str_set": {"a", "b"}}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"str_set": {"a", "b"}})
+        run.log_configs({"str_tuple": ("a", "b")}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"str_tuple": ("a", "b")})
+        mock_log.reset_mock()
+
+        # Mixed or non-string list/set/tuple are cast entirely
+        run.log_configs({"mixed_list": [1, "b", None]}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"mixed_list": "[1, 'b', None]"})
+        run.log_configs({"mixed_tuple": (1, "b")}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"mixed_tuple": "(1, 'b')"})
+        mock_log.reset_mock()
+
+        # Custom object becomes str
+        run.log_configs({"custom": Custom()}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"custom": "custom_obj"})
+        mock_log.reset_mock()
+
+        # Dict becomes str
+        run.log_configs({"dict": {"a": 1}}, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"dict": "{'a': 1}"})
+        mock_log.reset_mock()
+
+        # Custom dataclass becomes str
+        run.log_configs(custom_dataclass, cast_unsupported=True)
+        mock_log.assert_called_with(configs={"a": 1, "b": "abc", "c": "{'a': 1, 'b': 2}", "d": ""})
+        mock_log.reset_mock()
+
+    # and
+    assert True
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_log_configs_flatten(api_token, mode):
+    # given
+    project = "workspace/project"
+
+    @dataclass
+    class CustomDataclass:
+        a: int
+        b: str
+        c: dict[str, int]
+        d: None
+
+    custom_dataclass = CustomDataclass(a=1, b="abc", c={"a": 1, "b": 2}, d=None)
+
+    # then
+    with (
+        Run(project=project, api_token=api_token, mode=mode) as run,
+        patch.object(run, "_log") as mock_log,
+    ):
+        run.log_configs({"a": {"b": 1, "c": {"d": 2}}}, flatten=True)
+        mock_log.assert_called_with(configs={"a/b": 1, "a/c/d": 2})
+        mock_log.reset_mock()
+
+        # Nested dataclass becomes dict
+        run.log_configs(custom_dataclass, flatten=True)
+        mock_log.assert_called_with(configs={"a": 1, "b": "abc", "c/a": 1, "c/b": 2, "d": None})
+        mock_log.reset_mock()
 
     # and
     assert True
