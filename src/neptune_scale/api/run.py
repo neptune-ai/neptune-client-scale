@@ -630,20 +630,20 @@ class Run(AbstractContextManager):
         Logs the specified metadata to a Neptune run.
 
         You can log configurations or other single values.
-        Pass the metadata as a dataclass or a mapping-like object with an `.items()` method (e.g., `dict`) {key: value}, where:
-        - key: A string representing the path to where the metadata should be stored in the run.
-        - value: The configuration or other single value to log.
+        Pass the data as a dataclass or a mapping-like object, where:
+        - keys are strings specifying the path to the metadata in the run structure.
+        - values are the configurations or other single values to log.
 
         For example, {"parameters/learning_rate": 0.001}.
         In the attribute path, each forward slash "/" nests the attribute under a namespace.
         Use namespaces to structure the metadata into meaningful categories.
 
         Args:
-            data: Dataclass or mapping-like object with an `.items()` method (e.g., `dict`) of configs or other values to log.
+            data: Configs or other values to log, as a `dict`, dataclass, or other mapping-like object with an `.items()` method.
                 Available types: float, integer, Boolean, string, and datetime.
                 Any `datetime` values that don't have the `tzinfo` attribute set are assumed to be in the local timezone.
-            flatten: Flattens nested dictionaries and dataclasses before logging. Default is False.
-            cast_unsupported: Casts unsupported types to strings before logging. Default is False.
+            flatten: Flattens nested dictionaries and dataclasses before logging. Defaults to False.
+            cast_unsupported: Casts unsupported types to strings before logging. Defaults to False.
 
 
         Example:
