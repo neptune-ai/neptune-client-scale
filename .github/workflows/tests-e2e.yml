@@ -37,7 +37,7 @@ jobs:
           pip install -r dev_requirements.txt
 
       - name: Run tests
-        timeout-minutes: 30
+        timeout-minutes: 45
         env:
           NEPTUNE_API_TOKEN: ${{ secrets[format('E2E_API_TOKEN_{0}', matrix.env_target)] }}
           NEPTUNE_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
