@@ -3,11 +3,9 @@ import dataclasses
 import datetime
 import itertools
 import multiprocessing
-import os
 import pathlib
 import tempfile
 import time
-from pathlib import Path
 from unittest.mock import (
     ANY,
     AsyncMock,
@@ -43,7 +41,6 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
 )
-from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
@@ -114,25 +111,13 @@ def operations_repository_mock():
     return repo
 
 
-@pytest.fixture
-def operations_repo():
-    with tempfile.TemporaryDirectory() as temp_dir:
-        repo = OperationsRepository(db_path=Path(os.path.join(temp_dir, "test_operations.db")))
-        repo.init_db()
-        repo.save_metadata("project", "run_id")
-        yield repo
-        repo.close(cleanup_files=True)
-
-
 def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock):
     # given
-    errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -148,13 +133,11 @@ def test_sender_thread_work_finishes_when_queue_empty(operations_repository_mock
 
 def test_sender_thread_processes_single_element(operations_repository_mock):
     # given
-    errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -175,13 +158,11 @@ def test_sender_thread_processes_single_element(operations_repository_mock):
 
 def test_sender_thread_processes_element_on_single_retryable_error(operations_repository_mock):
     # given
-    errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -208,13 +189,11 @@ def test_sender_thread_fails_on_regular_error():
     operations_repository_mock = Mock()
     operations_repository_mock.get_metadata.side_effect = [metadata]
     operations_repository_mock.get_operation_submission_sequence_id_range.return_value = None
-    errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -234,18 +213,16 @@ def test_sender_thread_fails_on_regular_error():
     assert "Server response is empty" in str(e.value.__cause__)
 
     # then should throw NeptuneInternalServerError
-    errors_queue.put.assert_called_once()
+    operations_repository_mock.save_errors.assert_called_once()
 
 
 def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations_repository_mock):
     # given
-    errors_queue = Mock()
     backend = Mock()
     sender_thread = SenderThread(
         api_token="",
         family="",
         operations_repository=operations_repository_mock,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -269,13 +246,12 @@ def test_sender_thread_processes_element_on_429_and_408_http_statuses(operations
 
 
 def test_sender_thread_processes_elements_with_multiple_operations_in_batch(operations_repo):
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -316,13 +292,12 @@ def test_sender_thread_processes_elements_with_nonempty_submissions(operations_r
     operations_repo.save_operation_submissions(submissions)
 
     # and
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -355,13 +330,12 @@ def test_sender_thread_processes_elements_with_nonempty_submissions_partial(oper
     operations_repo.save_operation_submissions(submissions)
 
     # and
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -378,13 +352,12 @@ def test_sender_thread_processes_elements_with_nonempty_submissions_partial(oper
 
 
 def test_sender_thread_processes_elements_with_multiple_operations_split_by_type(operations_repo):
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -413,13 +386,12 @@ def test_sender_thread_processes_elements_with_multiple_operations_split_by_type
 
 
 def test_sender_thread_processes_big_operations_in_batches(operations_repo):
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
     backend.submit.side_effect = itertools.repeat(response(["a"], status_code=200))
@@ -446,13 +418,12 @@ def test_sender_thread_processes_big_operations_in_batches(operations_repo):
 def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_operations(operations_repo):
     """Verify if we calculate protobuf overhead properly for multiple small operations,
     so that the maximum message size is not exceeded."""
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
+    operations_repo.save_metadata("project", "run_id")
     backend = Mock()
     sender_thread = SenderThread(
         api_token="a" * 10,
         family="test-family",
         operations_repository=operations_repo,
-        errors_queue=errors_queue,
     )
     sender_thread._backend = backend
 
@@ -487,13 +458,11 @@ def test_sender_thread_does_not_exceed_max_message_size_with_multiple_small_oper
 def test_status_thread_processes_element():
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     status_thread._backend = backend
 
@@ -515,7 +484,7 @@ def test_status_thread_processes_element():
 
     # then
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=SequenceId(0))
-    errors_queue.put.assert_not_called()
+    operations_repository.save_errors.assert_not_called()
     operations_repository.delete_operation_submissions.assert_called_once_with(up_to_seq_id=SequenceId(0))
 
 
@@ -533,13 +502,11 @@ def test_status_thread_processes_element():
 def test_status_thread_processes_element_with_standard_error_code(detail):
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     status_thread._backend = backend
 
@@ -560,7 +527,7 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
     status_thread.work()
 
     # then
-    errors_queue.put.assert_called_once()
+    operations_repository.save_errors.assert_called_once()
     operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
     operations_repository.delete_operation_submissions.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
 
@@ -578,13 +545,11 @@ def test_status_thread_processes_element_with_standard_error_code(detail):
 def test_status_thread_processes_element_with_run_creation_error_code(detail):
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     status_thread._backend = backend
 
@@ -606,7 +571,7 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
         status_thread.work()
 
     # then
-    errors_queue.put.assert_called_once()
+    operations_repository.save_errors.assert_called_once()
     operations_repository.delete_operations.assert_not_called()
     operations_repository.delete_operation_submissions.assert_not_called()
 
@@ -614,13 +579,11 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
 def test_status_thread_processes_element_sequence():
     # given
     operations_repository = Mock()
-    errors_queue = Mock()
     backend = Mock()
     status_thread = StatusTrackingThread(
         api_token="",
         project="",
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     status_thread._backend = backend
 
@@ -674,7 +637,7 @@ def test_status_thread_processes_element_sequence():
             call.method(up_to_seq_id=SequenceId(4)),
         ]
     )
-    assert errors_queue.put.call_count == 2
+    assert operations_repository.save_errors.call_count == 2
     operations_repository.delete_operation_submissions.assert_has_calls(
         [
             call.method(up_to_seq_id=SequenceId(1)),
@@ -739,11 +702,6 @@ def mock_operations_repository():
 
 
 @pytest.fixture
-def mock_errors_queue():
-    return Mock(spec=ErrorsQueue)
-
-
-@pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as temp_dir:
         yield pathlib.Path(temp_dir)
@@ -776,13 +734,11 @@ def uploader_thread(
     api_token,
     mock_api_client,
     mock_operations_repository,
-    mock_errors_queue,
 ):
     thread = FileUploaderThread(
         project="workspace/project",
         api_token=api_token,
         operations_repository=mock_operations_repository,
-        errors_queue=mock_errors_queue,
     )
 
     yield thread
@@ -798,7 +754,6 @@ def test_file_uploader_thread_successful_upload_flow(
     mock_fetch_file_storage_urls,
     mock_upload_func,
     mock_operations_repository,
-    mock_errors_queue,
     buffer_upload_request,
     disk_upload_request,
 ):
@@ -838,14 +793,13 @@ def test_file_uploader_thread_successful_upload_flow(
     assert pathlib.Path(disk_upload_request.source_path).exists()
 
     # No errors should be emitted
-    mock_errors_queue.put.assert_not_called()
+    mock_operations_repository.save_errors.assert_not_called()
 
 
 def test_file_uploader_uploads_concurrently(
     api_token,
     mock_api_client,
     mock_operations_repository,
-    mock_errors_queue,
     mock_upload_func,
     mock_fetch_file_storage_urls,
 ):
@@ -855,7 +809,6 @@ def test_file_uploader_uploads_concurrently(
         project="workspace/project",
         api_token=api_token,
         operations_repository=mock_operations_repository,
-        errors_queue=mock_errors_queue,
         max_concurrent_uploads=3,
     )
 
@@ -911,7 +864,6 @@ def test_file_uploader_thread_terminal_error(
     mock_fetch_file_storage_urls,
     mock_upload_func,
     mock_operations_repository,
-    mock_errors_queue,
     disk_upload_request,
 ):
     """Uploader thread should not terminate on an upload error that is not an Azure error. This should
@@ -950,8 +902,8 @@ def test_file_uploader_thread_terminal_error(
 
     assert pathlib.Path(disk_upload_request.source_path).exists()
 
-    assert mock_errors_queue.put.call_count == 1
-    assert isinstance(mock_errors_queue.put.call_args[0][0], NeptuneFileUploadError)
+    assert mock_operations_repository.save_errors.call_count == 1
+    assert isinstance(mock_operations_repository.save_errors.call_args[0][0][0], NeptuneFileUploadError)
 
 
 @patch("neptune_scale.sync.sync_process.BlobClient")
@@ -993,7 +945,6 @@ def test_file_uploader_thread_non_terminal_error(
     uploader_thread,
     mock_fetch_file_storage_urls,
     mock_operations_repository,
-    mock_errors_queue,
     mock_upload_func,
     disk_upload_request,
 ):
@@ -1026,8 +977,11 @@ def test_file_uploader_thread_non_terminal_error(
     mock_operations_repository.delete_file_upload_requests.assert_called_once_with([disk_upload_request.sequence_id])
 
     # Two errors of the type that was raised during upload should be reported
-    assert mock_errors_queue.put.call_count == 2
-    assert all(isinstance(call_args.args[0], type(upload_error)) for call_args in mock_errors_queue.put.call_args_list)
+    assert mock_operations_repository.save_errors.call_count == 2
+    assert all(
+        isinstance(call_args.args[0][0], type(upload_error))
+        for call_args in mock_operations_repository.save_errors.call_args_list
+    )
 
 
 @patch("neptune_scale.sync.sync_process.upload_to_gcp")

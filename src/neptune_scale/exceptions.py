@@ -4,8 +4,8 @@ __all__ = (
     "NeptuneScaleError",
     "NeptuneScaleWarning",
     "NeptuneUnableToLogData",
-    "NeptuneOperationsQueueMaxSizeExceeded",
     "NeptuneUnauthorizedError",
+    "NeptuneBadRequestError",
     "NeptuneInvalidCredentialsError",
     "NeptuneUnexpectedError",
     "NeptuneConnectionLostError",
@@ -38,7 +38,6 @@ __all__ = (
     "NeptuneStringSetExceedsSizeLimit",
     "NeptuneSynchronizationStopped",
     "NeptuneFileMetadataExceedsSizeLimit",
-    "NeptuneAsyncLagThresholdExceeded",
     "NeptuneProjectNotProvided",
     "NeptuneApiTokenNotProvided",
     "NeptuneTooManyRequestsResponseError",
@@ -119,22 +118,6 @@ NeptuneUnableToLogData: An error occurred, preventing Neptune from logging your 
 
     def __init__(self, reason: str = "", **kwargs: Any) -> None:
         super().__init__(reason=reason, **kwargs)
-
-
-class NeptuneOperationsQueueMaxSizeExceeded(NeptuneUnableToLogData):
-    message = """
-{h1}
-NeptuneOperationsQueueMaxSizeExceeded: The amount of data being logged is higher than processing capacity.
-{end}
-
-The synchronization is paused until the queue size drops below the maximum.
-
-To resolve this issue, consider the following:
-    - Throttle the rate of operations
-    - Cautiously increase the queue size through the `max_queue_size` argument.
-        Note: To ensure that memory usage remains within acceptable limits,
-        closely monitor your system's memory consumption.
-"""
 
 
 class NeptuneFloatValueNanInfUnsupported(NeptuneUnableToLogData):
@@ -501,15 +484,6 @@ class NeptuneFileMetadataExceedsSizeLimit(NeptuneScaleError):
 {h1}
 NeptuneFileMetadataExceedsSizeLimit: File metadata is too long. Maximum length is 4KB.
 {end}
-"""
-
-
-class NeptuneAsyncLagThresholdExceeded(NeptuneScaleError):
-    message = """
-{h1}
-NeptuneAsyncLagThresholdExceeded: Neptune is experiencing a high delay in synchronizing data.
-{end}
-This is a temporary problem. If the problem persists, please contact us at support@neptune.ai
 """
 
 
