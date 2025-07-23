@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 from neptune_scale.sync.parameters import (
@@ -7,7 +8,15 @@ from neptune_scale.sync.parameters import (
     OPERATION_REPOSITORY_TIMEOUT,
 )
 
-__all__ = ("OperationsRepository", "OperationType", "Operation", "Metadata", "SequenceId", "FileUploadRequest")
+__all__ = (
+    "OperationsRepository",
+    "OperationType",
+    "Operation",
+    "Metadata",
+    "SequenceId",
+    "FileUploadRequest",
+    "OperationSubmission",
+)
 
 import contextlib
 import os
@@ -30,7 +39,10 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
 
 from neptune_scale.exceptions import (
     NeptuneLocalStorageInUnsupportedVersion,
+    NeptuneScaleError,
+    NeptuneScaleWarning,
     NeptuneUnableToLogData,
+    NeptuneUnexpectedError,
 )
 from neptune_scale.util import (
     envs,
@@ -39,9 +51,10 @@ from neptune_scale.util import (
 
 logger = get_logger()
 
-DB_VERSION = "v4"
-BACKWARD_COMPATIBLE_DB_VERSIONS = ("v4",)
+DB_VERSION = "v5"
+BACKWARD_COMPATIBLE_DB_VERSIONS = ("v5",)
 
+ErrorId = typing.NewType("ErrorId", int)
 SequenceId = typing.NewType("SequenceId", int)
 RequestId = typing.NewType("RequestId", str)
 
@@ -73,6 +86,53 @@ class OperationSubmission:
     @property
     def ts(self) -> datetime:
         return datetime.fromtimestamp(self.timestamp / 1000)
+
+
+@dataclass(frozen=True)
+class OperationError:
+    error_id: Optional[ErrorId]
+    timestamp: int
+    error_type: str
+    error_details: str
+    error_body: str
+    sequence_id: Optional[SequenceId] = None
+
+    @property
+    def ts(self) -> datetime:
+        return datetime.fromtimestamp(self.timestamp / 1000)
+
+    @staticmethod
+    def serialize_error(error: BaseException, sequence_id: Optional[SequenceId] = None) -> OperationError:
+        try:
+            if not isinstance(error, (NeptuneScaleError, NeptuneScaleWarning)):
+                serialized_error: BaseException = NeptuneUnexpectedError(reason=str(error))
+            else:
+                serialized_error = error
+            error_body = pickle.dumps(serialized_error).hex()
+        except (pickle.PicklingError, TypeError):
+            logger.error(f"Failed to serialize error {error}", exc_info=True)
+            error_body = ""
+
+        return OperationError(
+            error_id=None,  # This will be set when saving to the database
+            timestamp=int(time.time() * 1000),
+            error_type=type(error).__name__,
+            error_details=str(error),
+            error_body=error_body,
+            sequence_id=sequence_id,
+        )
+
+    def deserialize_error(self) -> BaseException:
+        try:
+            result = pickle.loads(bytes.fromhex(self.error_body))
+            if isinstance(result, (NeptuneScaleError, NeptuneScaleWarning)):
+                return result
+            else:
+                logger.error(f"Failed to deserialize error {self.error_type} {self.error_details}", exc_info=True)
+                return NeptuneUnexpectedError(reason=f"{self.error_type} {self.error_details}")
+        except (pickle.UnpicklingError, ValueError):
+            logger.error(f"Failed to deserialize error {self.error_type} {self.error_details}", exc_info=True)
+            return NeptuneUnexpectedError(reason=f"{self.error_type} {self.error_details}")
 
 
 @dataclass(frozen=True)
@@ -180,6 +240,19 @@ class OperationsRepository:
                     mime_type TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
                     is_temporary INTEGER NOT NULL
+                )
+                """
+            )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS operation_errors (
+                    error_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER NOT NULL,
+                    error_type TEXT NOT NULL,
+                    error_details TEXT NOT NULL,
+                    error_body TEXT NOT NULL,
+                    sequence_id INTEGER
                 )
                 """
             )
@@ -561,6 +634,76 @@ class OperationsRepository:
                 if min_seq_id is None or max_seq_id is None:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
+
+    def get_errors(self, limit: int) -> list[OperationError]:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute(
+                    """
+                    SELECT error_id, timestamp, error_type, error_details,  error_body, sequence_id
+                    FROM operation_errors
+                    ORDER BY timestamp ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+
+                rows = cursor.fetchall()
+
+        return [
+            OperationError(
+                error_id=ErrorId(row[0]) if row[0] is not None else None,
+                timestamp=row[1],
+                error_type=row[2],
+                error_details=row[3],
+                error_body=row[4],
+                sequence_id=SequenceId(row[5]) if row[5] is not None else None,
+            )
+            for row in rows
+        ]
+
+    def save_errors(
+        self,
+        errors: typing.Iterable[BaseException],
+        sequence_id: Optional[SequenceId] = None,
+    ) -> ErrorId:
+        operation_errors = [OperationError.serialize_error(error, sequence_id) for error in errors]
+
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO operation_errors (timestamp, error_type, error_details, error_body, sequence_id)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (error.timestamp, error.error_type, error.error_details, error.error_body, error.sequence_id)
+                        for error in operation_errors
+                    ],
+                )
+                cursor.execute("SELECT last_insert_rowid()")
+                return ErrorId(cursor.fetchone()[0])
+
+    def delete_errors(self, error_ids: typing.Iterable[ErrorId]) -> None:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.executemany(
+                    """
+                    DELETE FROM operation_errors
+                    WHERE error_id = ?
+                    """,
+                    [(error_id,) for error_id in error_ids],
+                )
+
+    def delete_all_errors(self) -> None:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                cursor.execute("DELETE FROM operation_errors")
+
+    def get_errors_count(self, limit: Optional[int] = None) -> int:
+        with self._get_connection() as conn:  # type: ignore
+            with contextlib.closing(conn.cursor()) as cursor:
+                return self._get_table_count(cursor, "operation_errors", limit=limit)
 
     def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore

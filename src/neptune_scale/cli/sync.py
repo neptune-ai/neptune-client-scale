@@ -25,10 +25,7 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from neptune_scale.sync.errors_tracking import (
-    ErrorsMonitor,
-    ErrorsQueue,
-)
+from neptune_scale.sync.errors_tracking import ErrorsMonitor
 from neptune_scale.sync.operations_repository import (
     OperationsRepository,
     SequenceId,
@@ -85,7 +82,6 @@ class SyncRunner:
         self._operations_repository: OperationsRepository = OperationsRepository(db_path=run_log_file)
 
         self._spawn_mp_context = multiprocessing.get_context("spawn")
-        self._errors_queue: ErrorsQueue = ErrorsQueue(self._spawn_mp_context)
 
         self._log_seq_id_range: Optional[tuple[SequenceId, SequenceId]] = None
         self._file_upload_request_init_count: Optional[int] = None
@@ -114,12 +110,11 @@ class SyncRunner:
                 "project": metadata.project,
                 "family": metadata.run_id,
                 "operations_repository_path": self._run_log_file,
-                "errors_queue": self._errors_queue,
                 "api_token": self._api_token,
             },
         )
 
-        self._errors_monitor = ErrorsMonitor(errors_queue=self._errors_queue)
+        self._errors_monitor = ErrorsMonitor(operations_repository=self._operations_repository)
 
         self._sync_process.start()
 
@@ -213,4 +208,3 @@ class SyncRunner:
             self._errors_monitor.join(timeout=timer.remaining_time())
 
         self._operations_repository.close(cleanup_files=True)
-        self._errors_queue.close()

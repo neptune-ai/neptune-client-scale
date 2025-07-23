@@ -55,10 +55,7 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
 )
 from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
-from neptune_scale.sync.errors_tracking import (
-    ErrorsMonitor,
-    ErrorsQueue,
-)
+from neptune_scale.sync.errors_tracking import ErrorsMonitor
 from neptune_scale.sync.files import (
     generate_destination,
     guess_mime_type_from_bytes,
@@ -160,6 +157,7 @@ class Run(AbstractContextManager):
             on_async_lag_callback: Callback function triggered when the duration between the queueing and synchronization
             on_queue_full_callback: Callback function triggered when the queue is full. The function should take the exception
                 that made the queue full as its argument and an optional timestamp of the last time the exception was raised.
+                Deprecated.
             on_network_error_callback: Callback function triggered when a network error occurs.
             on_error_callback: The default callback function triggered when error occurs. It applies if an error
                 wasn't caught by other callbacks.
@@ -293,10 +291,8 @@ class Run(AbstractContextManager):
 
             spawn_mp_context = multiprocessing.get_context("spawn")
 
-            self._errors_queue: Optional[ErrorsQueue] = ErrorsQueue(spawn_mp_context)
             self._errors_monitor: Optional[ErrorsMonitor] = ErrorsMonitor(
-                errors_queue=self._errors_queue,
-                on_queue_full_callback=on_queue_full_callback,
+                operations_repository=self._operations_repo,
                 on_network_error_callback=on_network_error_callback,
                 on_error_callback=on_error_callback,
                 on_warning_callback=on_warning_callback,
@@ -309,7 +305,6 @@ class Run(AbstractContextManager):
                     "project": self._project,
                     "family": self._run_id,
                     "operations_repository_path": operations_repository_path,
-                    "errors_queue": self._errors_queue,
                     "api_token": self._api_token,
                 },
             )
@@ -344,7 +339,6 @@ class Run(AbstractContextManager):
                     raise RuntimeError(message) from e
                 self._sync_process_supervisor.start()
         else:
-            self._errors_queue = None
             self._errors_monitor = None
             self._sync_process = None
             self._sync_process_supervisor = None
@@ -370,8 +364,8 @@ class Run(AbstractContextManager):
     def _handle_sync_process_death(self) -> None:
         with self._lock:
             if not self._is_closing:
-                if self._errors_queue is not None:
-                    self._errors_queue.put(NeptuneSynchronizationStopped())
+                if self._operations_repo is not None:
+                    self._operations_repo.save_errors(errors=[NeptuneSynchronizationStopped()])
 
     def _print_run_info(self) -> None:
         try:
@@ -420,9 +414,6 @@ class Run(AbstractContextManager):
 
         if self._operations_repo is not None:
             self._operations_repo.close(cleanup_files=True)
-
-        if self._errors_queue is not None:
-            self._errors_queue.close()
 
         if self._storage_directory_path is not None:
             try:

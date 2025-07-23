@@ -2,7 +2,6 @@ import contextlib
 import dataclasses
 import os
 import sqlite3
-import tempfile
 from pathlib import Path
 from unittest import mock
 
@@ -15,11 +14,14 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
 
 from neptune_scale.exceptions import (
     NeptuneLocalStorageInUnsupportedVersion,
+    NeptuneScaleError,
     NeptuneUnableToLogData,
+    NeptuneUnexpectedError,
 )
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
+    OperationError,
     OperationsRepository,
     OperationSubmission,
     OperationType,
@@ -28,21 +30,6 @@ from neptune_scale.sync.operations_repository import (
 )
 from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 from neptune_scale.util import envs
-
-
-@pytest.fixture
-def temp_db_path():
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = os.path.join(temp_dir, "test_operations.db")
-        yield db_path
-
-
-@pytest.fixture
-def operations_repo(temp_db_path):
-    repo = OperationsRepository(db_path=Path(temp_db_path))
-    repo.init_db()
-    yield repo
-    repo.close(cleanup_files=True)
 
 
 def test_raise_on_relative_path():
@@ -934,6 +921,104 @@ def test_concurrent_delete_sqlite_busy(temp_db_path):
             operations_repo.delete_operations(up_to_seq_id=SequenceId(1))
         assert "database is locked" in str(exc.value.__cause__)
     operations_repo.close(cleanup_files=True)
+
+
+def test_save_and_get_errors(operations_repo):
+    # Given
+    errors = [
+        NeptuneScaleError("error1"),
+        NeptuneScaleError("error2"),
+    ]
+
+    # When
+    last_id = operations_repo.save_errors(errors)
+    fetched = operations_repo.get_errors(limit=10)
+
+    # Then
+    assert last_id == 2
+    assert len(fetched) == 2
+    for i in range(2):
+        assert fetched[i].error_id == i + 1
+        assert fetched[i].error_type == "NeptuneScaleError"
+        assert fetched[i].error_details == str(errors[i])
+        assert isinstance(fetched[i].deserialize_error(), NeptuneScaleError)
+    assert all(isinstance(e, OperationError) for e in fetched)
+
+
+def test_save_and_get_nonneptune_errors(operations_repo):
+    # Given
+    errors = [
+        ValueError("value error"),
+        RuntimeError("runtime error"),
+    ]
+
+    # When
+    last_id = operations_repo.save_errors(errors)
+    fetched = operations_repo.get_errors(limit=10)
+
+    # Then
+    assert last_id == 2
+    assert len(fetched) == 2
+    for i in range(2):
+        assert fetched[i].error_id == i + 1
+        assert fetched[i].error_details == str(errors[i])
+    assert fetched[0].error_type == "ValueError"
+    assert fetched[1].error_type == "RuntimeError"
+    assert isinstance(fetched[0].deserialize_error(), NeptuneUnexpectedError)
+    assert isinstance(fetched[1].deserialize_error(), NeptuneUnexpectedError)
+
+
+def test_get_errors_limit(operations_repo):
+    # Given
+    errors = [NeptuneScaleError(f"error{i}") for i in range(5)]
+    operations_repo.save_errors(errors)
+    # When
+    fetched = operations_repo.get_errors(limit=3)
+    # Then
+    assert len(fetched) == 3
+    for i in range(3):
+        assert fetched[i].error_id == i + 1
+        assert fetched[i].error_type == "NeptuneScaleError"
+        assert fetched[i].error_details == str(errors[i])
+        assert isinstance(fetched[i].deserialize_error(), NeptuneScaleError)
+
+
+def test_get_errors_count(operations_repo):
+    # Given
+    errors = [NeptuneScaleError(f"error{i}") for i in range(4)]
+    operations_repo.save_errors(errors)
+    # When
+    count = operations_repo.get_errors_count()
+    # Then
+    assert count == 4
+    # With limit
+    count2 = operations_repo.get_errors_count(limit=2)
+    assert count2 == 2
+
+
+def test_delete_errors(operations_repo):
+    # Given
+    errors = [NeptuneScaleError(f"error{i}") for i in range(3)]
+    operations_repo.save_errors(errors)
+    all_errors = operations_repo.get_errors(limit=10)
+    # When
+    to_delete = [all_errors[0].error_id, all_errors[2].error_id]
+    operations_repo.delete_errors(to_delete)
+    # Then
+    remaining = operations_repo.get_errors(limit=10)
+    assert len(remaining) == 1
+    assert remaining[0].error_id == 2
+
+
+def test_delete_all_errors(operations_repo):
+    # Given
+    errors = [NeptuneScaleError(f"error{i}") for i in range(3)]
+    operations_repo.save_errors(errors)
+    # When
+    operations_repo.delete_all_errors()
+    # Then
+    assert operations_repo.get_errors_count() == 0
+    assert operations_repo.get_errors(limit=10) == []
 
 
 @contextlib.contextmanager

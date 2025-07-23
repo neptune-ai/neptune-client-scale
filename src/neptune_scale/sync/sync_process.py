@@ -88,7 +88,6 @@ from neptune_scale.net.api_client import (
     ApiClient,
     with_api_errors_handling,
 )
-from neptune_scale.sync.errors_tracking import ErrorsQueue
 from neptune_scale.sync.parameters import (
     HTTP_REQUEST_MAX_TIME_SECONDS,
     MAX_REQUEST_SIZE_BYTES,
@@ -147,7 +146,6 @@ def code_to_exception(code: IngestCode.ValueType) -> Exception:
 
 def run_sync_process(
     operations_repository_path: Path,
-    errors_queue: ErrorsQueue,
     api_token: str,
     project: str,
     family: str,
@@ -162,20 +160,17 @@ def run_sync_process(
     sender_thread = SenderThread(
         api_token=api_token,
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
         family=family,
     )
     status_thread = StatusTrackingThread(
         api_token=api_token,
         project=project,
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     file_uploader_thread = FileUploaderThread(
         api_token=api_token,
         project=project,
         operations_repository=operations_repository,
-        errors_queue=errors_queue,
     )
     threads = [sender_thread, status_thread, file_uploader_thread]
     parent_process = psutil.Process(os.getpid()).parent()
@@ -265,14 +260,12 @@ class SenderThread(Daemon):
         api_token: str,
         family: str,
         operations_repository: OperationsRepository,
-        errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(name="SenderThread", sleep_time=SYNC_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
         self._family: str = family
         self._operations_repository: OperationsRepository = operations_repository
-        self._errors_queue: ErrorsQueue = errors_queue
 
         queued_range = operations_repository.get_operation_submission_sequence_id_range()
         if queued_range is None:
@@ -341,7 +334,7 @@ class SenderThread(Daemon):
 
                         self._last_queued_seq = sequence_id
                     except NeptuneRetryableError as e:
-                        self._errors_queue.put(e)
+                        self._operations_repository.save_errors([e], sequence_id=sequence_id)
                         # Sleep before retry
                         return
 
@@ -352,7 +345,7 @@ class SenderThread(Daemon):
                 )
 
         except Exception as e:
-            self._errors_queue.put(e)
+            self._operations_repository.save_errors([e])
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
@@ -425,14 +418,12 @@ class StatusTrackingThread(Daemon):
         api_token: str,
         project: str,
         operations_repository: OperationsRepository,
-        errors_queue: ErrorsQueue,
     ) -> None:
         super().__init__(name="StatusTrackingThread", sleep_time=STATUS_TRACKING_THREAD_SLEEP_TIME)
 
         self._api_token: str = api_token
         self._project: str = project
         self._operations_repository: OperationsRepository = operations_repository
-        self._errors_queue: ErrorsQueue = errors_queue
 
         self._backend: Optional[ApiClient] = None
 
@@ -466,7 +457,7 @@ class StatusTrackingThread(Daemon):
                     if response is None:
                         raise NeptuneUnexpectedError("Server response is empty")
                 except NeptuneRetryableError as e:
-                    self._errors_queue.put(e)
+                    self._operations_repository.save_errors([e])
                     # Small give up, sleep before retry
                     break
 
@@ -487,8 +478,11 @@ class StatusTrackingThread(Daemon):
                     if fatal_sync_error is not None:
                         break
 
-                    for error in errors:
-                        self._errors_queue.put(error)
+                    if errors:
+                        self._operations_repository.save_errors(
+                            errors=errors,
+                            sequence_id=request_sequence_id,
+                        )
 
                     processed_sequence_id = request_sequence_id
 
@@ -507,7 +501,7 @@ class StatusTrackingThread(Daemon):
                     break
 
         except Exception as e:
-            self._errors_queue.put(e)
+            self._operations_repository.save_errors([e])
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
@@ -522,7 +516,6 @@ class FileUploaderThread(Daemon):
         project: str,
         api_token: str,
         operations_repository: OperationsRepository,
-        errors_queue: ErrorsQueue,
         max_concurrent_uploads: Optional[int] = None,
     ) -> None:
         super().__init__(name="FileUploaderThread", sleep_time=1)
@@ -530,7 +523,6 @@ class FileUploaderThread(Daemon):
         self._project = project
         self._neptune_api_token = api_token
         self._operations_repository = operations_repository
-        self._errors_queue = errors_queue
         self._max_concurrent_uploads = max_concurrent_uploads or envs.get_positive_int(
             envs.MAX_CONCURRENT_FILE_UPLOADS, 50
         )
@@ -573,10 +565,10 @@ class FileUploaderThread(Daemon):
 
                 logger.debug("Upload tasks completed for the current batch")
         except NeptuneRetryableError as e:
-            self._errors_queue.put(e)
+            self._operations_repository.save_errors([e])
         except Exception as e:
             logger.error("Fatal error in file uploader thread", exc_info=e)
-            self._errors_queue.put(e)
+            self._operations_repository.save_errors([e])
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
@@ -595,11 +587,11 @@ class FileUploaderThread(Daemon):
 
             self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
         except NeptuneRetryableError as e:
-            self._errors_queue.put(e)
+            self._operations_repository.save_errors([e])
         except Exception as e:
             # Fatal failure. Do not retry the file, but keep it on disk.
             logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
-            self._errors_queue.put(NeptuneFileUploadError())
+            self._operations_repository.save_errors([NeptuneFileUploadError()])
             self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
 
     def close(self) -> None:

@@ -5,7 +5,6 @@ import pytest
 from neptune_scale.exceptions import (
     GenericFloatValueNanInfUnsupported,
     NeptuneApiTokenNotProvided,
-    NeptuneAsyncLagThresholdExceeded,
     NeptuneAttributePathEmpty,
     NeptuneAttributePathExceedsSizeLimit,
     NeptuneAttributePathInvalid,
@@ -26,7 +25,6 @@ from neptune_scale.exceptions import (
     NeptuneInternalServerError,
     NeptuneInvalidCredentialsError,
     NeptuneLocalStorageInUnsupportedVersion,
-    NeptuneOperationsQueueMaxSizeExceeded,
     NeptunePreviewStepNotAfterLastCommittedStep,
     NeptuneProjectAlreadyExists,
     NeptuneProjectError,
@@ -60,7 +58,6 @@ from neptune_scale.exceptions import (
 EXCEPTIONS = (
     GenericFloatValueNanInfUnsupported(),
     NeptuneApiTokenNotProvided(),
-    NeptuneAsyncLagThresholdExceeded(),
     NeptuneAttributePathEmpty(),
     NeptuneAttributePathExceedsSizeLimit(),
     NeptuneAttributePathInvalid(),
@@ -77,7 +74,6 @@ EXCEPTIONS = (
     NeptuneInternalServerError(),
     NeptuneInvalidCredentialsError(),
     NeptuneLocalStorageInUnsupportedVersion(),
-    NeptuneOperationsQueueMaxSizeExceeded(),
     NeptunePreviewStepNotAfterLastCommittedStep(),
     NeptuneProjectAlreadyExists(),
     NeptuneProjectError(),

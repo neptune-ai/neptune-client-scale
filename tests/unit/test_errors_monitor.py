@@ -5,19 +5,14 @@ from unittest.mock import Mock
 import pytest
 
 from neptune_scale.exceptions import (
-    NeptuneAsyncLagThresholdExceeded,
     NeptuneConnectionLostError,
-    NeptuneOperationsQueueMaxSizeExceeded,
     NeptuneRetryableError,
     NeptuneScaleError,
     NeptuneScaleWarning,
     NeptuneSeriesPointDuplicate,
     NeptuneTooManyRequestsResponseError,
 )
-from neptune_scale.sync.errors_tracking import (
-    ErrorsMonitor,
-    ErrorsQueue,
-)
+from neptune_scale.sync.errors_tracking import ErrorsMonitor
 
 mp_context = multiprocessing.get_context("spawn")
 
@@ -30,13 +25,11 @@ mp_context = multiprocessing.get_context("spawn")
         (ValueError("error2"), "on_error_callback"),
         (NeptuneScaleWarning("error3"), "on_warning_callback"),
         (NeptuneSeriesPointDuplicate("error4"), "on_warning_callback"),
-        (NeptuneOperationsQueueMaxSizeExceeded("error5"), "on_queue_full_callback"),
         (NeptuneConnectionLostError("error6"), "on_network_error_callback"),
-        (NeptuneAsyncLagThresholdExceeded("error7"), "on_async_lag_callback"),
         (NeptuneTooManyRequestsResponseError(), "on_warning_callback"),
     ],
 )
-def test_errors_monitor_callbacks_called(error, callback_name):
+def test_errors_monitor_callbacks_called(error, callback_name, operations_repo):
     # given
     callback = Mock()
 
@@ -49,12 +42,11 @@ def test_errors_monitor_callbacks_called(error, callback_name):
         callback_called.set()
 
     # and
-    errors_queue = ErrorsQueue(multiprocessing_context=mp_context)
-    errors_monitor = ErrorsMonitor(**{"errors_queue": errors_queue, callback_name: callback_with_event})
+    errors_monitor = ErrorsMonitor(**{"operations_repository": operations_repo, callback_name: callback_with_event})
     errors_monitor.start()
 
     # when
-    errors_queue.put(error)
+    operations_repo.save_errors([error])
 
     # then
     assert callback_called.wait(timeout=5), "Callback was not called within the timeout"
