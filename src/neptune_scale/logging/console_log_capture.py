@@ -53,6 +53,11 @@ class StreamWithMemory:
         """
         ts = datetime.now()
         chars_written = self._original_stream.write(data)
+
+        # Handle case where write() returns None (some stream implementations do this)
+        if chars_written is None:
+            chars_written = len(data)
+
         with self._lock:
             space_left_in_buffer = STREAM_BUFFER_CHAR_CAPACITY - self._chars_in_buffer
             if chars_written > space_left_in_buffer:
