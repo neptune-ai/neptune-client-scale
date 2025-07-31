@@ -11,6 +11,7 @@ import numpy as np
 from pytest import mark
 
 from neptune_scale.api.run import Run
+from neptune_scale.util import source_tracking
 
 from .conftest import (
     random_series,
@@ -158,3 +159,40 @@ def test_async_lag_callback():
         # Second callback should be called after logging configs
         event.wait(timeout=60)
         assert event.is_set()
+
+
+def test_source_tracking(run, client, project_name):
+    # given
+    info = source_tracking.read_repository_info(path=None, entry_point=True, head_diff=True, upstream_diff=True)
+    data = {
+        "source_code/commit/commit_id": info.commit_id,
+        "source_code/commit/message": info.commit_message,
+        "source_code/commit/author_name": info.commit_author_name,
+        "source_code/commit/author_email": info.commit_author_email,
+        "source_code/commit/commit_date": info.commit_date,
+        "source_code/branch": info.branch,
+        "source_code/remote/origin": info.remotes["origin"],
+        "source_code/dirty": info.dirty,
+    }
+    files = {
+        # "source_code/entry_point": info.entry_point_content,      TODO
+        "source_code/diff/head": info.head_diff_content,
+        f"source_code/diff/{info.upstream_diff_commit_id}": info.upstream_diff_content,
+    }
+
+    # then
+    fetched = fetch_attribute_values(
+        client, project_name, custom_run_id=run._run_id, attributes=data.keys() | files.keys()
+    )
+    for key, value in data.items():
+        assert fetched[key] == value, f"Value for {key} does not match"
+
+    assert any(fetched[key] is not None for key in files), "No files were fetched"
+    for key, value in files.items():
+        if value is None:
+            # This can happen if the upstream diff is not available in the test environment
+            continue
+        file_ref = fetched[key]
+        assert file_ref["mime_type"] == "application/patch"
+        assert file_ref["size_bytes"] == len(value)
+        assert file_ref["path"] is not None

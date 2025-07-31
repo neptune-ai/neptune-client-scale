@@ -521,7 +521,12 @@ class Run(AbstractContextManager):
             return
 
         namespace = source_tracking_config.namespace
-        repository_info = source_tracking.read_repository_info(source_tracking_config.repository)
+        repository_info = source_tracking.read_repository_info(
+            source_tracking_config.repository,
+            entry_point=source_tracking_config.upload_entry_point,
+            head_diff=source_tracking_config.upload_diff_head,
+            upstream_diff=source_tracking_config.upload_diff_upstream,
+        )
         if repository_info is not None:
             self.log_configs(
                 data={
@@ -531,10 +536,27 @@ class Run(AbstractContextManager):
                     f"{namespace}/commit/author_email": repository_info.commit_author_email,
                     f"{namespace}/commit/commit_date": repository_info.commit_date,
                     f"{namespace}/branch": repository_info.branch,
+                    # TODO: sanitize remote names
                     **{f"{namespace}/remote/{name}": url for name, url in repository_info.remotes.items()},
                     f"{namespace}/dirty": repository_info.dirty,
                 }
             )
+
+            source_files = {}
+            if repository_info.entry_point_content is not None:
+                source_files[f"{namespace}/entry_point"] = File(
+                    source=repository_info.entry_point_content, mime_type="application/patch"
+                )
+            if repository_info.head_diff_content:
+                source_files[f"{namespace}/diff/head"] = File(
+                    source=repository_info.head_diff_content, mime_type="application/patch"
+                )
+            if repository_info.upstream_diff_content:
+                source_files[f"{namespace}/diff/{repository_info.upstream_diff_commit_id}"] = File(
+                    source=repository_info.upstream_diff_content, mime_type="application/patch"
+                )
+            if source_files:
+                self.assign_files(files=source_files)  # type: ignore[arg-type]
 
     def log_metrics(
         self,

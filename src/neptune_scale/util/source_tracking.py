@@ -26,9 +26,57 @@ class RepositoryInfo:
     dirty: bool
     branch: Optional[str]
     remotes: dict[str, str]  # TODO: sanitization of the keys?
-    # "{namespace}/entry_point": file_ref  # the content of the file at __main__.__file__ -  not logged by default
-    # "{namespace}/diff/head": file_ref # equivalent to git diff HEAD, so both added/stages changes and not
-    # "{namespace}/diff/{commit_id on the upstream branch}": file_ref # neptune client 1.x also provides a diff from the last shared commit found on the tracking remote branch
+    entry_point_content: Optional[bytes]
+    head_diff_content: Optional[bytes]
+    upstream_diff_commit_id: Optional[str]
+    upstream_diff_content: Optional[bytes]
+
+
+def read_repository_info(
+    path: Optional[pathlib.Path],
+    entry_point: bool,
+    head_diff: bool,
+    upstream_diff: bool,
+) -> Optional[RepositoryInfo]:
+    git_repo = _get_git_repo(path)
+    if git_repo is None:
+        return None
+
+    head_commit = git_repo.head.commit
+    is_dirty = git_repo.is_dirty(index=False, untracked_files=True)
+    active_branch = _get_active_branch(git_repo)
+    remotes = {remote.name: remote.url for remote in git_repo.remotes}
+
+    entry_point_content = None
+    if entry_point:
+        entry_point_content = None  # TODO implement
+
+    head_diff_content = None
+    if head_diff:
+        head_diff_content = _read_diff(git_repo, git_repo.head.name)
+
+    upstream_sha = None
+    upstream_diff_content = None
+    if upstream_diff:
+        upstream_commit = _get_relevant_upstream_commit(git_repo)
+        if upstream_commit and upstream_commit != head_commit:
+            upstream_sha = upstream_commit.hexsha
+            upstream_diff_content = _read_diff(git_repo, upstream_sha)
+
+    return RepositoryInfo(
+        commit_id=head_commit.hexsha,
+        commit_message=head_commit.message,
+        commit_author_name=head_commit.author.name,
+        commit_author_email=head_commit.author.email,
+        commit_date=head_commit.committed_datetime,
+        dirty=is_dirty,
+        branch=active_branch,
+        remotes=remotes,
+        entry_point_content=entry_point_content,
+        head_diff_content=head_diff_content,
+        upstream_diff_commit_id=upstream_sha,
+        upstream_diff_content=upstream_diff_content,
+    )
 
 
 def _get_git_repo(path: Optional[pathlib.Path]) -> Optional["git.Repo"]:
@@ -57,22 +105,55 @@ def _get_active_branch(repo: "git.Repo") -> str:
     return active_branch
 
 
-def read_repository_info(path: Optional[pathlib.Path]) -> Optional[RepositoryInfo]:
-    git_repo = _get_git_repo(path)
-    if git_repo is None:
+def _read_diff(repo: "git.Repo", commit_ref: str) -> Optional[bytes]:
+    try:
+        from git.exc import GitCommandError
+
+        try:
+            diff = repo.git.diff(commit_ref, index=False)
+
+            if not isinstance(diff, str):
+                return None
+
+            # add a newline at the end (required to be a valid `patch` file)
+            if diff and diff[-1] != "\n":
+                diff += "\n"
+
+            return diff.encode("utf-8")
+        except GitCommandError:
+            return None
+    except ImportError:
         return None
 
-    commit = git_repo.head.commit
-    active_branch = _get_active_branch(git_repo)
-    remotes = {remote.name: remote.url for remote in git_repo.remotes}
 
-    return RepositoryInfo(
-        commit_id=commit.hexsha,
-        commit_message=commit.message,
-        commit_author_name=commit.author.name,
-        commit_author_email=commit.author.email,
-        commit_date=commit.committed_datetime,
-        dirty=git_repo.is_dirty(index=False, untracked_files=True),
-        branch=active_branch,
-        remotes=remotes,
-    )
+def _get_relevant_upstream_commit(repo: "git.Repo") -> Optional["git.Commit"]:
+    try:
+        tracking_branch = repo.active_branch.tracking_branch()
+    except (TypeError, ValueError):
+        return None
+
+    if tracking_branch:
+        return tracking_branch.commit
+
+    return _search_for_most_recent_ancestor(repo)
+
+
+def _search_for_most_recent_ancestor(repo: "git.Repo") -> Optional["git.Commit"]:
+    most_recent_ancestor: Optional[git.Commit] = None
+
+    try:
+        from git.exc import GitCommandError
+
+        try:
+            for branch in repo.heads:
+                tracking_branch = branch.tracking_branch()
+                if tracking_branch:
+                    for ancestor in repo.merge_base(repo.head, tracking_branch.commit):
+                        if not most_recent_ancestor or repo.is_ancestor(most_recent_ancestor, ancestor):
+                            most_recent_ancestor = ancestor
+        except GitCommandError:
+            pass
+    except ImportError:
+        return None
+
+    return most_recent_ancestor
