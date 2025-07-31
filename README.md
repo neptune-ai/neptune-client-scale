@@ -143,7 +143,7 @@ For more instructions, see the Neptune documentation:
 
 ## Getting help
 
-For help, contact us at [support@neptune.ai](mailto:support@neptune.ai).
+For help, and support, visit our [Support Center](https://support.neptune.ai/).
 
 &nbsp;
 <hr />

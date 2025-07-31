@@ -218,7 +218,7 @@ NeptuneUnexpectedError: An unexpected error occurred in the Neptune client.
 {end}
 Reason: `{reason}`
 
-This is most likely a bug in the client. Please report it to Neptune support: support@neptune.ai.
+This is most likely a bug in the client. You can report it from our [Support Center](https://support.neptune.ai/).
 """
 
     def __init__(self, reason: str) -> None:
@@ -243,7 +243,7 @@ class NeptuneUnexpectedResponseError(NeptuneRetryableError):
 {h1}
 NeptuneUnexpectedResponseError: The Neptune server returned an unexpected response.
 {end}
-This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
+This is a temporary problem. If the problem persists, please report it from our [Support Center](https://support.neptune.ai/).
 """
 
 
@@ -252,7 +252,7 @@ class NeptuneTooManyRequestsResponseError(NeptuneRetryableError):
 {h1}
 NeptuneTooManyRequestsResponseError: The Neptune server reported receiving too many requests.
 {end}
-This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
+This is a temporary problem. If the problem persists, please report it from our [Support Center](https://support.neptune.ai/).
 """
 
 
@@ -261,7 +261,7 @@ class NeptuneInternalServerError(NeptuneRetryableError):
 {h1}
 NeptuneInternalServerError: We have encountered an internal server error.
 {end}
-This is a temporary problem. If the problem persists, please contact us at support@neptune.ai.
+This is a temporary problem. If the problem persists, please report it from our [Support Center](https://support.neptune.ai/).
 """
 
 
