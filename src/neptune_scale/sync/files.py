@@ -21,6 +21,16 @@ __all__ = (
 DEFAULT_MIME_TYPE = "application/octet-stream"
 logger = get_logger()
 
+EXTRA_TYPES = {
+    ".yaml": "application/yaml",
+    ".yml": "application/yaml",
+    ".r": "text/x-r",
+    ".ipynb": "application/x-ipynb+json",
+    ".md": "text/markdown",
+    ".sql": "application/x-sql",
+    ".webp": "image/webp",
+}
+
 
 def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], destination: Optional[str] = None) -> Optional[str]:
     """Guess mime type by local file path and the destination path. In case of an error, return None.
@@ -29,6 +39,10 @@ def guess_mime_type_from_file(local_path: Union[pathlib.Path, str], destination:
     that the file is inaccessible or not found, thus the upload will fail.
     """
     try:
+        for extra_ext, extra_mime in EXTRA_TYPES.items():
+            if mimetypes.guess_type(f"dummy{extra_ext}")[0] is None:
+                mimetypes.add_type(extra_mime, extra_ext)
+
         if mime := mimetypes.guess_type(local_path)[0]:
             return mime
 
