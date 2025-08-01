@@ -542,11 +542,9 @@ class Run(AbstractContextManager):
                 }
             )
 
-            source_files = {}
-            if repository_info.entry_point_content is not None:
-                source_files[f"{namespace}/entry_point"] = File(
-                    source=repository_info.entry_point_content, mime_type="application/patch"
-                )
+            source_files: dict[str, Union[str, bytes, Path, File]] = {}
+            if repository_info.entry_point_path is not None:
+                source_files[f"{namespace}/entry_point"] = repository_info.entry_point_path
             if repository_info.head_diff_content:
                 source_files[f"{namespace}/diff/head"] = File(
                     source=repository_info.head_diff_content, mime_type="application/patch"
@@ -556,7 +554,7 @@ class Run(AbstractContextManager):
                     source=repository_info.upstream_diff_content, mime_type="application/patch"
                 )
             if source_files:
-                self.assign_files(files=source_files)  # type: ignore[arg-type]
+                self.assign_files(files=source_files)
 
     def log_metrics(
         self,
