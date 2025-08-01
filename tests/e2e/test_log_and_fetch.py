@@ -175,20 +175,28 @@ def test_source_tracking(run, client, project_name):
         "source_code/dirty": info.dirty,
     }
     files = {
-        # "source_code/entry_point": info.entry_point_content,      TODO
+        "source_code/entry_point": info.entry_point_path,
+    }
+    diffs = {
         "source_code/diff/head": info.head_diff_content,
         f"source_code/diff/{info.upstream_diff_commit_id}": info.upstream_diff_content,
     }
 
     # then
     fetched = fetch_attribute_values(
-        client, project_name, custom_run_id=run._run_id, attributes=data.keys() | files.keys()
+        client, project_name, custom_run_id=run._run_id, attributes=data.keys() | files.keys() | diffs.keys()
     )
     for key, value in data.items():
         assert fetched[key] == value, f"Value for {key} does not match"
 
-    assert any(fetched[key] is not None for key in files), "No files were fetched"
     for key, value in files.items():
+        file_ref = fetched[key]
+        assert file_ref["mime_type"] == "text/x-python"
+        assert file_ref["size_bytes"] == value.stat().st_size
+        assert file_ref["path"] is not None
+
+    assert any(fetched[key] is not None for key in diffs), "No diffs were fetched"
+    for key, value in diffs.items():
         if value is None:
             # This can happen if the upstream diff is not available in the test environment
             continue

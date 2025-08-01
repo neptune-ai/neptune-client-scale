@@ -8,6 +8,8 @@ from typing import (
     Optional,
 )
 
+from lib_programname import get_path_executed_script
+
 from neptune_scale.util.logger import get_logger
 
 if TYPE_CHECKING:
@@ -26,7 +28,7 @@ class RepositoryInfo:
     dirty: bool
     branch: Optional[str]
     remotes: dict[str, str]  # TODO: sanitization of the keys?
-    entry_point_content: Optional[bytes]
+    entry_point_path: Optional[pathlib.Path]
     head_diff_content: Optional[bytes]
     upstream_diff_commit_id: Optional[str]
     upstream_diff_content: Optional[bytes]
@@ -47,9 +49,9 @@ def read_repository_info(
     active_branch = _get_active_branch(git_repo)
     remotes = {remote.name: remote.url for remote in git_repo.remotes}
 
-    entry_point_content = None
+    entry_point_path = None
     if entry_point:
-        entry_point_content = None  # TODO implement
+        entry_point_path = _get_entrypoint_path()
 
     head_diff_content = None
     if head_diff:
@@ -72,7 +74,7 @@ def read_repository_info(
         dirty=is_dirty,
         branch=active_branch,
         remotes=remotes,
-        entry_point_content=entry_point_content,
+        entry_point_path=entry_point_path,
         head_diff_content=head_diff_content,
         upstream_diff_commit_id=upstream_sha,
         upstream_diff_content=upstream_diff_content,
@@ -157,3 +159,26 @@ def _search_for_most_recent_ancestor(repo: "git.Repo") -> Optional["git.Commit"]
         return None
 
     return most_recent_ancestor
+
+
+def _get_entrypoint_path() -> Optional[pathlib.Path]:
+    if _is_ipython():
+        return None
+
+    entrypoint_path = get_path_executed_script()
+    if not isinstance(entrypoint_path, pathlib.Path):
+        return None
+    if entrypoint_path == pathlib.Path() or not entrypoint_path.is_file():
+        return None
+
+    return entrypoint_path
+
+
+def _is_ipython() -> bool:
+    try:
+        import IPython
+
+        ipython = IPython.core.getipython.get_ipython()
+        return ipython is not None
+    except ImportError:
+        return False
