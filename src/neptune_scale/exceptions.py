@@ -335,7 +335,7 @@ class NeptuneRunNotFound(NeptuneRunError):
 class NeptuneRunDuplicate(NeptuneScaleWarning):
     message = (
         "NeptuneRunDuplicate: A run with the provided ID already exists. "
-        "This is expected if you are resuming a run or running a distributed workload."
+        "This is expected if you are resuming a run or using a distributed workflow."
     )
 
 
