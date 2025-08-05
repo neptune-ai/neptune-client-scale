@@ -328,17 +328,15 @@ class NeptuneRunNotFound(NeptuneRunError):
 {h1}
 ----NeptuneRunNotFound: Run not found.
 {end}
-This may happen if you try to resume a run (for example, by custom ID) that is not yet created.
 """
 
 
+# This warning is less eye-popping by design as it may happen in perfectly valid scenarios.
 class NeptuneRunDuplicate(NeptuneScaleWarning):
-    message = """
-{h1}
-----NeptuneRunDuplicate: A run with the provided ID already exists.
-{end}
-If you wanted to resume an existing run, include the argument `resume=True`.
-"""
+    message = (
+        "NeptuneRunDuplicate: A run with the provided ID already exists. "
+        "This is expected if you are resuming a run or running a distributed workload."
+    )
 
 
 class NeptuneRunConflicting(NeptuneRunError):
