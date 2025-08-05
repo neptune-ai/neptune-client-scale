@@ -50,8 +50,6 @@ def run_init_kwargs(project_name):
     if not run_id:
         run_id = str(uuid.uuid4())
         kwargs["experiment_name"] = "pye2e-scale"
-    else:
-        kwargs["resume"] = True
 
     kwargs["run_id"] = run_id
 

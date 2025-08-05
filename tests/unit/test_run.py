@@ -336,24 +336,6 @@ def test_log_no_timestamp(api_token, mode):
     assert True
 
 
-@pytest.mark.parametrize("mode", ["disabled", "offline"])
-def test_resume(api_token, mode):
-    # given
-    project = "workspace/project"
-
-    # when
-    with Run(project=project, api_token=api_token, resume=True, mode=mode) as run:
-        run.log(
-            step=3.14,
-            configs={
-                "int": 1,
-            },
-        )
-
-    # then
-    assert True
-
-
 @freeze_time("2024-07-30 12:12:12.000022")
 @pytest.mark.parametrize("mode", ["disabled", "offline"])
 def test_creation_time(api_token, mode):

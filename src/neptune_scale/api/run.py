@@ -115,7 +115,6 @@ class Run(AbstractContextManager):
         run_id: Optional[str] = None,
         project: Optional[str] = None,
         api_token: Optional[str] = None,
-        resume: bool = False,
         mode: Optional[Literal["async", "offline", "disabled"]] = None,
         experiment_name: Optional[str] = None,
         creation_time: Optional[datetime] = None,
@@ -142,7 +141,6 @@ class Run(AbstractContextManager):
                 If not provided, the value of the `NEPTUNE_PROJECT` environment variable is used.
             api_token: Your Neptune API token. If not provided, the value of the `NEPTUNE_API_TOKEN` environment
                 variable is used.
-            resume: Whether to resume an existing run.
             mode: Mode of operation. If set to "offline", metadata are stored locally. If set to "disabled", the run doesn't log any metadata.
             experiment_name: If creating a run as an experiment, name (ID) of the experiment to be associated with the run.
             creation_time: Custom creation time of the run.
@@ -173,7 +171,6 @@ class Run(AbstractContextManager):
         self._fork_step = fork_step
 
         verify_type("run_id", run_id, str)
-        verify_type("resume", resume, bool)
         verify_type("project", project, (str, type(None)))
         verify_type("api_token", api_token, (str, type(None)))
         verify_type("experiment_name", experiment_name, (str, type(None)))
@@ -200,14 +197,12 @@ class Run(AbstractContextManager):
 
         runtime_namespace = system_namespace if runtime_namespace is None else runtime_namespace
 
-        if resume and creation_time is not None:
-            logger.warning("`creation_time` is ignored when used together with `resume`.")
-        if resume and experiment_name is not None:
-            logger.warning("`experiment_name` is ignored when used together with `resume`.")
-        if resume and fork_run_id is not None:
-            logger.warning("`fork_run_id` is ignored when used together with `resume`.")
-        if resume and fork_step is not None:
-            logger.warning("`fork_step` is ignored when used together with `resume`.")
+        resume = kwargs.get("resume")
+        if resume is not None:
+            logger.warning(
+                "`resume` is deprecated and will be removed in a future version. "
+                "Runs are now resumed by default if they exist."
+            )
 
         if max_queue_size is not None:
             logger.warning("`max_queue_size` is deprecated and will be removed in a future version.")
@@ -346,7 +341,7 @@ class Run(AbstractContextManager):
 
         self._exit_func: Optional[Callable[[], None]] = atexit.register(self._close)
 
-        if mode != "disabled" and not resume:
+        if mode != "disabled":
             self._create_run(
                 creation_time=datetime.now() if creation_time is None else creation_time,
                 experiment_name=experiment_name,
