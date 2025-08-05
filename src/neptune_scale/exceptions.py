@@ -433,12 +433,8 @@ For help, see https://docs.neptune.ai/log_metrics
 class NeptuneSeriesStepNonIncreasing(NeptuneScaleError):
     message = """
 {h1}
-NeptuneSeriesStepNonIncreasing: Subsequent steps of a series must be increasing.
+NeptuneSeriesStepNonIncreasing: Subsequent steps of a series must be strictly increasing.
 {end}
-This can be caused by either:
-- The step of a series value is smaller than the most recently logged step for this series
-- the step is exactly the same but the value is different
-
 For help, see https://docs.neptune.ai/log_metrics
 """
 
