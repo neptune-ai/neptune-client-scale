@@ -248,15 +248,15 @@ class Run(AbstractContextManager):
             )
             self._storage_directory_path.mkdir(parents=True, exist_ok=True)
 
-            operations_repository_path = self._storage_directory_path / "run_operations.sqlite3"
+            self._operations_repository_path = self._storage_directory_path / "run_operations.sqlite3"
             self._operations_repo: Optional[OperationsRepository] = OperationsRepository(
-                db_path=operations_repository_path,
+                db_path=self._operations_repository_path,
             )
             self._operations_repo.init_db()
 
             existing_metadata = self._operations_repo.get_metadata()
             if existing_metadata is not None:
-                raise NeptuneDatabaseConflict(path=operations_repository_path.name)
+                raise NeptuneDatabaseConflict(path=self._operations_repository_path.name)
             self._operations_repo.save_metadata(self._project, self._run_id)
 
             self._console_log_capture: Optional[ConsoleLogCaptureThread] = (
@@ -299,7 +299,7 @@ class Run(AbstractContextManager):
                 kwargs={
                     "project": self._project,
                     "family": self._run_id,
-                    "operations_repository_path": operations_repository_path,
+                    "operations_repository_path": self._operations_repository_path,
                     "api_token": self._api_token,
                 },
             )
@@ -412,10 +412,15 @@ class Run(AbstractContextManager):
 
         if self._storage_directory_path is not None:
             try:
-                logger.debug(f"Removing directory {self._storage_directory_path}")
+                logger.debug(f"Removing operations repository directory {self._storage_directory_path}")
                 self._storage_directory_path.rmdir()
             except Exception as e:
-                logger.info(f"Kept directory {self._storage_directory_path}: {e}")
+                logger.debug(f"Failed to remove operations repository directory: {e}")
+                logger.warning(
+                    f"The directory containing logged metadata was not deleted. "
+                    f"This may mean that some data wasn't synced successfully. "
+                    f"To manually sync and clean up the directory, run: `neptune sync {self._operations_repository_path}`"
+                )
 
     def terminate(self) -> None:
         """
