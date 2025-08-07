@@ -16,6 +16,7 @@ from neptune_api import AuthenticatedClient
 from pytest import fixture
 
 from neptune_scale import Run
+from neptune_scale.api.run import SourceTrackingConfig
 from neptune_scale.util.envs import PROJECT_ENV_NAME
 
 from .test_fetcher.client import create_client
@@ -69,7 +70,15 @@ def run(run_init_kwargs, on_error_queue):
     def error_callback(error, last_seen_at):
         on_error_queue.put(error)
 
-    run = Run(on_error_callback=error_callback, **run_init_kwargs)
+    run = Run(
+        on_error_callback=error_callback,
+        source_tracking_config=SourceTrackingConfig(
+            upload_entry_point=True,
+            upload_diff_head=True,
+            upload_diff_upstream=True,
+        ),
+        **run_init_kwargs,
+    )
     run.log_configs({"test_start_time": datetime.now(timezone.utc)})
     run.wait_for_processing()
 
