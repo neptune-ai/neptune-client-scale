@@ -418,8 +418,8 @@ class Run(AbstractContextManager):
                 logger.debug(f"Failed to remove operations repository directory: {e}")
                 logger.warning(
                     f"The directory containing logged metadata was not deleted. "
-                    f"This may mean that some data wasn't synced successfully. "
-                    f"To manually sync and clean up the directory, run: `neptune sync {self._operations_repository_path}`"
+                    f"This means that some data may have failed to sync. "
+                    f"To finish syncing the data, run: `neptune sync {self._operations_repository_path}`"
                 )
 
     def terminate(self) -> None:
