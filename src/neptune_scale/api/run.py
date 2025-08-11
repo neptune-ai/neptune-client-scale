@@ -70,6 +70,7 @@ from neptune_scale.sync.metadata_splitter import (
     datetime_to_proto,
     histograms_to_update_run_snapshots,
     make_step,
+    sanitize_attribute_path,
     string_series_to_update_run_snapshots,
 )
 from neptune_scale.sync.operations_repository import (
@@ -112,6 +113,7 @@ logger = get_logger()
 class SourceTrackingConfig:
     namespace: str = "source_code"
     repository: Optional[Path] = None
+    upload_run_command: bool = True
     upload_entry_point: bool = False
     upload_diff_head: bool = False
     upload_diff_upstream: bool = False
@@ -526,21 +528,27 @@ class Run(AbstractContextManager):
             entry_point=source_tracking_config.upload_entry_point,
             head_diff=source_tracking_config.upload_diff_head,
             upstream_diff=source_tracking_config.upload_diff_upstream,
+            run_command=source_tracking_config.upload_run_command,
         )
         if repository_info is not None:
-            self.log_configs(
-                data={
-                    f"{namespace}/commit/commit_id": repository_info.commit_id,
-                    f"{namespace}/commit/message": repository_info.commit_message,
-                    f"{namespace}/commit/author_name": repository_info.commit_author_name,
-                    f"{namespace}/commit/author_email": repository_info.commit_author_email,
-                    f"{namespace}/commit/commit_date": repository_info.commit_date,
-                    f"{namespace}/branch": repository_info.branch,
-                    # TODO: sanitize remote names
-                    **{f"{namespace}/remote/{name}": url for name, url in repository_info.remotes.items()},
-                    f"{namespace}/dirty": repository_info.dirty,
-                }
-            )
+            data = {
+                f"{namespace}/commit/commit_id": repository_info.commit_id,
+                f"{namespace}/commit/message": repository_info.commit_message,
+                f"{namespace}/commit/author_name": repository_info.commit_author_name,
+                f"{namespace}/commit/author_email": repository_info.commit_author_email,
+                f"{namespace}/commit/commit_date": repository_info.commit_date,
+                f"{namespace}/branch": repository_info.branch,
+                **{
+                    sanitize_attribute_path(f"{namespace}/remote/{name}"): url
+                    for name, url in repository_info.remotes.items()
+                },
+                f"{namespace}/dirty": repository_info.dirty,
+            }
+
+            if repository_info.run_command:
+                data[f"{namespace}/run_command"] = repository_info.run_command
+
+            self.log_configs(data=data)
 
             source_files: dict[str, Union[str, bytes, Path, File]] = {}
             if repository_info.entry_point_path is not None:

@@ -58,6 +58,7 @@ __all__ = (
     "make_step",
     "histograms_to_update_run_snapshots",
     "string_series_to_update_run_snapshots",
+    "sanitize_attribute_path",
 )
 
 
@@ -371,6 +372,12 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
                 attr_name,
                 Value(file_ref=FileRef(path=file.destination, mime_type=file.mime_type, size_bytes=file.size_bytes)),
             )
+
+
+def sanitize_attribute_path(param: str) -> str:
+    if len(param) > MAX_ATTRIBUTE_PATH_LENGTH:
+        param = param[:MAX_ATTRIBUTE_PATH_LENGTH]
+    return param
 
 
 def _validate_paths(fields: dict[str, T]) -> Iterator[tuple[str, T]]:

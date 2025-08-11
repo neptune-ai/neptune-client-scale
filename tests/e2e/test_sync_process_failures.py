@@ -126,12 +126,13 @@ def test_run_writable_after_sync_process_dies():
     repo = OperationsRepository(run._operations_repo._db_path)
     operations = repo.get_operations(MAX_SINGLE_OPERATION_SIZE_BYTES)
 
-    assert len(operations) == 5
+    assert len(operations) == 6
     assert operations[0].operation_type == OperationType.CREATE_RUN
-    assert operations[1].operation.append["metric"].float64 == 2.0
-    assert operations[2].operation.assign["config"].string == "foo"
-    assert sorted(operations[3].operation.modify_sets["sys/tags"].string.values.keys()) == ["tag1", "tag2"]
-    assert operations[4].operation.assign["a-file"].file_ref.size_bytes == len(b"content")
+    assert operations[1].operation.assign["source_code/branch"].string
+    assert operations[2].operation.append["metric"].float64 == 2.0
+    assert operations[3].operation.assign["config"].string == "foo"
+    assert sorted(operations[4].operation.modify_sets["sys/tags"].string.values.keys()) == ["tag1", "tag2"]
+    assert operations[5].operation.assign["a-file"].file_ref.size_bytes == len(b"content")
 
 
 @pytest.mark.timeout(TEST_TIMEOUT)

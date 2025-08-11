@@ -8,9 +8,11 @@ from typing import (
     Optional,
 )
 
-from lib_programname import get_path_executed_script
-
 from neptune_scale.util.logger import get_logger
+from neptune_scale.vendor.lib_programname import (
+    empty_path,
+    get_path_executed_script,
+)
 
 if TYPE_CHECKING:
     import git
@@ -27,7 +29,8 @@ class RepositoryInfo:
     commit_date: datetime
     dirty: bool
     branch: Optional[str]
-    remotes: dict[str, str]  # TODO: sanitization of the keys?
+    remotes: dict[str, str]
+    run_command: Optional[str]
     entry_point_path: Optional[pathlib.Path]
     head_diff_content: Optional[bytes]
     upstream_diff_commit_id: Optional[str]
@@ -35,19 +38,20 @@ class RepositoryInfo:
 
 
 def read_repository_info(
-    path: Optional[pathlib.Path],
-    entry_point: bool,
-    head_diff: bool,
-    upstream_diff: bool,
+    path: Optional[pathlib.Path], run_command: bool, entry_point: bool, head_diff: bool, upstream_diff: bool
 ) -> Optional[RepositoryInfo]:
     git_repo = _get_git_repo(path)
     if git_repo is None:
         return None
 
     head_commit = git_repo.head.commit
-    is_dirty = git_repo.is_dirty(index=False, untracked_files=True)
+    is_dirty = git_repo.is_dirty(index=False)
     active_branch = _get_active_branch(git_repo)
     remotes = {remote.name: remote.url for remote in git_repo.remotes}
+
+    run_command_content = None
+    if run_command:
+        run_command_content = _get_run_command()
 
     entry_point_path = None
     if entry_point:
@@ -78,6 +82,7 @@ def read_repository_info(
         head_diff_content=head_diff_content,
         upstream_diff_commit_id=upstream_sha,
         upstream_diff_content=upstream_diff_content,
+        run_command=run_command_content,
     )
 
 
@@ -93,7 +98,7 @@ def _get_git_repo(path: Optional[pathlib.Path]) -> Optional["git.Repo"]:
         except (git.exc.NoSuchPathError, git.exc.InvalidGitRepositoryError):
             return None
     except ImportError:
-        logger.warn("GitPython could not be initialized")
+        logger.warning("GitPython could not be initialized")
         return None
 
 
@@ -112,7 +117,7 @@ def _read_diff(repo: "git.Repo", commit_ref: str) -> Optional[bytes]:
         from git.exc import GitCommandError
 
         try:
-            diff = repo.git.diff(commit_ref, index=False)
+            diff = repo.git.diff(commit_ref, index=False, no_ext_diff=True)
 
             if not isinstance(diff, str):
                 return None
@@ -168,7 +173,9 @@ def _get_entrypoint_path() -> Optional[pathlib.Path]:
     entrypoint_path = get_path_executed_script()
     if not isinstance(entrypoint_path, pathlib.Path):
         return None
-    if entrypoint_path == pathlib.Path() or not entrypoint_path.is_file():
+    if entrypoint_path == empty_path:
+        return None
+    if not entrypoint_path.is_file():
         return None
 
     return entrypoint_path
@@ -182,3 +189,10 @@ def _is_ipython() -> bool:
         return ipython is not None
     except ImportError:
         return False
+
+
+def _get_run_command() -> str:
+    import psutil
+
+    args = psutil.Process().cmdline()
+    return " ".join(args)

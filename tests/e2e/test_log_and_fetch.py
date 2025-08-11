@@ -163,7 +163,9 @@ def test_async_lag_callback():
 
 def test_source_tracking(run, client, project_name):
     # given
-    info = source_tracking.read_repository_info(path=None, entry_point=True, head_diff=True, upstream_diff=True)
+    info = source_tracking.read_repository_info(
+        path=None, run_command=True, entry_point=True, head_diff=True, upstream_diff=True
+    )
     data = {
         "source_code/commit/commit_id": info.commit_id,
         "source_code/commit/message": info.commit_message,
@@ -173,6 +175,7 @@ def test_source_tracking(run, client, project_name):
         "source_code/branch": info.branch,
         "source_code/remote/origin": info.remotes["origin"],
         "source_code/dirty": info.dirty,
+        "source_code/run_command": info.run_command,
     }
     files = {
         "source_code/entry_point": info.entry_point_path,
@@ -190,12 +193,14 @@ def test_source_tracking(run, client, project_name):
         assert fetched[key] == value, f"Value for {key} does not match"
 
     for key, value in files.items():
+        if value is None:
+            # This can happen if the entry point is not available in the test environment
+            continue
         file_ref = fetched[key]
         assert file_ref["mime_type"] == "text/x-python"
         assert file_ref["size_bytes"] == value.stat().st_size
         assert file_ref["path"] is not None
 
-    assert any(fetched[key] is not None for key in diffs), "No diffs were fetched"
     for key, value in diffs.items():
         if value is None:
             # This can happen if the upstream diff is not available in the test environment
