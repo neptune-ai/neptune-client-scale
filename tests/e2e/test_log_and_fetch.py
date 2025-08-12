@@ -190,12 +190,14 @@ def test_source_tracking(run, client, project_name):
         client, project_name, custom_run_id=run._run_id, attributes=data.keys() | files.keys() | diffs.keys()
     )
     for key, value in data.items():
+        assert key in fetched, f"Diff {key} was not fetched, expected value: {value}"
         assert fetched[key] == value, f"Value for {key} does not match"
 
     for key, value in files.items():
         if value is None:
             # This can happen if the entry point is not available in the test environment
             continue
+        assert key in fetched, f"Diff {key} was not fetched, expected content: {value}"
         file_ref = fetched[key]
         assert file_ref["mime_type"] == "text/x-python"
         assert file_ref["size_bytes"] == value.stat().st_size
@@ -205,6 +207,7 @@ def test_source_tracking(run, client, project_name):
         if value is None:
             # This can happen if the upstream diff is not available in the test environment
             continue
+        assert key in fetched, f"Diff {key} was not fetched, expected content: {value}"
         file_ref = fetched[key]
         assert file_ref["mime_type"] == "application/patch"
         assert file_ref["size_bytes"] == len(value)

@@ -65,7 +65,7 @@ def read_repository_info(
     upstream_diff_content = None
     if upstream_diff:
         upstream_commit = _get_relevant_upstream_commit(git_repo)
-        if upstream_commit and upstream_commit != head_commit:
+        if upstream_commit:
             upstream_sha = upstream_commit.hexsha
             upstream_diff_content = _read_diff(git_repo, upstream_sha)
 

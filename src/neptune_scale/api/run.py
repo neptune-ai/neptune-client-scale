@@ -553,11 +553,11 @@ class Run(AbstractContextManager):
             source_files: dict[str, Union[str, bytes, Path, File]] = {}
             if repository_info.entry_point_path is not None:
                 source_files[f"{namespace}/entry_point"] = repository_info.entry_point_path
-            if repository_info.head_diff_content:
+            if repository_info.head_diff_content is not None:
                 source_files[f"{namespace}/diff/head"] = File(
                     source=repository_info.head_diff_content, mime_type="application/patch"
                 )
-            if repository_info.upstream_diff_content:
+            if repository_info.upstream_diff_content is not None:
                 source_files[f"{namespace}/diff/{repository_info.upstream_diff_commit_id}"] = File(
                     source=repository_info.upstream_diff_content, mime_type="application/patch"
                 )
