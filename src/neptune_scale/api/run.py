@@ -23,6 +23,7 @@ from collections.abc import (
 from contextlib import AbstractContextManager
 from dataclasses import (
     asdict,
+    dataclass,
     is_dataclass,
 )
 from datetime import datetime
@@ -69,6 +70,7 @@ from neptune_scale.sync.metadata_splitter import (
     datetime_to_proto,
     histograms_to_update_run_snapshots,
     make_step,
+    sanitize_attribute_path,
     string_series_to_update_run_snapshots,
 )
 from neptune_scale.sync.operations_repository import (
@@ -86,7 +88,10 @@ from neptune_scale.types import (
     File,
     Histogram,
 )
-from neptune_scale.util import envs
+from neptune_scale.util import (
+    envs,
+    source_tracking,
+)
 from neptune_scale.util.envs import (
     API_TOKEN_ENV_NAME,
     MODE_ENV_NAME,
@@ -102,6 +107,16 @@ from neptune_scale.util.timer import Timer
 __all__ = ["Run"]
 
 logger = get_logger()
+
+
+@dataclass
+class SourceTrackingConfig:
+    namespace: str = "source_code"
+    repository: Optional[Path] = None
+    upload_run_command: bool = True
+    upload_entry_point: bool = False
+    upload_diff_head: bool = False
+    upload_diff_upstream: bool = False
 
 
 class Run(AbstractContextManager):
@@ -130,6 +145,7 @@ class Run(AbstractContextManager):
         on_warning_callback: Optional[Callable[[BaseException, Optional[float]], None]] = None,
         enable_console_log_capture: bool = True,
         runtime_namespace: Optional[str] = None,
+        source_tracking_config: Optional[SourceTrackingConfig] = SourceTrackingConfig(),
         **kwargs: Any,
     ) -> None:
         """
@@ -348,6 +364,7 @@ class Run(AbstractContextManager):
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
             )
+            self._write_source_tracking_attributes(source_tracking_config)
 
             if mode == "async":
                 self._print_run_info()
@@ -500,6 +517,52 @@ class Run(AbstractContextManager):
         )
 
         self._operations_repo.save_create_run(create_run)
+
+    def _write_source_tracking_attributes(self, source_tracking_config: Optional[SourceTrackingConfig]) -> None:
+        if source_tracking_config is None:
+            return
+
+        namespace = source_tracking_config.namespace
+        repository_info = source_tracking.read_repository_info(
+            source_tracking_config.repository,
+            entry_point=source_tracking_config.upload_entry_point,
+            head_diff=source_tracking_config.upload_diff_head,
+            upstream_diff=source_tracking_config.upload_diff_upstream,
+            run_command=source_tracking_config.upload_run_command,
+        )
+        if repository_info is not None:
+            data = {
+                f"{namespace}/commit/commit_id": repository_info.commit_id,
+                f"{namespace}/commit/message": repository_info.commit_message,
+                f"{namespace}/commit/author_name": repository_info.commit_author_name,
+                f"{namespace}/commit/author_email": repository_info.commit_author_email,
+                f"{namespace}/commit/commit_date": repository_info.commit_date,
+                f"{namespace}/branch": repository_info.branch,
+                **{
+                    sanitize_attribute_path(f"{namespace}/remote/{name}"): url
+                    for name, url in repository_info.remotes.items()
+                },
+                f"{namespace}/dirty": repository_info.dirty,
+            }
+
+            if repository_info.run_command:
+                data[f"{namespace}/run_command"] = repository_info.run_command
+
+            self.log_configs(data=data)
+
+            source_files: dict[str, Union[str, bytes, Path, File]] = {}
+            if repository_info.entry_point_path is not None:
+                source_files[f"{namespace}/entry_point"] = repository_info.entry_point_path
+            if repository_info.head_diff_content is not None:
+                source_files[f"{namespace}/diff/head"] = File(
+                    source=repository_info.head_diff_content, mime_type="application/patch"
+                )
+            if repository_info.upstream_diff_content is not None:
+                source_files[f"{namespace}/diff/{repository_info.upstream_diff_commit_id}"] = File(
+                    source=repository_info.upstream_diff_content, mime_type="application/patch"
+                )
+            if source_files:
+                self.assign_files(files=source_files)
 
     def log_metrics(
         self,

@@ -21,6 +21,7 @@ filetype = "^1.2.0"
 azure-storage-blob = "^12.7.0"
 requests = ">=2.21.0"
 aiofiles = ">=22.1.0"
+GitPython = ">=2.0.8"
 
 [tool.poetry]
 name = "neptune-scale"
