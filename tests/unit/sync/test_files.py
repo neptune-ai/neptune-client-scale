@@ -54,13 +54,45 @@ def test_guess_mime_type_from_bytes(mock_guess_mime, filename, expected_mime_typ
         ("test.txt", "test.jpg", "text/plain"),
         ("test.jpg", "test.txt", "image/jpeg"),
         ("test.unknown", "test.jpg", "image/jpeg"),
+        ("test.csv", "test.csv", "text/csv"),
+        ("test.tsv", "test.tsv", "text/tab-separated-values"),
+        ("test.json", "test.json", "application/json"),
+        ("test.yaml", "test.yaml", "application/yaml"),
+        ("test.yml", "test.yml", "application/yaml"),
+        ("test.xml", "test.xml", {"text/xml", "application/xml"}),
+        ("test.py", "test.py", "text/x-python"),
+        ("test.js", "test.js", {"text/javascript", "application/javascript"}),
+        ("test.html", "test.html", "text/html"),
+        ("test.css", "test.css", "text/css"),
+        ("test.md", "test.md", "text/markdown"),
+        ("test.sh", "test.sh", {"text/x-sh", "application/x-sh"}),
+        ("test.r", "test.r", "text/x-r"),
+        ("test.ipynb", "test.ipynb", "application/x-ipynb+json"),
+        ("test.sql", "test.sql", {"text/x-sql", "application/x-sql", "application/sql"}),
+        ("test.jpeg", "test.jpeg", "image/jpeg"),
+        ("test.jpg", "test.jpg", "image/jpeg"),
+        ("test.png", "test.png", "image/png"),
+        ("test.gif", "test.gif", "image/gif"),
+        ("test.bmp", "test.bmp", "image/bmp"),
+        ("test.svg", "test.svg", "image/svg+xml"),
+        ("test.webp", "test.webp", "image/webp"),
+        ("test.mp3", "test.mp3", "audio/mpeg"),
+        ("test.wav", "test.wav", {"audio/wav", "audio/x-wav"}),
+        ("test.ogg", "test.ogg", "audio/ogg"),
+        ("test.mp4", "test.mp4", "video/mp4"),
+        ("test.mpeg", "test.mpeg", "video/mpeg"),
+        ("test.webm", "test.webm", "video/webm"),
+        ("test.zip", "test.zip", {"application/zip", "application/x-zip-compressed"}),
     ),
 )
 def test_guess_mime_type_from_file_no_disk_access_on_known_extension(
     mock_guess_mime, local_path, destination, expected_mime_type
 ):
     mime = guess_mime_type_from_file(local_path, destination)
-    assert mime == expected_mime_type
+    if isinstance(expected_mime_type, set):
+        assert mime in expected_mime_type
+    else:
+        assert mime == expected_mime_type
     mock_guess_mime.assert_not_called()
 
 
