@@ -1,5 +1,4 @@
 import logging
-import os
 import queue
 import random
 import sys
@@ -41,19 +40,11 @@ def cleanup_logging_handlers():
 @fixture(scope="module")
 def run_init_kwargs(project_name):
     """Arguments to initialize a neptune_scale.Run instance"""
-
-    # TODO: if a test fails the run could be left in an indefinite state
-    #       Maybe we should just have it scoped 'function' and require passing
-    #       an existing run id
-    kwargs = {"project": str(project_name)}
-    run_id = os.getenv("NEPTUNE_E2E_CUSTOM_RUN_ID")
-    if not run_id:
-        run_id = str(uuid.uuid4())
-        kwargs["experiment_name"] = "pye2e-scale"
-
-    kwargs["run_id"] = run_id
-
-    return kwargs
+    return {
+        "project": project_name,
+        "experiment_name": "pye2e-scale",
+        "run_id": str(uuid.uuid4()),
+    }
 
 
 @fixture(scope="module")
