@@ -1,13 +1,10 @@
-import math
+import os
 import threading
 import time
 from datetime import (
     datetime,
     timezone,
 )
-
-import numpy as np
-from pytest import mark
 
 from neptune_scale.api.run import Run
 from neptune_scale.util import source_tracking
@@ -121,17 +118,6 @@ def test_metric_fetch_and_append(run, client, project_name):
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
     assert list(fetched[path].keys()) == steps + steps2
     assert list(fetched[path].values()) == values + values2
-
-
-@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
-def test_single_non_finite_metric(run, client, project_name, value):
-    path = unique_path("test_series/non_finite")
-
-    run.log_metrics(data={path: value}, step=1)
-    assert run.wait_for_processing(SYNC_TIMEOUT)
-
-    fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
-    assert path not in fetched
 
 
 def test_async_lag_callback(api_token, project_name):

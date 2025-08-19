@@ -106,7 +106,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         self._run_id = run_id
 
         self._step = make_step(step) if step is not None else None
-        self._metrics = peekable(self._stream_metrics(step, metrics.data)) if metrics is not None else None
+        self._metrics = peekable(self._stream_metrics(metrics.data)) if metrics is not None else None
         self._preview = _make_preview_from_metrics(metrics) if metrics else None
 
         self._configs = peekable(self._stream_configs(configs)) if configs else None
@@ -280,7 +280,7 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
 
         return size
 
-    def _stream_metrics(self, step: Optional[float | int], metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
+    def _stream_metrics(self, metrics: dict[str, float]) -> Iterator[tuple[str, float]]:
         for key, value in _validate_paths(metrics):
             try:
                 value = float(value)
