@@ -17,7 +17,6 @@ from pytest import fixture
 
 from neptune_scale import Run
 from neptune_scale.api.run import SourceTrackingConfig
-from neptune_scale.util.envs import PROJECT_ENV_NAME
 
 from .test_fetcher.client import create_client
 
@@ -118,15 +117,9 @@ def random_series(length=10, start_step=0):
 
 @fixture(scope="module")
 def project_name(request) -> str:
-    # Assume the project name and API token are set in the environment using the standard
-    # NEPTUNE_PROJECT and NEPTUNE_API_TOKEN variables.
-    #
-    # We also allow overriding the project name per module by setting the
+    # We allow overriding the project name per module by setting the
     # module-level `NEPTUNE_PROJECT` variable.
-
     project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
-    if project_name is None:
-        project_name = os.getenv(PROJECT_ENV_NAME)
     return project_name
 
 
