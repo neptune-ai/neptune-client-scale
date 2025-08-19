@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from neptune_scale.exceptions import NeptuneFileUploadTemporaryError
-from neptune_scale.sync.google_storage import (
+from neptune_scale.sync.storage.gcs import (
     _fetch_session_uri,
     _is_retryable_httpx_error,
     _upload_chunk,
@@ -24,7 +24,7 @@ from neptune_scale.sync.google_storage import (
 def mock_file():
     """Yields a mock for files opened using `with aiofiles.open(...) as foo:`"""
 
-    with patch("aiofiles.open") as mock_open, patch("neptune_scale.sync.google_storage.Path.stat") as mock_path_stat:
+    with patch("aiofiles.open") as mock_open, patch("neptune_scale.sync.storage.gcs.Path.stat") as mock_path_stat:
         mock_file = AsyncMock(wraps=io.BytesIO(b"ABCDEFGH"))
         mock_path_stat.return_value.st_size = 8
         # We need to mock the context manager for open
@@ -35,20 +35,20 @@ def mock_file():
 
 @pytest.fixture
 def mock_fetch_session_uri():
-    with patch("neptune_scale.sync.google_storage._fetch_session_uri") as mock:
+    with patch("neptune_scale.sync.storage.gcs._fetch_session_uri") as mock:
         mock.return_value = "http://localhost/session_uri"
         yield mock
 
 
 @pytest.fixture
 def mock_upload_chunk():
-    with patch("neptune_scale.sync.google_storage._upload_chunk") as mock:
+    with patch("neptune_scale.sync.storage.gcs._upload_chunk") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_upload_file():
-    with patch("neptune_scale.sync.google_storage._upload_file") as mock:
+    with patch("neptune_scale.sync.storage.gcs._upload_file") as mock:
         yield mock
 
 
@@ -64,7 +64,7 @@ async def test_500_fetch_session_uri_errors_are_temporary(mock_file, mock_fetch_
     mock_upload_file.assert_not_called()
 
 
-@patch("neptune_scale.sync.google_storage._upload_empty_file")
+@patch("neptune_scale.sync.storage.gcs._upload_empty_file")
 async def test_upload_empty_file_called(mock_upload_empty_file, mock_upload_chunk, mock_fetch_session_uri):
     with tempfile.NamedTemporaryFile() as temp_file:
         await upload_to_gcp(temp_file.name, "text/plain", "http://localhost/signed_url")
