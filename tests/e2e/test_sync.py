@@ -1,4 +1,3 @@
-import os
 import time
 from datetime import (
     datetime,
@@ -34,34 +33,30 @@ from .test_fetcher import (
 TEST_TIMEOUT = 30
 
 
-NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
-API_TOKEN = os.getenv("NEPTUNE_API_TOKEN")
-
-
-def test_sync_empty_file(run_init_kwargs):
+def test_sync_empty_file(run_init_kwargs, api_token):
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
 
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
 
-def test_sync_nonexistent_file(run_init_kwargs, tmp_path):
+def test_sync_nonexistent_file(run_init_kwargs, tmp_path, api_token):
     path = tmp_path / "does-not-exist.db"
 
     with pytest.raises(FileNotFoundError):
-        sync.sync_all(run_log_file=path, api_token=API_TOKEN)
+        sync.sync_all(run_log_file=path, api_token=api_token)
 
 
-def test_sync_invalid_file(tmp_path):
+def test_sync_invalid_file(tmp_path, api_token):
     path = tmp_path / "invalid.db"
     with open(path, "w") as f:
         f.write("invalid")
 
     with pytest.raises(NeptuneUnableToLogData):
-        sync.sync_all(run_log_file=path, api_token=API_TOKEN)
+        sync.sync_all(run_log_file=path, api_token=api_token)
 
 
-def test_sync_atoms(run_init_kwargs, client, project_name):
+def test_sync_atoms(run_init_kwargs, client, project_name, api_token):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -78,7 +73,7 @@ def test_sync_atoms(run_init_kwargs, client, project_name):
         run.log_configs(data)
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
@@ -87,7 +82,7 @@ def test_sync_atoms(run_init_kwargs, client, project_name):
         assert fetched[key] == value, f"Value for {key} does not match"
 
 
-def test_sync_metrics(run_init_kwargs, client, project_name):
+def test_sync_metrics(run_init_kwargs, client, project_name, api_token):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -99,7 +94,7 @@ def test_sync_metrics(run_init_kwargs, client, project_name):
             run.log_metrics(data={metric_path: value}, step=step)
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
@@ -108,7 +103,7 @@ def test_sync_metrics(run_init_kwargs, client, project_name):
     assert list(fetched[metric_path].values()) == values
 
 
-def test_sync_series(run_init_kwargs, client, project_name):
+def test_sync_series(run_init_kwargs, client, project_name, api_token):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -121,7 +116,7 @@ def test_sync_series(run_init_kwargs, client, project_name):
             run.log_string_series(data={series_path: value}, step=step)
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
@@ -130,7 +125,7 @@ def test_sync_series(run_init_kwargs, client, project_name):
     assert list(fetched[series_path].values()) == values
 
 
-def test_sync_files(run_init_kwargs, client, project_name, temp_dir):
+def test_sync_files(run_init_kwargs, client, project_name, temp_dir, api_token):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -140,7 +135,7 @@ def test_sync_files(run_init_kwargs, client, project_name, temp_dir):
         run.assign_files(files={path: b"test_sync_files file content"})
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
@@ -152,7 +147,7 @@ def test_sync_files(run_init_kwargs, client, project_name, temp_dir):
         assert content == b"test_sync_files file content"
 
 
-def test_sync_all_types_combined(run_init_kwargs, temp_dir):
+def test_sync_all_types_combined(run_init_kwargs, temp_dir, api_token):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
@@ -176,13 +171,13 @@ def test_sync_all_types_combined(run_init_kwargs, temp_dir):
         run.assign_files(files={"test_sync_all_types/file-value": b"test_sync_all_types file content"})
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
 
 
-def test_sync_nonempty_submissions(run_init_kwargs, client, project_name):
+def test_sync_nonempty_submissions(run_init_kwargs, client, project_name, api_token):
     # given
     run_id = run_init_kwargs["run_id"]
     with Run(**run_init_kwargs, mode="offline") as run:
@@ -199,7 +194,7 @@ def test_sync_nonempty_submissions(run_init_kwargs, client, project_name):
     )
 
     # when
-    sync.sync_all(run_log_file=db_path, api_token=API_TOKEN)
+    sync.sync_all(run_log_file=db_path, api_token=api_token)
 
     # then
     assert not db_path.exists()
@@ -211,14 +206,14 @@ def test_sync_nonempty_submissions(run_init_kwargs, client, project_name):
 @pytest.mark.parametrize("timeout", [0, 1, 5])
 @pytest.mark.timeout(TEST_TIMEOUT)
 @patch("neptune_scale.cli.sync.run_sync_process", new=sleep_10s)  # replace the sync process with no-op sleep
-def test_sync_wait_timeout(run_init_kwargs, timeout):
+def test_sync_wait_timeout(run_init_kwargs, timeout, api_token):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
         run.log_configs(data={"str-value": "hello-world"})
         run.assign_files(files={"a-file": b"content"})
 
-    runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
+    runner = SyncRunner(api_token=api_token, run_log_file=db_path)
     runner.start()
 
     # when
@@ -246,14 +241,14 @@ def test_sync_wait_timeout(run_init_kwargs, timeout):
     ],
 )
 @pytest.mark.timeout(TEST_TIMEOUT)
-def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method):
+def test_sync_stop_timeout(run_init_kwargs, timeout, hung_method, api_token):
     # given
     with Run(**run_init_kwargs, mode="offline") as run:
         db_path = run._operations_repo._db_path
         run.log_configs(data={"str-value": "hello-world"})
         run.assign_files(files={"a-file": b"content"})
 
-    runner = SyncRunner(api_token=API_TOKEN, run_log_file=db_path)
+    runner = SyncRunner(api_token=api_token, run_log_file=db_path)
     runner.start()
 
     # when

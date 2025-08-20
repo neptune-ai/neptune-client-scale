@@ -20,7 +20,6 @@ from .test_fetcher import (
     fetch_series_values,
 )
 
-NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 60
 
 

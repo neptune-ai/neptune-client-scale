@@ -1,4 +1,5 @@
 import logging
+import os
 import queue
 import random
 import sys
@@ -107,16 +108,29 @@ def random_series(length=10, start_step=0):
 
 
 @fixture(scope="module")
+def api_token() -> str:
+    api_token = os.getenv("NEPTUNE_E2E_API_TOKEN")
+    if api_token is None:
+        logging.warning("NEPTUNE_E2E_API_TOKEN environment variable is not set, using NEPTUNE_API_TOKEN instead")
+        api_token = os.getenv("NEPTUNE_API_TOKEN")
+
+    if api_token is None:
+        raise RuntimeError("NEPTUNE_API_TOKEN environment variable is not set")
+
+    return api_token
+
+
+@fixture(scope="module")
 def project_name(request) -> str:
-    # We allow overriding the project name per module by setting the
-    # module-level `NEPTUNE_PROJECT` variable.
-    project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
+    project_name = os.getenv("NEPTUNE_E2E_PROJECT")
+    if project_name is None:
+        raise RuntimeError("NEPTUNE_E2E_PROJECT environment variable is not set")
     return project_name
 
 
 @fixture(scope="session")
-def client() -> AuthenticatedClient:
-    return create_client()
+def client(api_token) -> AuthenticatedClient:
+    return create_client(api_token=api_token)
 
 
 def sleep_3s(**kwargs):
