@@ -124,6 +124,10 @@ def api_token() -> str:
 def project_name(request) -> str:
     project_name = os.getenv("NEPTUNE_E2E_PROJECT")
     if project_name is None:
+        logging.warning("NEPTUNE_E2E_PROJECT environment variable is not set, using NEPTUNE_PROJECT instead")
+        project_name = os.getenv("NEPTUNE_PROJECT")
+
+    if project_name is None:
         raise RuntimeError("NEPTUNE_E2E_PROJECT environment variable is not set")
     return project_name
 
