@@ -37,9 +37,9 @@ def use_temp_db_dir(temp_dir, monkeypatch):
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 @patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
-def test_warning_callback_after_sync_process_dies():
+def test_warning_callback_after_sync_process_dies(api_token):
     error_callback = Mock()
-    run = Run(project="workspace/project", on_error_callback=error_callback)
+    run = Run(api_token=api_token, project="workspace/project", on_error_callback=error_callback)
     run._sync_process.join()
 
     time.sleep(1)  # give some time for the error callback to be called
@@ -53,8 +53,10 @@ def test_warning_callback_after_sync_process_dies():
 @pytest.mark.parametrize("wait_for_processing", (True, False))
 @pytest.mark.parametrize("wait_for_file_upload", (True, False))
 @patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
-def test_run_wait_methods_after_sync_process_dies(wait_for_submission, wait_for_processing, wait_for_file_upload):
-    run = Run(project="workspace/project")
+def test_run_wait_methods_after_sync_process_dies(
+    api_token, wait_for_submission, wait_for_processing, wait_for_file_upload
+):
+    run = Run(api_token=api_token, project="workspace/project")
     run._sync_process.join()
     assert not run._sync_process.is_alive()
 
@@ -88,11 +90,11 @@ def test_sync_process_dies_after_sync_thread_dies():
 @pytest.mark.parametrize("wait_for_file_upload", (True, False))
 @patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
 def test_run_wait_methods_after_sync_process_dies_during_wait(
-    wait_for_submission, wait_for_processing, wait_for_file_upload
+    api_token, wait_for_submission, wait_for_processing, wait_for_file_upload
 ):
     """Make sure we're not blocked forever if the sync process dies before completing all the work."""
 
-    run = Run(project="workspace/project")
+    run = Run(api_token=api_token, project="workspace/project")
     run.log_metrics({"metric": 2}, step=1)
     run.assign_files(files={"a-file": b"content"})
 
@@ -114,8 +116,8 @@ def test_run_wait_methods_after_sync_process_dies_during_wait(
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 @patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
-def test_run_writable_after_sync_process_dies():
-    run = Run(project="workspace/project")
+def test_run_writable_after_sync_process_dies(api_token):
+    run = Run(api_token=api_token, project="workspace/project")
     run._sync_process.join()
 
     run.log_metrics({"metric": 2}, step=2)
@@ -137,8 +139,8 @@ def test_run_writable_after_sync_process_dies():
 
 @pytest.mark.timeout(TEST_TIMEOUT)
 @patch("neptune_scale.api.run.run_sync_process", new=sleep_3s)  # replace the sync process with no-op sleep
-def test_run_terminate_after_sync_process_dies():
-    run = Run(project="workspace/project")
+def test_run_terminate_after_sync_process_dies(api_token):
+    run = Run(api_token=api_token, project="workspace/project")
     run._sync_process.join()
 
     # Should return quickly, otherwise the timeout will trigger

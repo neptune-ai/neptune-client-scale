@@ -134,9 +134,10 @@ def test_single_non_finite_metric(run, client, project_name, value):
     assert path not in fetched
 
 
-def test_async_lag_callback(project_name):
+def test_async_lag_callback(api_token, project_name):
     event = threading.Event()
     with Run(
+        api_token=api_token,
         project=project_name,
         async_lag_threshold=0.000001,
         on_async_lag_callback=lambda: event.set(),
