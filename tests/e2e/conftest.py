@@ -39,9 +39,10 @@ def cleanup_logging_handlers():
 
 
 @fixture(scope="module")
-def run_init_kwargs(project_name):
+def run_init_kwargs(api_token, project_name):
     """Arguments to initialize a neptune_scale.Run instance"""
     return {
+        "api_token": api_token,
         "project": project_name,
         "experiment_name": "pye2e-scale",
         "run_id": str(uuid.uuid4()),
