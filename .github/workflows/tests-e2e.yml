@@ -58,7 +58,6 @@ jobs:
           report_paths: "./test-results/test-e2e*.xml"
           update_check: true
           include_passed: true
-          annotate_notice: true
           job_name: "e2e tests"
 
       - name: Notify Slack on failure
