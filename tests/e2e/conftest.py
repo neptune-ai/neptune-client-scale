@@ -111,22 +111,13 @@ def random_series(length=10, start_step=0):
 def api_token() -> str:
     api_token = os.getenv("NEPTUNE_E2E_API_TOKEN")
     if api_token is None:
-        logging.warning("NEPTUNE_E2E_API_TOKEN environment variable is not set, using NEPTUNE_API_TOKEN instead")
-        api_token = os.getenv("NEPTUNE_API_TOKEN")
-
-    if api_token is None:
         raise RuntimeError("NEPTUNE_API_TOKEN environment variable is not set")
-
     return api_token
 
 
 @fixture(scope="session")
 def project_name(request) -> str:
     project_name = os.getenv("NEPTUNE_E2E_PROJECT")
-    if project_name is None:
-        logging.warning("NEPTUNE_E2E_PROJECT environment variable is not set, using NEPTUNE_PROJECT instead")
-        project_name = os.getenv("NEPTUNE_PROJECT")
-
     if project_name is None:
         raise RuntimeError("NEPTUNE_E2E_PROJECT environment variable is not set")
     return project_name
