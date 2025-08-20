@@ -107,7 +107,7 @@ def random_series(length=10, start_step=0):
     return steps, values
 
 
-@fixture(scope="module")
+@fixture(scope="session")
 def api_token() -> str:
     api_token = os.getenv("NEPTUNE_E2E_API_TOKEN")
     if api_token is None:
@@ -120,7 +120,7 @@ def api_token() -> str:
     return api_token
 
 
-@fixture(scope="module")
+@fixture(scope="session")
 def project_name(request) -> str:
     project_name = os.getenv("NEPTUNE_E2E_PROJECT")
     if project_name is None:
