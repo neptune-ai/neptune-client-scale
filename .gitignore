@@ -130,3 +130,5 @@ stream.bin
 
 # mocks
 MagicMock/
+
+poetry.lock

@@ -34,7 +34,6 @@ from neptune_api.models import ClientConfig
 
 from neptune_scale.util.envs import (
     ALLOW_SELF_SIGNED_CERTIFICATE,
-    API_TOKEN_ENV_NAME,
     get_bool,
 )
 
@@ -54,8 +53,7 @@ class TokenRefreshingURLs:
         )
 
 
-def create_client() -> AuthenticatedClient:
-    api_token = os.getenv(API_TOKEN_ENV_NAME)
+def create_client(api_token) -> AuthenticatedClient:
     credentials = Credentials.from_api_key(api_key=api_token)
     config, token_urls = _get_config_and_token_urls(credentials=credentials, proxies=None)
     client = _create_auth_api_client(

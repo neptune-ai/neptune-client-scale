@@ -1,5 +1,4 @@
 import math
-import os
 import threading
 import time
 from datetime import (
@@ -22,7 +21,6 @@ from .test_fetcher import (
     fetch_metric_values,
 )
 
-NEPTUNE_PROJECT = os.getenv("NEPTUNE_E2E_PROJECT")
 SYNC_TIMEOUT = 60
 
 
@@ -136,10 +134,11 @@ def test_single_non_finite_metric(run, client, project_name, value):
     assert path not in fetched
 
 
-def test_async_lag_callback():
+def test_async_lag_callback(api_token, project_name):
     event = threading.Event()
     with Run(
-        project=NEPTUNE_PROJECT,
+        api_token=api_token,
+        project=project_name,
         async_lag_threshold=0.000001,
         on_async_lag_callback=lambda: event.set(),
     ) as run:

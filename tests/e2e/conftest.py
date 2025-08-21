@@ -17,7 +17,6 @@ from pytest import fixture
 
 from neptune_scale import Run
 from neptune_scale.api.run import SourceTrackingConfig
-from neptune_scale.util.envs import PROJECT_ENV_NAME
 
 from .test_fetcher.client import create_client
 
@@ -40,21 +39,14 @@ def cleanup_logging_handlers():
 
 
 @fixture(scope="module")
-def run_init_kwargs(project_name):
+def run_init_kwargs(api_token, project_name):
     """Arguments to initialize a neptune_scale.Run instance"""
-
-    # TODO: if a test fails the run could be left in an indefinite state
-    #       Maybe we should just have it scoped 'function' and require passing
-    #       an existing run id
-    kwargs = {"project": str(project_name)}
-    run_id = os.getenv("NEPTUNE_E2E_CUSTOM_RUN_ID")
-    if not run_id:
-        run_id = str(uuid.uuid4())
-        kwargs["experiment_name"] = "pye2e-scale"
-
-    kwargs["run_id"] = run_id
-
-    return kwargs
+    return {
+        "api_token": api_token,
+        "project": project_name,
+        "experiment_name": "pye2e-scale",
+        "run_id": str(uuid.uuid4()),
+    }
 
 
 @fixture(scope="module")
@@ -116,23 +108,25 @@ def random_series(length=10, start_step=0):
     return steps, values
 
 
-@fixture(scope="module")
-def project_name(request) -> str:
-    # Assume the project name and API token are set in the environment using the standard
-    # NEPTUNE_PROJECT and NEPTUNE_API_TOKEN variables.
-    #
-    # We also allow overriding the project name per module by setting the
-    # module-level `NEPTUNE_PROJECT` variable.
+@fixture(scope="session")
+def api_token() -> str:
+    api_token = os.getenv("NEPTUNE_E2E_API_TOKEN")
+    if api_token is None:
+        raise RuntimeError("NEPTUNE_API_TOKEN environment variable is not set")
+    return api_token
 
-    project_name = getattr(request.module, "NEPTUNE_PROJECT", None)
+
+@fixture(scope="session")
+def project_name(request) -> str:
+    project_name = os.getenv("NEPTUNE_E2E_PROJECT")
     if project_name is None:
-        project_name = os.getenv(PROJECT_ENV_NAME)
+        raise RuntimeError("NEPTUNE_E2E_PROJECT environment variable is not set")
     return project_name
 
 
 @fixture(scope="session")
-def client() -> AuthenticatedClient:
-    return create_client()
+def client(api_token) -> AuthenticatedClient:
+    return create_client(api_token=api_token)
 
 
 def sleep_3s(**kwargs):
