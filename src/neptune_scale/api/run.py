@@ -111,6 +111,41 @@ logger = get_logger()
 
 @dataclass
 class SourceTrackingConfig:
+    """
+    Specifies what kind of source code information to log.
+
+    Args:
+        namespace: Path of the namespace where the logged information is stored. Default is "source_code".
+        repository: Path to the Git repository. If not provided, Neptune detects it by searching the execution
+            path and its parent directories.
+        upload_run_command: Whether to log the script execution command. Defaults to True.
+        upload_entry_point: Whether to log the entry point file. Defaults to False.
+        upload_diff_head: Whether to log the diff between your current working directory and the last commit.
+            Defaults to False.
+        upload_diff_upstream: Whether to log the diff between your current branch and the upstream branch.
+            Defaults to False.
+
+    Example:
+
+        ```
+        from neptune_scale.api.run import SourceTrackingConfig
+
+        config = SourceTrackingConfig(
+            namespace="source_code_info",
+            repository="/path/to/repository",
+            upload_run_command=False,
+            upload_entry_point=True,
+            upload_diff_head=True,
+            upload_diff_upstream=True,
+        )
+
+        run = Run(
+            source_tracking_config=config,
+            ...,
+        )
+        ```
+    """
+
     namespace: str = "source_code"
     repository: Optional[Path] = None
     upload_run_command: bool = True
@@ -178,7 +213,7 @@ class Run(AbstractContextManager):
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
-
+            source_tracking_config: A reference to a `SourceTrackingConfig` object that specifies what kind of source code information to log.
         """
 
         if run_id is None:
