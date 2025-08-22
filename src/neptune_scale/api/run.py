@@ -116,8 +116,8 @@ class SourceTrackingConfig:
 
     Args:
         namespace: Path of the namespace where the logged information is stored. Default is "source_code".
-        repository: Path to the Git repository. If not provided, Neptune detects it by searching the execution
-            path and its parent directories.
+        repository: Path to the Git repository. If not provided, Neptune detects it by searching the working
+            directory and its parent directories.
         upload_run_command: Whether to log the script execution command. Defaults to True.
         upload_entry_point: Whether to log the entry point file. Defaults to False.
         upload_diff_head: Whether to log the diff between your current working directory and the last commit.
@@ -213,7 +213,8 @@ class Run(AbstractContextManager):
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
-            source_tracking_config: A reference to a `SourceTrackingConfig` object that specifies what kind of source code information to log.
+            source_tracking_config: Whether to log source code and Git information. To specify what kind of source code
+                information to log, pass a `SourceTrackingConfig` object. To disable logging, set to `None`.
         """
 
         if run_id is None:
