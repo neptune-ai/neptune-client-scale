@@ -93,6 +93,13 @@ class TokenRefreshingURLs:
         )
 
 
+@dataclass
+class FileSignRequest:
+    path: str
+    size: int
+    permission: Literal["read", "write"]
+
+
 def get_config_and_token_urls(
     *,
     credentials: Credentials,
@@ -204,15 +211,22 @@ class ApiClient:
 
     def fetch_file_storage_urls(
         self,
-        paths: Iterable[str],
+        file_sign_requests: Iterable[FileSignRequest],
         project: str,
-        mode: Literal["read", "write"],
     ) -> Response[CreateSignedUrlsResponse]:
-        permission = Permission(mode)
+        files_to_sign = [
+            FileToSign(
+                path=request.path,
+                project_identifier=project,
+                permission=Permission(request.permission),
+                size=request.size,
+            )
+            for request in file_sign_requests
+        ]
         return signed_url_generic.sync_detailed(
             client=self.backend,
             body=CreateSignedUrlsRequest(
-                files=[FileToSign(path=path, project_identifier=project, permission=permission) for path in paths],
+                files=files_to_sign,
             ),
         )
 

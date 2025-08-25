@@ -11,4 +11,3 @@ pytest-timeout
 pytest-xdist
 freezegun
 numpy
-neptune-api

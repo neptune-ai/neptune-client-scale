@@ -139,6 +139,6 @@ def _download_from_url(
 ) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with open(target_path, mode="wb") as file:
-        response = requests.get(signed_url)
+        response = requests.get(signed_url, stream=True)
         for chunk in response.iter_content(chunk_size=1024 * 1024 * 4):
             file.write(chunk)
