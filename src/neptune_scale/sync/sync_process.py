@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 
 from neptune_api.models import Provider
@@ -17,7 +18,10 @@ from neptune_scale.sync.operations_repository import (
 from neptune_scale.sync.size_util import proto_encoded_bytes_field_size
 from neptune_scale.sync.storage.azure_storage import upload_to_azure
 from neptune_scale.sync.storage.gcs import upload_to_gcp
-from neptune_scale.sync.storage.s3 import upload_to_s3
+from neptune_scale.sync.storage.s3 import (
+    upload_to_s3_multipart,
+    upload_to_s3_single,
+)
 
 __all__ = ("run_sync_process",)
 
@@ -26,6 +30,7 @@ import functools as ft
 import os
 import signal
 import threading
+from collections.abc import Mapping
 from types import FrameType
 from typing import (
     Optional,
@@ -556,7 +561,7 @@ class FileUploaderThread(Daemon):
                     )
                     for file in file_upload_requests
                 ]
-                storage_urls = fetch_file_storage_urls(self._api_client, self._project, file_sign_requests)
+                storage_urls_all = fetch_file_storage_urls(self._api_client, self._project, file_sign_requests)
 
                 # Fan out file uploads as async tasks, and block until all tasks are done.
                 # Note that self._upload_file() should not raise an exception, as they are handled
@@ -564,8 +569,8 @@ class FileUploaderThread(Daemon):
                 # waits for all the tasks to finish regardless of any exceptions.
                 tasks = []
                 for file in file_upload_requests:
-                    provider, storage_url = storage_urls[file.destination]
-                    tasks.append(self._upload_file(file, provider, storage_url))
+                    storage_urls = storage_urls_all[file.destination]
+                    tasks.append(self._upload_file(file, storage_urls))
 
                 self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
@@ -578,14 +583,32 @@ class FileUploaderThread(Daemon):
             self.interrupt()
             raise NeptuneSynchronizationStopped() from e
 
-    async def _upload_file(self, file: FileUploadRequest, provider: str, storage_url: str) -> None:
+    async def _upload_file(self, file: FileUploadRequest, storage_urls: StorageUrlResult) -> None:
         try:
+            provider = storage_urls.provider
             if provider == Provider.AZURE:
-                await upload_to_azure(file.source_path, file.mime_type, storage_url, chunk_size=self._upload_chunk_size)
+                await upload_to_azure(
+                    file.source_path, file.mime_type, storage_urls.url, chunk_size=self._upload_chunk_size
+                )
             elif provider == Provider.GCP:
-                await upload_to_gcp(file.source_path, file.mime_type, storage_url, chunk_size=self._upload_chunk_size)
+                await upload_to_gcp(
+                    file.source_path, file.mime_type, storage_urls.url, chunk_size=self._upload_chunk_size
+                )
             elif provider == Provider.AWS:
-                await upload_to_s3(file.source_path, file.mime_type, storage_url)
+                if storage_urls.multipart_upload is None:
+                    await upload_to_s3_single(file.source_path, file.mime_type, storage_urls.url)
+                else:
+                    multipart = storage_urls.multipart_upload
+                    etags = await upload_to_s3_multipart(
+                        file.source_path, file.mime_type, multipart.part_size, multipart.part_urls
+                    )
+                    complete_multipart_upload(
+                        self._api_client,
+                        project=self._project,
+                        upload_id=multipart.upload_id,
+                        destination=file.destination,
+                        etags=etags,
+                    )
             else:
                 raise NeptuneUnexpectedError(f"Unsupported file storage provider: {provider}")
 
@@ -610,17 +633,31 @@ class FileUploaderThread(Daemon):
             self._aio_loop.close()
 
 
+@dataclass(frozen=True)
+class MultipartUpload:
+    upload_id: str
+    part_size: int
+    part_urls: list[str]
+
+
+@dataclass(frozen=True)
+class StorageUrlResult:
+    provider: str
+    url: str
+    multipart_upload: Optional[MultipartUpload]
+
+
 @backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
 @with_api_errors_handling
 def fetch_file_storage_urls(
     client: ApiClient, project: str, file_sign_requests: list[FileSignRequest]
-) -> dict[str, tuple[str, str]]:
+) -> dict[str, StorageUrlResult]:
     """Fetch signed URLs for storing files. Returns a dict of target_path -> (provider, upload url)."""
 
     logger.debug("Fetching file storage urls")
     response = client.fetch_file_storage_urls(file_sign_requests=file_sign_requests, project=project)
     status_code = response.status_code
-    if status_code != 200:
+    if status_code // 100 != 2:
         logger.debug(f"{response.content=!r}")
         _raise_exception(status_code)
 
@@ -628,13 +665,31 @@ def fetch_file_storage_urls(
     if parsed is None:
         raise NeptuneUnexpectedResponseError("Server response is empty")
 
-    result = {}
+    results = {}
     for file in parsed.files or []:
+        multipart_upload = None
         if file.multipart:
-            # TODO support multipart uploads
-            raise NeptuneUnexpectedResponseError(
-                f"Server returned multipart file upload URLs for the file {file.url}, which are not supported"
+            multipart_upload = MultipartUpload(
+                upload_id=file.multipart.upload_id,
+                part_size=file.multipart.part_size,
+                part_urls=list(file.multipart.part_urls),
             )
 
-        result[file.path] = (file.provider, file.url)
-    return result
+        result = StorageUrlResult(provider=str(file.provider), url=file.url, multipart_upload=multipart_upload)
+        results[file.path] = result
+    return results
+
+
+@backoff.on_exception(backoff.expo, NeptuneRetryableError, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
+@with_api_errors_handling
+def complete_multipart_upload(
+    client: ApiClient, project: str, upload_id: str, destination: str, etags: Mapping[int, str]
+) -> None:
+    """Fetch signed URLs for storing files. Returns a dict of target_path -> (provider, upload url)."""
+
+    logger.debug("Completing multipart upload")
+    response = client.complete_multipart_upload(upload_id=upload_id, project=project, path=destination, etags=etags)
+    status_code = response.status_code
+    if status_code // 100 != 2:
+        logger.debug(f"{response.content=!r}")
+        _raise_exception(status_code)
