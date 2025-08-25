@@ -54,6 +54,12 @@ SYNC_TIMEOUT = 60
         {"test_files/汉字Пр\U00009999/file_txt2": "e2e/resources/file.txt"},
         {"test_files/file_path_length1-" + "a" * 47: "e2e/resources/file.txt"},  # just below file metadata limit
         {"test_files/file_large1": random.randbytes(10 * 1024 * 1024)},
+        {
+            "test_files/file_large2": File(
+                "\n".join(chr(ord("a") + line) * 1024 * 1023 for line in range(11)).encode("utf8"),
+                mime_type="text/plain",
+            )
+        },
         {"test_files/file_empty1": "e2e/resources/empty_file"},
         {"test_files/file_metadata1": File("e2e/resources/file.txt", mime_type="a" * 128)},
         {"test_files/file_metadata2": File("e2e/resources/file.txt", destination="a" * 800)},
