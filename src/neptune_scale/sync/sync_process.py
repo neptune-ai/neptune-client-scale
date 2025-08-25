@@ -642,7 +642,7 @@ class MultipartUpload:
 
 @dataclass(frozen=True)
 class StorageUrlResult:
-    provider: Provider
+    provider: str
     url: str
     multipart_upload: Optional[MultipartUpload]
 
@@ -675,7 +675,7 @@ def fetch_file_storage_urls(
                 part_urls=list(file.multipart.part_urls),
             )
 
-        result = StorageUrlResult(provider=file.provider, url=file.url, multipart_upload=multipart_upload)
+        result = StorageUrlResult(provider=str(file.provider), url=file.url, multipart_upload=multipart_upload)
         results[file.path] = result
     return results
 
