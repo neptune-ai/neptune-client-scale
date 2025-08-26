@@ -500,6 +500,8 @@ def test_status_thread_processes_element():
         ingest_pb2.IngestCode.RUN_NOT_FOUND,
         ingest_pb2.IngestCode.RUN_CONFLICTING,
         ingest_pb2.IngestCode.RUN_INVALID_CREATION_PARAMETERS,
+        # this error is skipped, tested separately in test_status_thread_skips_errors_that_should_not_be_reported
+        ingest_pb2.IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED,
     },
 )
 def test_status_thread_processes_element_with_standard_error_code(detail):
