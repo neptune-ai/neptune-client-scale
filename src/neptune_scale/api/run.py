@@ -213,7 +213,7 @@ class Run(AbstractContextManager):
             on_warning_callback: Callback function triggered when a warning occurs.
             enable_console_log_capture: Whether to capture stdout/stderr and log them to Neptune.
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
-            source_tracking_config: Whether to log source code and Git information. To specify what kind of source code
+            source_tracking_config: Change or disable the logging of source code and Git information. To specify what
                 information to log, pass a `SourceTrackingConfig` object. To disable logging, set to `None`.
         """
 
