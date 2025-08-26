@@ -41,6 +41,7 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
     NeptuneUnexpectedError,
 )
+from neptune_scale.net.api_client import FileSignRequest
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
@@ -773,7 +774,9 @@ def test_file_uploader_thread_successful_upload_flow(
 
     # Storage URLs should be fetched for all files
     mock_fetch_file_storage_urls.assert_called_once_with(
-        uploader_thread._api_client, "workspace/project", ["target/text.txt", "target/image.jpg"]
+        uploader_thread._api_client,
+        "workspace/project",
+        [FileSignRequest("target/text.txt", 4, "write"), FileSignRequest("target/image.jpg", 4, "write")],
     )
 
     expected_calls = [
@@ -885,7 +888,9 @@ def test_file_uploader_thread_terminal_error(
     uploader_thread.join()
 
     mock_fetch_file_storage_urls.assert_called_once_with(
-        uploader_thread._api_client, "workspace/project", ["target/text.txt", "target/image.jpg"]
+        uploader_thread._api_client,
+        "workspace/project",
+        [FileSignRequest("target/text.txt", 123, "write"), FileSignRequest("target/image.jpg", 4, "write")],
     )
 
     # An upload attempt should be made for both files
@@ -906,7 +911,7 @@ def test_file_uploader_thread_terminal_error(
     assert isinstance(mock_operations_repository.save_errors.call_args[0][0][0], NeptuneFileUploadError)
 
 
-@patch("neptune_scale.sync.sync_process.BlobClient")
+@patch("neptune_scale.sync.storage.azure_storage.BlobClient")
 @pytest.mark.parametrize(
     "upload_error, is_temporary",
     [
@@ -967,7 +972,14 @@ def test_file_uploader_thread_non_terminal_error(
 
     # Signed urls should be requested for each attempt
     mock_fetch_file_storage_urls.assert_has_calls(
-        [call(uploader_thread._api_client, "workspace/project", [disk_upload_request.destination])] * 3
+        [
+            call(
+                uploader_thread._api_client,
+                "workspace/project",
+                [FileSignRequest(disk_upload_request.destination, disk_upload_request.size_bytes, "write")],
+            )
+        ]
+        * 3
     )
 
     # An upload attempt should be made for 2 failures and the final success

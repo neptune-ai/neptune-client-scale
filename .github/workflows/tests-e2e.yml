@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.9", "3.13" ]
-        env_target: [ "AZURE", "GCP" ]
+        env_target: [ "AZURE", "GCP", "AWS" ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

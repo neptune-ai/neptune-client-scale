@@ -32,7 +32,7 @@ SYNC_TIMEOUT = 60
         {"test_files/file_txt4": File(source="e2e/resources/file.txt")},
         {"test_files/file_txt5": File(source="e2e/resources/file.txt", mime_type="application/json")},
         {"test_files/file_txt6": File(source=pathlib.Path("e2e/resources/file.txt"), mime_type="application/json")},
-        {"test_files/file_txt7": File(source="e2e/resources/file.txt", size=1024)},
+        {"test_files/file_txt7": File(source="e2e/resources/file.txt", size=19)},
         {"test_files/file_txt8": File(source="e2e/resources/file.txt", destination="custom_destination.txt")},
         {"test_files/file_txt9": "e2e/resources/link_file"},
         {"test_files/file_binary1": "e2e/resources/binary_file"},
@@ -358,7 +358,7 @@ def test_assign_files_error_no_access(run, client, project_name, temp_dir):
                 source=pathlib.Path("e2e/resources/file.txt"), mime_type="application/json"
             )
         },
-        {"test_file_series/file_txt7": File(source="e2e/resources/file.txt", size=1024)},
+        {"test_file_series/file_txt7": File(source="e2e/resources/file.txt", size=19)},
         {"test_file_series/file_txt8": File(source="e2e/resources/file.txt", destination="custom_destination.txt")},
         {"test_file_series/file_txt9": "e2e/resources/link_file"},
         {"test_file_series/file_binary1": "e2e/resources/binary_file"},
