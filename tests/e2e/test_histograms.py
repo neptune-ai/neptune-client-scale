@@ -16,6 +16,7 @@ def raise_on_invalid_value():
         yield
 
 
+@pytest.mark.skip(reason="Histograms are not public yet")
 @pytest.mark.parametrize("values", ("counts", "densities"))
 @pytest.mark.parametrize("use_numpy", (True, False), ids=("np.array", "list"))
 def test_histograms(run, client, project_name, values, use_numpy):

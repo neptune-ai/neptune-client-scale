@@ -1,6 +1,8 @@
+import math
 from datetime import datetime
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from freezegun import freeze_time
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -14,8 +16,12 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
+from pytest import mark
 
-from neptune_scale.exceptions import NeptuneUnableToLogData
+from neptune_scale.exceptions import (
+    NeptuneFloatValueNanInfUnsupported,
+    NeptuneUnableToLogData,
+)
 from neptune_scale.sync.metadata_splitter import (
     FileRefData,
     MetadataSplitter,
@@ -434,6 +440,71 @@ def test_split_large_tags():
     assert {tag for op in result for tag in op.modify_sets["remove/tag"].string.values.keys()} == remove_tags[
         "remove/tag"
     ]
+
+
+@patch("neptune_scale.sync.metadata_splitter.SHOULD_SKIP_NON_FINITE_METRICS", False)
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+def test_raise_on_non_finite_float_metrics(value):
+    # given
+    metrics = Metrics(
+        data={"bad-metric": value},
+    )
+    splitter = MetadataSplitter(
+        project="workspace/project",
+        run_id="run_id",
+        timestamp=datetime.now(),
+        step=10,
+        configs={},
+        metrics=metrics,
+        files=None,
+        file_series=None,
+        add_tags={},
+        remove_tags={},
+        max_message_bytes_size=1024,
+    )
+
+    # when
+    with pytest.raises(NeptuneFloatValueNanInfUnsupported) as exc:
+        next(splitter)
+
+    # then
+    exc.match("metric `bad-metric`")
+    exc.match("step `10`")
+    exc.match(f"non-finite value of `{value}`")
+
+
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+def test_skip_non_finite_float_metrics(value, caplog):
+    with caplog.at_level("WARNING"):
+        # given
+        metrics = Metrics(
+            data={"bad-metric": value},
+        )
+
+        # when
+        builder = MetadataSplitter(
+            project="workspace/project",
+            run_id="run_id",
+            timestamp=datetime.now(),
+            step=10,
+            configs={},
+            metrics=metrics,
+            files=None,
+            file_series=None,
+            add_tags={},
+            remove_tags={},
+            max_message_bytes_size=1024,
+        )
+
+        result = list(builder)
+
+        # then
+        assert len(result) == 1
+        operation = result[0]
+        assert not operation.assign
+
+        assert "Skipping a non-finite value" in caplog.text
+        assert "bad-metric" in caplog.text
 
 
 @pytest.mark.parametrize("action", ("raise", "drop"))

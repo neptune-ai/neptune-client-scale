@@ -7,7 +7,7 @@ from datetime import (
 )
 
 import numpy as np
-import pytest
+from pytest import mark
 
 from neptune_scale.api.run import Run
 from neptune_scale.util import source_tracking
@@ -123,21 +123,15 @@ def test_metric_fetch_and_append(run, client, project_name):
     assert list(fetched[path].values()) == values + values2
 
 
-@pytest.mark.skip("Skipped until inf/nan handling is enabled in the backend")
-@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
+@mark.parametrize("value", [np.inf, -np.inf, np.nan, math.inf, -math.inf, math.nan])
 def test_single_non_finite_metric(run, client, project_name, value):
     path = unique_path("test_series/non_finite")
-    step = 1
 
-    run.log_metrics(data={path: value}, step=step)
+    run.log_metrics(data={path: value}, step=1)
     assert run.wait_for_processing(SYNC_TIMEOUT)
 
     fetched = fetch_metric_values(client=client, project=project_name, custom_run_id=run._run_id, attributes=[path])
-    assert path in fetched
-    if math.isnan(value):
-        assert math.isnan(fetched[path][step])
-    else:
-        assert fetched[path][step] == value
+    assert path not in fetched
 
 
 def test_async_lag_callback(api_token, project_name):
