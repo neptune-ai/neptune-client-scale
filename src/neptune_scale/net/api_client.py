@@ -81,6 +81,7 @@ from neptune_scale.exceptions import (
 )
 from neptune_scale.sync.parameters import HTTP_CLIENT_NETWORKING_TIMEOUT
 from neptune_scale.util.envs import (
+    ALLOW_SELF_SIGNED_CERTIFICATE,
     VERIFY_SSL,
     get_bool,
 )
@@ -187,7 +188,7 @@ class ApiClient:
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
-        verify_ssl: bool = get_bool(VERIFY_SSL, default=True)
+        verify_ssl: bool = get_bool(VERIFY_SSL, default=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, False))
 
         logger.debug("Trying to connect to Neptune API")
         config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)
