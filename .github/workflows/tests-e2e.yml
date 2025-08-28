@@ -21,8 +21,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.9", "3.13" ]
-        # env_target: [ "AZURE", "GCP", "AWS" ]
-        env_target: [ "AZURE" ]
+        env_target: [ "AZURE", "GCP", "AWS" ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,7 +41,6 @@ jobs:
         env:
           NEPTUNE_E2E_API_TOKEN: ${{ secrets[format('E2E_API_TOKEN_{0}', matrix.env_target)] }}
           NEPTUNE_E2E_PROJECT: ${{ secrets[format('E2E_PROJECT_{0}', matrix.env_target)] }}
-          NEPTUNE_ALLOW_SELF_SIGNED_CERTIFICATE: ${{ matrix.env_target == 'GCP' }}
         run: pytest --junitxml="test-results/test-e2e-${{ matrix.python-version }}.xml" --tap-stream tests/e2e
 
       - name: Upload test reports

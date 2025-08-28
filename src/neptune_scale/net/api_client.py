@@ -22,6 +22,7 @@ import os
 from collections.abc import (
     Callable,
     Iterable,
+    Mapping,
 )
 from dataclasses import dataclass
 from json import JSONDecodeError
@@ -42,7 +43,10 @@ from neptune_api.api.ingestion import (
     bulk_check_status,
     ingest,
 )
-from neptune_api.api.storage import signed_url_generic
+from neptune_api.api.storage import (
+    complete_multipart_upload,
+    signed_url_generic,
+)
 from neptune_api.auth_helpers import exchange_api_key
 from neptune_api.credentials import Credentials
 from neptune_api.errors import (
@@ -55,9 +59,11 @@ from neptune_api.errors import (
 )
 from neptune_api.models import (
     ClientConfig,
+    CompleteMultipartUploadRequest,
     CreateSignedUrlsRequest,
     CreateSignedUrlsResponse,
     FileToSign,
+    MultipartPart,
     Permission,
 )
 from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
@@ -227,6 +233,25 @@ class ApiClient:
             client=self.backend,
             body=CreateSignedUrlsRequest(
                 files=files_to_sign,
+            ),
+        )
+
+    def complete_multipart_upload(
+        self, upload_id: str, project: str, path: str, etags: Mapping[int, str]
+    ) -> Response[Any]:
+        return complete_multipart_upload.sync_detailed(
+            client=self.backend,
+            body=CompleteMultipartUploadRequest(
+                upload_id=upload_id,
+                project_identifier=project,
+                path=path,
+                parts=[
+                    MultipartPart(
+                        part_number=ix,
+                        etag=etag,
+                    )
+                    for ix, etag in etags.items()
+                ],
             ),
         )
 

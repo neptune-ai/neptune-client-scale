@@ -112,7 +112,7 @@ def random_series(length=10, start_step=0):
 def api_token() -> str:
     api_token = os.getenv("NEPTUNE_E2E_API_TOKEN")
     if api_token is None:
-        raise RuntimeError("NEPTUNE_API_TOKEN environment variable is not set")
+        raise RuntimeError("NEPTUNE_E2E_API_TOKEN environment variable is not set")
     return api_token
 
 

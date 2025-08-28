@@ -55,8 +55,10 @@ from neptune_scale.sync.operations_repository import (
 from neptune_scale.sync.parameters import MAX_REQUEST_SIZE_BYTES
 from neptune_scale.sync.sync_process import (
     FileUploaderThread,
+    MultipartUpload,
     SenderThread,
     StatusTrackingThread,
+    StorageUrlResult,
     code_to_exception,
     upload_to_azure,
 )
@@ -671,7 +673,7 @@ def mock_api_client():
         yield mock
 
 
-@pytest.fixture(params=["azure", "gcp"])
+@pytest.fixture(params=["azure", "gcp", "aws"])
 def provider(request):
     yield request.param
 
@@ -679,7 +681,10 @@ def provider(request):
 @pytest.fixture
 def mock_fetch_file_storage_urls(provider):
     with patch("neptune_scale.sync.sync_process.fetch_file_storage_urls") as mock:
-        mock.return_value = {"target/text.txt": (provider, "text-url"), "target/image.jpg": (provider, "image-url")}
+        mock.return_value = {
+            "target/text.txt": StorageUrlResult(provider, "text-url", None),
+            "target/image.jpg": StorageUrlResult(provider, "image-url", None),
+        }
         yield mock
 
 
@@ -688,13 +693,20 @@ def mock_upload_func(provider):
     with (
         patch("neptune_scale.sync.sync_process.upload_to_azure") as mock_azure,
         patch("neptune_scale.sync.sync_process.upload_to_gcp") as mock_gcp,
+        patch("neptune_scale.sync.sync_process.upload_to_s3_single") as mock_aws,
     ):
         if provider == "azure":
             yield mock_azure
             mock_gcp.assert_not_called()
-        else:
+            mock_aws.assert_not_called()
+        elif provider == "gcp":
             yield mock_gcp
             mock_azure.assert_not_called()
+            mock_aws.assert_not_called()
+        elif provider == "aws":
+            yield mock_aws
+            mock_azure.assert_not_called()
+            mock_gcp.assert_not_called()
 
 
 @pytest.fixture
@@ -750,6 +762,7 @@ def uploader_thread(
 
 
 def test_file_uploader_thread_successful_upload_flow(
+    provider,
     temp_dir,
     uploader_thread,
     mock_fetch_file_storage_urls,
@@ -779,10 +792,16 @@ def test_file_uploader_thread_successful_upload_flow(
         [FileSignRequest("target/text.txt", 4, "write"), FileSignRequest("target/image.jpg", 4, "write")],
     )
 
-    expected_calls = [
-        call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url", chunk_size=ANY),
-        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
-    ]
+    if provider == "aws":
+        expected_calls = [
+            call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url"),
+            call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
+        ]
+    else:
+        expected_calls = [
+            call(buffer_upload_request.source_path, buffer_upload_request.mime_type, "text-url", chunk_size=ANY),
+            call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
+        ]
     # All files should be uploaded
     mock_upload_func.assert_has_calls(expected_calls)
 
@@ -819,7 +838,7 @@ def test_file_uploader_uploads_concurrently(
     concurrent_uploads = 0
     peak_uploads = 0
 
-    async def _upload_file(local_path, mime_type, storage_url, chunk_size):
+    async def _upload_file(local_path, mime_type, storage_url, chunk_size=None):
         """Track the number of concurrent uploads and the peak number of concurrent uploads."""
         nonlocal peak_uploads, concurrent_uploads
 
@@ -862,6 +881,7 @@ def test_file_uploader_uploads_concurrently(
 
 
 def test_file_uploader_thread_terminal_error(
+    provider,
     temp_dir,
     uploader_thread,
     mock_fetch_file_storage_urls,
@@ -894,10 +914,16 @@ def test_file_uploader_thread_terminal_error(
     )
 
     # An upload attempt should be made for both files
-    expected_calls = [
-        call("no-such-file", "text/plain", "text-url", chunk_size=ANY),
-        call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
-    ]
+    if provider == "aws":
+        expected_calls = [
+            call("no-such-file", "text/plain", "text-url"),
+            call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url"),
+        ]
+    else:
+        expected_calls = [
+            call("no-such-file", "text/plain", "text-url", chunk_size=ANY),
+            call(disk_upload_request.source_path, disk_upload_request.mime_type, "image-url", chunk_size=ANY),
+        ]
     mock_upload_func.assert_has_calls(expected_calls)
 
     # Both files should be deleted from the repository
@@ -996,20 +1022,43 @@ def test_file_uploader_thread_non_terminal_error(
     )
 
 
+@patch("neptune_scale.sync.sync_process.complete_multipart_upload")
+@patch("neptune_scale.sync.sync_process.upload_to_s3_multipart")
+@patch("neptune_scale.sync.sync_process.upload_to_s3_single")
 @patch("neptune_scale.sync.sync_process.upload_to_gcp")
 @patch("neptune_scale.sync.sync_process.upload_to_azure")
 def test_file_uploader_thread_uploads_to_correct_provider(
-    mock_upload_to_azure, mock_upload_to_gcp, uploader_thread, mock_operations_repository, disk_upload_request
+    mock_upload_to_azure,
+    mock_upload_to_gcp,
+    mock_upload_to_s3_single,
+    mock_upload_to_s3_multipart,
+    complete_multipart_upload,
+    uploader_thread,
+    mock_operations_repository,
+    disk_upload_request,
 ):
     """If Neptune storage API returns multiple providers in a single response, FileUploaderThread should
     still call the correct upload function for each provider."""
+    mock_upload_to_s3_multipart.return_value = {1: "etag1", 2: "etag2"}
 
     with patch("neptune_scale.sync.sync_process.fetch_file_storage_urls") as mock_fetch_urls:
         mock_fetch_urls.return_value = {
-            "azure-1.jpg": ("azure", "azure-url-1"),
-            "gcp-1.jpg": ("gcp", "gcp-url-1"),
-            "azure-2.jpg": ("azure", "azure-url-2"),
-            "gcp-2.jpg": ("gcp", "gcp-url-2"),
+            "azure-1.jpg": StorageUrlResult("azure", "azure-url-1", None),
+            "gcp-1.jpg": StorageUrlResult("gcp", "gcp-url-1", None),
+            "aws-1.jpg": StorageUrlResult("aws", "aws-url-1", None),
+            "aws-multipart-1.jpg": StorageUrlResult(
+                "aws",
+                "aws-multipart-url-1",
+                MultipartUpload("upload-id", 10, ["aws-multipart-url-1a", "aws-multipart-url-1b"]),
+            ),
+            "azure-2.jpg": StorageUrlResult("azure", "azure-url-2", None),
+            "gcp-2.jpg": StorageUrlResult("gcp", "gcp-url-2", None),
+            "aws-2.jpg": StorageUrlResult("aws", "aws-url-2", None),
+            "aws-multipart-2.jpg": StorageUrlResult(
+                "aws",
+                "aws-multipart-url-2",
+                MultipartUpload("upload-id", 20, ["aws-multipart-url-2a", "aws-multipart-url-2b"]),
+            ),
         }
 
         # The disk_upload_request is not a temporary file, so use it to create upload requests for
@@ -1045,5 +1094,37 @@ def test_file_uploader_thread_uploads_to_correct_provider(
             [
                 call(local_path, mime_type, "gcp-url-1", chunk_size=ANY),
                 call(local_path, mime_type, "gcp-url-2", chunk_size=ANY),
+            ]
+        )
+
+        assert mock_upload_to_s3_single.call_count == 2
+        mock_upload_to_s3_single.assert_has_calls(
+            [call(local_path, mime_type, "aws-url-1"), call(local_path, mime_type, "aws-url-2")]
+        )
+
+        assert mock_upload_to_s3_multipart.call_count == 2
+        mock_upload_to_s3_multipart.assert_has_calls(
+            [
+                call(local_path, mime_type, 10, ["aws-multipart-url-1a", "aws-multipart-url-1b"]),
+                call(local_path, mime_type, 20, ["aws-multipart-url-2a", "aws-multipart-url-2b"]),
+            ]
+        )
+        assert complete_multipart_upload.call_count == 2
+        complete_multipart_upload.assert_has_calls(
+            [
+                call(
+                    ANY,
+                    project="workspace/project",
+                    upload_id="upload-id",
+                    destination=ANY,
+                    etags={1: "etag1", 2: "etag2"},
+                ),
+                call(
+                    ANY,
+                    project="workspace/project",
+                    upload_id="upload-id",
+                    destination=ANY,
+                    etags={1: "etag1", 2: "etag2"},
+                ),
             ]
         )

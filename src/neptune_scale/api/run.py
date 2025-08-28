@@ -1145,7 +1145,7 @@ class Run(AbstractContextManager):
                     file_path = Path(source)
                     mime_type = mime_type or guess_mime_type_from_file(file_path, destination)
                     if mime_type is None:
-                        raise Exception(f"Cannot determine mime type for file '{file_path}'")
+                        raise ValueError(f"Cannot determine mime type for file '{file_path}'")
                     size = size or file_path.stat().st_size
                 else:
                     logger.warning(f"Skipping file attribute `{attr_name}`: Unsupported type {type(file)}")

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import aiofiles
@@ -12,15 +13,14 @@ from neptune_scale.sync.parameters import (
 )
 from neptune_scale.util import get_logger
 
-__all__ = ["upload_to_s3"]
+__all__ = ["upload_to_s3_single", "upload_to_s3_multipart"]
 
 logger = get_logger()
 
 
-async def upload_to_s3(file_path: str, content_type: str, signed_url: str) -> None:
+async def upload_to_s3_single(file_path: str, content_type: str, signed_url: str) -> None:
     """
-    Upload a file to S3 using a signed URL. The upload is done in a single part and resumed in case of a failure.
-    TODO: Implement multipart upload for larger files.
+    Upload a file to S3 using a signed URL. The upload is done in a single part and is retried in case of a failure.
 
     Raises NeptuneFileUploadTemporaryError if a retryable error happens, otherwise any other non-retryable exception
     that occurs.
@@ -30,7 +30,17 @@ async def upload_to_s3(file_path: str, content_type: str, signed_url: str) -> No
 
     try:
         async with AsyncClient(timeout=httpx.Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT)) as client:
-            await _upload_file(client, signed_url, file_path, content_type)
+            async with aiofiles.open(file_path, "rb") as file:
+                file_size = Path(file_path).stat().st_size
+                if file_size == 0:
+                    await _upload_content(client, signed_url, b"", content_type)
+                    return
+
+                content = await file.read()
+                if not content:
+                    raise OSError("File truncated during upload")
+
+                await _upload_content(client, signed_url, content, content_type)
     except httpx.RequestError as e:
         logger.debug(f"Temporary error while uploading {file_path}: {e}")
         raise NeptuneFileUploadTemporaryError() from e
@@ -44,19 +54,54 @@ async def upload_to_s3(file_path: str, content_type: str, signed_url: str) -> No
     logger.debug(f"Finished upload to S3: {file_path}")
 
 
-async def _upload_file(client: AsyncClient, signed_url: str, file_path: str, content_type: str) -> None:
-    # TODO: Implement multipart upload for larger files
-    file_size = Path(file_path).stat().st_size
-    if file_size == 0:
-        await _upload_part(client, signed_url, b"", content_type)
-        return
+async def upload_to_s3_multipart(
+    file_path: str, content_type: str, part_size: int, part_urls: list[str]
+) -> dict[int, str]:
+    """
+    Upload a file to S3 using a signed URL. The upload uses multiple signed urls for each part and finishes the upload
+    by calling the complete multipart upload endpoint.
 
-    async with aiofiles.open(file_path, "rb") as file:
-        content = await file.read()
-        if not content:
-            raise Exception("File truncated during upload")
+    Raises NeptuneFileUploadTemporaryError if a retryable error happens, otherwise any other non-retryable exception
+    that occurs.
+    """
 
-        await _upload_part(client, signed_url, content, content_type)
+    logger.debug(f"Starting upload to S3: {file_path}, {content_type=}")
+
+    async def upload_part(part_ix: int, part_url: str, content: bytes) -> tuple[int, str]:
+        etag = await _upload_content(client, part_url, content, content_type)
+        return part_ix, etag
+
+    try:
+        async with AsyncClient(timeout=httpx.Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT)) as client:
+            file_size = Path(file_path).stat().st_size
+            if file_size == 0:
+                raise ValueError("Cannot upload an empty file with multipart upload")
+
+            async with aiofiles.open(file_path, "rb") as file:
+                tasks = []
+                for part_ix, part_url in enumerate(part_urls, start=1):
+                    content = await file.read(part_size)
+
+                    if not content:
+                        raise OSError("File truncated during upload")
+
+                    tasks.append(upload_part(part_ix, part_url, content))
+
+                results = await asyncio.gather(*tasks)
+                etags = dict(results)
+
+        logger.debug(f"Finished upload to S3: {file_path}")
+        return etags
+
+    except httpx.RequestError as e:
+        logger.debug(f"Temporary error while uploading {file_path}: {e}")
+        raise NeptuneFileUploadTemporaryError() from e
+    except httpx.HTTPStatusError as e:
+        logger.debug(f"HTTP {e.response.status_code} error while uploading {file_path}: {e}, {e.response.content=!r}")
+        if _is_retryable_httpx_error(e):
+            raise NeptuneFileUploadTemporaryError() from e
+        else:
+            raise
 
 
 def _is_retryable_httpx_error(exc: Exception) -> bool:
@@ -78,10 +123,15 @@ def _is_retryable_httpx_error(exc: Exception) -> bool:
 
 
 @backoff.on_predicate(backoff.expo, _is_retryable_httpx_error, max_time=HTTP_REQUEST_MAX_TIME_SECONDS)
-async def _upload_part(client: AsyncClient, session_uri: str, content: bytes, content_type: str) -> None:
+async def _upload_content(client: AsyncClient, session_uri: str, content: bytes, content_type: str) -> str:
     # The docs at https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html
     # provide Content-Type as the only header
     headers = {"Content-Type": content_type}
 
     response = await client.put(session_uri, headers=headers, content=content)
     response.raise_for_status()
+
+    etag = response.headers.get("ETag", "")
+    if not etag:
+        raise ValueError("ETag header missing in S3 upload response")
+    return str(etag).strip('"')
