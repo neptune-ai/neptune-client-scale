@@ -38,7 +38,7 @@ async def upload_to_s3_single(file_path: str, content_type: str, signed_url: str
 
                 content = await file.read()
                 if not content:
-                    raise Exception("File truncated during upload")
+                    raise OSError("File truncated during upload")
 
                 await _upload_content(client, signed_url, content, content_type)
     except httpx.RequestError as e:
@@ -75,7 +75,7 @@ async def upload_to_s3_multipart(
         async with AsyncClient(timeout=httpx.Timeout(timeout=HTTP_CLIENT_NETWORKING_TIMEOUT)) as client:
             file_size = Path(file_path).stat().st_size
             if file_size == 0:
-                raise Exception("Cannot upload an empty file with multipart upload")
+                raise ValueError("Cannot upload an empty file with multipart upload")
 
             async with aiofiles.open(file_path, "rb") as file:
                 tasks = []
@@ -83,7 +83,7 @@ async def upload_to_s3_multipart(
                     content = await file.read(part_size)
 
                     if not content:
-                        raise Exception("File truncated during upload")
+                        raise OSError("File truncated during upload")
 
                     tasks.append(upload_part(part_ix, part_url, content))
 
@@ -133,5 +133,5 @@ async def _upload_content(client: AsyncClient, session_uri: str, content: bytes,
 
     etag = response.headers.get("ETag", "")
     if not etag:
-        raise Exception("ETag header missing in S3 upload response")
+        raise ValueError("ETag header missing in S3 upload response")
     return str(etag).strip('"')

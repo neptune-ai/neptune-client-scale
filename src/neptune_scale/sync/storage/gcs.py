@@ -60,7 +60,7 @@ async def _upload_file(client: AsyncClient, session_uri: str, file_path: str, fi
         while file_position < file_size:
             chunk = await file.read(chunk_size)
             if not chunk:
-                raise Exception("File truncated during upload")
+                raise OSError("File truncated during upload")
 
             upload_position = await _upload_chunk(client, session_uri, chunk, file_position, file_size)
             file_position += len(chunk)
