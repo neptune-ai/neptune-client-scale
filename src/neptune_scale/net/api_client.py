@@ -18,7 +18,6 @@ from __future__ import annotations
 __all__ = ("ApiClient", "with_api_errors_handling")
 
 import functools
-import os
 from collections.abc import (
     Callable,
     Iterable,
@@ -81,7 +80,11 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedResponseError,
 )
 from neptune_scale.sync.parameters import HTTP_CLIENT_NETWORKING_TIMEOUT
-from neptune_scale.util.envs import ALLOW_SELF_SIGNED_CERTIFICATE
+from neptune_scale.util.envs import (
+    ALLOW_SELF_SIGNED_CERTIFICATE,
+    VERIFY_SSL,
+    get_bool,
+)
 from neptune_scale.util.logger import get_logger
 
 logger = get_logger()
@@ -185,7 +188,11 @@ class ApiClient:
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
-        verify_ssl: bool = os.environ.get(ALLOW_SELF_SIGNED_CERTIFICATE, "False").lower() in ("false", "0")
+        verify_ssl: bool = get_bool(
+            VERIFY_SSL,
+            default_invalid=True,
+            default_missing=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, default_missing=False, default_invalid=False),
+        )
 
         logger.debug("Trying to connect to Neptune API")
         config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)

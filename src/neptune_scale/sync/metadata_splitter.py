@@ -68,7 +68,7 @@ T = TypeVar("T")
 
 
 INVALID_VALUE_ACTION = envs.get_option(envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop")
-SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, True)
+SHOULD_SKIP_NON_FINITE_METRICS = envs.get_bool(envs.SKIP_NON_FINITE_METRICS, default_missing=True, default_invalid=True)
 
 
 @dataclass(frozen=True)

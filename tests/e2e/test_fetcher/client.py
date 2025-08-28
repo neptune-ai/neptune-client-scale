@@ -33,12 +33,12 @@ from neptune_api.credentials import Credentials
 from neptune_api.models import ClientConfig
 
 from neptune_scale.util.envs import (
-    ALLOW_SELF_SIGNED_CERTIFICATE,
+    VERIFY_SSL,
     get_bool,
 )
 
 NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS: Final[float] = float(os.environ.get("NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS", "60"))
-NEPTUNE_VERIFY_SSL: Final[bool] = not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, False)
+NEPTUNE_VERIFY_SSL: Final[bool] = get_bool(VERIFY_SSL, default_missing=True, default_invalid=True)
 
 
 @dataclass
