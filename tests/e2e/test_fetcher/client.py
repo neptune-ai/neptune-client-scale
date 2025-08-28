@@ -38,7 +38,7 @@ from neptune_scale.util.envs import (
 )
 
 NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS: Final[float] = float(os.environ.get("NEPTUNE_HTTP_REQUEST_TIMEOUT_SECONDS", "60"))
-NEPTUNE_VERIFY_SSL: Final[bool] = get_bool(VERIFY_SSL, True)
+NEPTUNE_VERIFY_SSL: Final[bool] = get_bool(VERIFY_SSL, default_missing=True, default_invalid=True)
 
 
 @dataclass

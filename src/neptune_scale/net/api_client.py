@@ -188,7 +188,11 @@ class ApiClient:
     def __init__(self, api_token: str) -> None:
         credentials = Credentials.from_api_key(api_key=api_token)
 
-        verify_ssl: bool = get_bool(VERIFY_SSL, default=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, False))
+        verify_ssl: bool = get_bool(
+            VERIFY_SSL,
+            default_invalid=True,
+            default_missing=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, default_missing=False, default_invalid=False),
+        )
 
         logger.debug("Trying to connect to Neptune API")
         config, token_urls = get_config_and_token_urls(credentials=credentials, verify_ssl=verify_ssl)

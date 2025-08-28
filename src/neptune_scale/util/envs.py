@@ -28,11 +28,11 @@ MAX_CONCURRENT_FILE_UPLOADS = "NEPTUNE_MAX_CONCURRENT_FILE_UPLOADS"
 MODE_ENV_NAME = "NEPTUNE_MODE"
 
 
-def get_bool(name: str, default: bool) -> bool:
+def get_bool(name: str, default_missing: bool, default_invalid: bool) -> bool:
     env_val = os.getenv(name)
 
     if env_val is None:
-        return default
+        return default_missing
 
     if env_val.lower() in ("true", "1"):
         return True
@@ -40,7 +40,7 @@ def get_bool(name: str, default: bool) -> bool:
     if env_val.lower() in ("false", "0"):
         return False
 
-    return default
+    return default_invalid
 
 
 def get_positive_int(name: str, default: int) -> int:

@@ -50,7 +50,7 @@ def test_get_option_unknown(monkeypatch):
         ("true", "xyz", True),
         ("xyz", None, True),
         ("xyz", "false", True),
-        ("xyz", "true", False),
+        ("xyz", "true", True),
         ("xyz", "xyz", True),
     ),
 )
@@ -64,6 +64,10 @@ def test_ssl_option_fallback(monkeypatch, verify_ssl, allow_self_signed_certific
     else:
         monkeypatch.delenv(ALLOW_SELF_SIGNED_CERTIFICATE, raising=False)
 
-    result = get_bool(VERIFY_SSL, default=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, False))
+    result = get_bool(
+        VERIFY_SSL,
+        default_invalid=True,
+        default_missing=not get_bool(ALLOW_SELF_SIGNED_CERTIFICATE, default_missing=False, default_invalid=False),
+    )
 
     assert result == expected
