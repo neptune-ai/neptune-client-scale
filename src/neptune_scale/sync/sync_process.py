@@ -475,7 +475,7 @@ class StatusTrackingThread(Daemon):
                     errors = [
                         code_to_exception(status.detail)
                         for status in request_status.code_by_count
-                        if status.code != Code.OK
+                        if status.code != Code.OK and self._should_error_be_reported(status.detail)
                     ]
 
                     fatal_sync_error = next(filter(self._is_fatal_error, errors), None)
@@ -512,6 +512,17 @@ class StatusTrackingThread(Daemon):
     @staticmethod
     def _is_fatal_error(ex: Exception) -> bool:
         return isinstance(ex, NeptuneProjectError) or isinstance(ex, NeptuneRunError)
+
+    @staticmethod
+    def _should_error_be_reported(ingest_code: IngestCode.ValueType) -> bool:
+        return ingest_code not in {
+            # We're hiding this error since historically neptune-scale prevented sending such values,
+            # and now the backend supports them.
+            # We only expect this error in the rare cases when the backend instance is outdated and the client is new
+            #   - in such cases we don't want to spam the user with errors.
+            # This code should be removed in the future when we can assume that all backend instances are updated.
+            IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED,
+        }
 
 
 class FileUploaderThread(Daemon):

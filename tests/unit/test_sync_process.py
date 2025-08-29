@@ -500,6 +500,8 @@ def test_status_thread_processes_element():
         ingest_pb2.IngestCode.RUN_NOT_FOUND,
         ingest_pb2.IngestCode.RUN_CONFLICTING,
         ingest_pb2.IngestCode.RUN_INVALID_CREATION_PARAMETERS,
+        # this error is skipped, tested separately in test_status_thread_skips_errors_that_should_not_be_reported
+        ingest_pb2.IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED,
     },
 )
 def test_status_thread_processes_element_with_standard_error_code(detail):
@@ -577,6 +579,49 @@ def test_status_thread_processes_element_with_run_creation_error_code(detail):
     operations_repository.save_errors.assert_called_once()
     operations_repository.delete_operations.assert_not_called()
     operations_repository.delete_operation_submissions.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error_code, should_report",
+    (
+        (ingest_pb2.IngestCode.FLOAT_VALUE_NAN_INF_UNSUPPORTED, False),
+        (ingest_pb2.IngestCode.SERIES_STEP_NON_INCREASING, True),
+    ),
+)
+def test_status_thread_skips_errors_that_should_not_be_reported(error_code, should_report):
+    # given
+    operations_repository = Mock()
+    backend = Mock()
+    status_thread = StatusTrackingThread(
+        api_token="",
+        project="",
+        operations_repository=operations_repository,
+    )
+    status_thread._backend = backend
+
+    # and
+    status_element = OperationSubmission(
+        sequence_id=SequenceId(0),
+        timestamp=int(datetime.datetime.now().timestamp() / 1000),
+        request_id=RequestId("id0"),
+    )
+    operations_repository.get_operation_submissions.side_effect = [[status_element], None]
+
+    # and
+    backend.check_batch.side_effect = [
+        status_response(status_code=200, pb_code=Code.ABORTED, pb_detail=error_code),
+    ]
+
+    # when
+    status_thread.work()
+
+    # then
+    if should_report:
+        operations_repository.save_errors.assert_called_once()
+    else:
+        operations_repository.save_errors.assert_not_called()
+    operations_repository.delete_operations.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
+    operations_repository.delete_operation_submissions.assert_called_once_with(up_to_seq_id=status_element.sequence_id)
 
 
 def test_status_thread_processes_element_sequence():
