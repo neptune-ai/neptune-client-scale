@@ -12,6 +12,7 @@ DEBUG_MODE = "NEPTUNE_DEBUG_MODE"
 
 # Logging level for the neptune logger. Valid values: "debug", "info", "warning", "error", "critical", "none".
 LOGGER_LEVEL = "NEPTUNE_LOGGER_LEVEL"
+LOG_TIMING_THRESHOLD_MS = "NEPTUNE_LOG_TIMING_THRESHOLD_MS"
 
 SUBPROCESS_KILL_TIMEOUT = "NEPTUNE_SUBPROCESS_KILL_TIMEOUT"
 
