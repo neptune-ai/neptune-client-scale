@@ -104,6 +104,22 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
     return wrapper
 
 
+def log_diagnostics(db_path: Path) -> None:
+    if logger.isEnabledFor(logging.DEBUG):
+        try:
+            db_size = db_path.stat().st_size if db_path.exists() else None
+
+            wal_path = db_path.with_suffix(db_path.suffix + "-wal")
+            wal_size = wal_path.stat().st_size if wal_path.exists() else None
+
+            shm_path = db_path.with_suffix(db_path.suffix + "-shm")
+            shm_size = shm_path.stat().st_size if shm_path.exists() else None
+
+            logger.debug(f"Database diagnostics: db size={db_size}, wal size={wal_size}, shm size={shm_size}")
+        except Exception:
+            logger.error("Failed to get database diagnostics", exc_info=True)
+
+
 class OperationType(IntEnum):
     UPDATE_SNAPSHOT = 0
     CREATE_RUN = 1
@@ -390,14 +406,7 @@ class OperationsRepository:
                     return SequenceId(cursor.fetchone()[0])
 
         except NeptuneUnableToLogData:
-            if logger.isEnabledFor(logging.DEBUG):
-                db_size = self._db_path.stat().st_size if self._db_path.exists() else None
-                wal_path = self._db_path.with_suffix(self._db_path.suffix + "-wal")
-                wal_size = wal_path.stat().st_size if wal_path.exists() else None
-                logger.debug(
-                    f"Failed to save {len(ops)} operations to the database (db size={db_size}, wal size={wal_size})",
-                    exc_info=True,
-                )
+            log_diagnostics(db_path=self._db_path)
             if self._log_failure_action == "raise":
                 raise
             else:
@@ -860,6 +869,7 @@ class OperationsRepository:
                             self._connection = None
                     except sqlite3.DatabaseError:
                         logger.debug(f"Failed to close SQLite connection for {self._db_path}", exc_info=True)
+                    log_diagnostics(self._db_path)
                     raise NeptuneUnableToLogData() from e
 
             self._connection.execute("BEGIN")
@@ -868,6 +878,7 @@ class OperationsRepository:
                 self._connection.commit()
             except sqlite3.DatabaseError as e:
                 self._connection.rollback()
+                log_diagnostics(db_path=self._db_path)
                 raise NeptuneUnableToLogData() from e
             except Exception:
                 self._connection.rollback()
