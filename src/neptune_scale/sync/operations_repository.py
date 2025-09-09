@@ -76,40 +76,30 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
     if not logger.isEnabledFor(logging.DEBUG):
         return func
 
-    elapsed_ms_threshold = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
+    min_time_to_log_call_ms = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
 
-    def represent_object(a: object) -> str:
-        s = repr(a)
-        return f"{s[:30]}{'...' if len(s) > 30 else ''}"
+    def represent_argument(name: Optional[str], value: object) -> str:
+        if isinstance(value, OperationsRepository):
+            return "self"
 
-    def represent_list(l: list) -> str:
-        return f"[{', '.join(represent_object(a) for a in l[:2])}{' ...' if len(l) > 2 else ''} (items={len(l)})]"
-
-    # simple, representation of arguments; 1-level deep for lists, single-line, truncated to 30 chars
-    def arg_repr(arg: object) -> str:
-        try:
-            if isinstance(arg, list):
-                return represent_list(arg)
-            else:
-                return represent_object(arg)
-        except Exception:
-            return f"<unrepresentable {type(arg).__name__}>"
+        name_str = f"{name}=" if name is not None else ""
+        value_str = repr(value)
+        return f"{name_str}{value_str[:100]}..." if len(value_str) > 100 else value_str
 
     @functools.wraps(func)
     def wrapper(*args: T, **kwargs: T) -> R:
         start = time.perf_counter()
-        result = None
         try:
-            result = func(*args, **kwargs)
-            return result
+            return func(*args, **kwargs)
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            if elapsed_ms >= elapsed_ms_threshold:
-                all_args_log = ", ".join(
-                    [arg_repr(a) for a in args] + [f"{k}={arg_repr(v)}" for k, v in kwargs.items()]
+            if elapsed_ms >= min_time_to_log_call_ms:
+                argument_representation = ", ".join(
+                    [represent_argument(None, v) for v in args]
+                    + [f"{k}={represent_argument(k, v)}" for k, v in kwargs.items()]
                 )
-                result_log = arg_repr(result)
-                logger.debug(f"{func.__qualname__}({all_args_log}) -> {result_log} executed in {elapsed_ms:.2f} ms")
+
+                logger.debug(f"{func.__qualname__}({argument_representation}) executed in {elapsed_ms:.2f} ms")
 
     return wrapper
 
