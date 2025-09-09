@@ -35,7 +35,6 @@ from typing import (
     Literal,
     NewType,
     Optional,
-    ParamSpec,
     TypeVar,
     Union,
 )
@@ -54,6 +53,7 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
+from neptune_scale.util.envs import LOG_TIMING_THRESHOLD_MS
 
 logger = get_logger()
 
@@ -65,26 +65,50 @@ SequenceId = NewType("SequenceId", int)
 RequestId = NewType("RequestId", str)
 
 
-T = ParamSpec("T")
+T = TypeVar("T")
 R = TypeVar("R")
 
 
-def log_timing(func: Callable[T, R]) -> Callable[T, R]:
+def log_timing(func: Callable[..., R]) -> Callable[..., R]:
     """Decorator that logs execution time (in ms) of the decorated callable at DEBUG level on exit.
     If DEBUG is disabled, the original function is executed with near-zero overhead.
     """
+    if not logger.isEnabledFor(logging.DEBUG):
+        return func
+
+    elapsed_ms_threshold = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
+
+    def arg_repr(arg: object) -> str:
+        repr_limit = 30
+        try:
+            if isinstance(arg, list):
+                item_count = len(arg)
+                list_size = sum(len(repr(a)) for a in arg)
+                if len(arg) <= 1:
+                    return f"[{', '.join(arg_repr(a) for a in arg)} ({item_count} items, {list_size} size)]"
+                else:
+                    return f"[{', '.join(repr(a)[:repr_limit] for a in arg[:2])}, ... ({item_count} items, {list_size} size)]"
+            else:
+                r = repr(arg)
+                return r if len(r) <= repr_limit else r[:repr_limit] + "..."
+        except:
+            return f"<unrepresentable {type(arg).__name__}>"
 
     @functools.wraps(func)
-    def wrapper(*args: T.args, **kwargs: T.kwargs) -> R:
-        if not logger.isEnabledFor(logging.DEBUG):
-            return func(*args, **kwargs)
-
+    def wrapper(*args: T, **kwargs: T) -> R:
         start = time.perf_counter()
+        result = None
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            return result
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.debug(f"{func.__qualname__} executed in {elapsed_ms:.2f} ms")
+            if elapsed_ms >= elapsed_ms_threshold:
+                all_args_log = ", ".join(
+                    [arg_repr(a) for a in args] + [f"{k}={arg_repr(v)}" for k, v in kwargs.items()]
+                )
+                result_log = arg_repr(result)
+                logger.debug(f"{func.__qualname__}({all_args_log}) -> {result_log} executed in {elapsed_ms:.2f} ms")
 
     return wrapper
 
@@ -219,6 +243,7 @@ class OperationsRepository:
 
     @log_timing
     def init_db(self) -> None:
+        logger.debug(f"Create SQLite database file {self._db_path}")
         os.makedirs(self._db_path.parent, exist_ok=True)
         with self._get_connection() as conn:  # type: ignore
             conn.execute(
@@ -374,6 +399,14 @@ class OperationsRepository:
                     return SequenceId(cursor.fetchone()[0])
 
         except NeptuneUnableToLogData:
+            if logger.isEnabledFor(logging.DEBUG):
+                db_size = self._db_path.stat().st_size if self._db_path.exists() else None
+                wal_path = self._db_path.with_suffix(self._db_path.suffix + "-wal")
+                wal_size = wal_path.stat().st_size if wal_path.exists() else None
+                logger.debug(
+                    f"Failed to save {len(ops)} operations to the database (db size={db_size}, wal size={wal_size})",
+                    exc_info=True,
+                )
             if self._log_failure_action == "raise":
                 raise
             else:

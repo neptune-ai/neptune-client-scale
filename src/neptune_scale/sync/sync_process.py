@@ -627,14 +627,14 @@ class FileUploaderThread(Daemon):
                 logger.debug(f"Removing temporary file {file.source_path}")
                 Path(file.source_path).unlink(missing_ok=True)
 
-            self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+            self._operations_repository.delete_file_upload_requests([file.sequence_id])
         except NeptuneRetryableError as e:
             self._operations_repository.save_errors([e])
         except Exception as e:
             # Fatal failure. Do not retry the file, but keep it on disk.
             logger.error(f"Error while uploading file {file.source_path}", exc_info=e)
             self._operations_repository.save_errors([NeptuneFileUploadError()])
-            self._operations_repository.delete_file_upload_requests([file.sequence_id])  # type: ignore
+            self._operations_repository.delete_file_upload_requests([file.sequence_id])
 
     def close(self) -> None:
         if self._api_client is not None:
