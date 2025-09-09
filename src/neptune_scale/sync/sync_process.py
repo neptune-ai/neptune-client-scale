@@ -83,6 +83,7 @@ from neptune_scale.exceptions import (
     NeptuneStringValueExceedsSizeLimit,
     NeptuneSynchronizationStopped,
     NeptuneTooManyRequestsResponseError,
+    NeptuneUnableToLogData,
     NeptuneUnauthorizedError,
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
@@ -348,6 +349,8 @@ class SenderThread(Daemon):
                     self._last_queued_seq,
                 )
 
+        except NeptuneUnableToLogData:
+            logger.warning("Failed to access the on disk operation log", exc_info=True)
         except Exception as e:
             self._operations_repository.save_errors([e])
             self.interrupt()
@@ -503,7 +506,8 @@ class StatusTrackingThread(Daemon):
                 if processed_sequence_id is None:
                     # Sleep before retry
                     break
-
+        except NeptuneUnableToLogData:
+            logger.warning("Failed to access the on disk operation log", exc_info=True)
         except Exception as e:
             self._operations_repository.save_errors([e])
             self.interrupt()
@@ -555,39 +559,42 @@ class FileUploaderThread(Daemon):
 
     def work(self) -> None:
         try:
-            if self._api_client is None:
-                self._api_client = ApiClient(api_token=self._neptune_api_token)
-                asyncio.set_event_loop(self._aio_loop)
+            try:
+                if self._api_client is None:
+                    self._api_client = ApiClient(api_token=self._neptune_api_token)
+                    asyncio.set_event_loop(self._aio_loop)
 
-            while file_upload_requests := self._operations_repository.get_file_upload_requests(
-                self._max_concurrent_uploads
-            ):
-                logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
+                while file_upload_requests := self._operations_repository.get_file_upload_requests(
+                    self._max_concurrent_uploads
+                ):
+                    logger.debug(f"Have {len(file_upload_requests)} file upload requests to process")
 
-                file_sign_requests = [
-                    FileSignRequest(
-                        path=file.destination,
-                        size=file.size_bytes,
-                        permission="write",
-                    )
-                    for file in file_upload_requests
-                ]
-                storage_urls_all = fetch_file_storage_urls(self._api_client, self._project, file_sign_requests)
+                    file_sign_requests = [
+                        FileSignRequest(
+                            path=file.destination,
+                            size=file.size_bytes,
+                            permission="write",
+                        )
+                        for file in file_upload_requests
+                    ]
+                    storage_urls_all = fetch_file_storage_urls(self._api_client, self._project, file_sign_requests)
 
-                # Fan out file uploads as async tasks, and block until all tasks are done.
-                # Note that self._upload_file() should not raise an exception, as they are handled
-                # in the method itself. However, we still pass return_exceptions=True to make sure asyncio.gather()
-                # waits for all the tasks to finish regardless of any exceptions.
-                tasks = []
-                for file in file_upload_requests:
-                    storage_urls = storage_urls_all[file.destination]
-                    tasks.append(self._upload_file(file, storage_urls))
+                    # Fan out file uploads as async tasks, and block until all tasks are done.
+                    # Note that self._upload_file() should not raise an exception, as they are handled
+                    # in the method itself. However, we still pass return_exceptions=True to make sure asyncio.gather()
+                    # waits for all the tasks to finish regardless of any exceptions.
+                    tasks = []
+                    for file in file_upload_requests:
+                        storage_urls = storage_urls_all[file.destination]
+                        tasks.append(self._upload_file(file, storage_urls))
 
-                self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                    self._aio_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
-                logger.debug("Upload tasks completed for the current batch")
-        except NeptuneRetryableError as e:
-            self._operations_repository.save_errors([e])
+                    logger.debug("Upload tasks completed for the current batch")
+            except NeptuneRetryableError as e:
+                self._operations_repository.save_errors([e])
+        except NeptuneUnableToLogData:
+            logger.warning("Failed to access the on disk operation log", exc_info=True)
         except Exception as e:
             logger.error("Fatal error in file uploader thread", exc_info=e)
             self._operations_repository.save_errors([e])
