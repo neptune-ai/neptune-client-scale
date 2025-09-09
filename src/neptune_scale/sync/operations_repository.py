@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import logging
 import pickle
 from pathlib import Path
 
@@ -23,14 +25,18 @@ import os
 import sqlite3
 import threading
 import time
-import typing
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
 from typing import (
+    Callable,
     Literal,
+    NewType,
     Optional,
+    ParamSpec,
+    TypeVar,
     Union,
 )
 
@@ -54,9 +60,33 @@ logger = get_logger()
 DB_VERSION = "v5"
 BACKWARD_COMPATIBLE_DB_VERSIONS = ("v5",)
 
-ErrorId = typing.NewType("ErrorId", int)
-SequenceId = typing.NewType("SequenceId", int)
-RequestId = typing.NewType("RequestId", str)
+ErrorId = NewType("ErrorId", int)
+SequenceId = NewType("SequenceId", int)
+RequestId = NewType("RequestId", str)
+
+
+T = ParamSpec("T")
+R = TypeVar("R")
+
+
+def log_timing(func: Callable[T, R]) -> Callable[T, R]:
+    """Decorator that logs execution time (in ms) of the decorated callable at DEBUG level on exit.
+    If DEBUG is disabled, the original function is executed with near-zero overhead.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: T.args, **kwargs: T.kwargs) -> R:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return func(*args, **kwargs)
+
+        start = time.perf_counter()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.debug(f"{func.__qualname__} executed in {elapsed_ms:.2f} ms")
+
+    return wrapper
 
 
 class OperationType(IntEnum):
@@ -187,6 +217,7 @@ class OperationsRepository:
             envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop"
         )
 
+    @log_timing
     def init_db(self) -> None:
         os.makedirs(self._db_path.parent, exist_ok=True)
         with self._get_connection() as conn:  # type: ignore
@@ -257,6 +288,7 @@ class OperationsRepository:
                 """
             )
 
+    @log_timing
     def save_update_run_snapshots(self, updates: list[UpdateRunSnapshot]) -> SequenceId:
         """
         Guarantees:
@@ -320,6 +352,7 @@ class OperationsRepository:
 
         return batches
 
+    @log_timing
     def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> Optional[SequenceId]:
         """
         Inserts operations into 'run_operations' in a single transaction.
@@ -347,6 +380,7 @@ class OperationsRepository:
                 logger.error(f"Dropping {len(ops)} operations due to error", exc_info=True)
                 return None
 
+    @log_timing
     def save_create_run(self, run: CreateRun) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -360,6 +394,7 @@ class OperationsRepository:
                 )
                 return SequenceId(cursor.lastrowid)
 
+    @log_timing
     def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
             raise RuntimeError(
@@ -403,6 +438,7 @@ class OperationsRepository:
 
         return [_deserialize_operation(row) for row in rows]
 
+    @log_timing
     def delete_operations(self, up_to_seq_id: SequenceId) -> int:
         if up_to_seq_id <= 0:
             return 0
@@ -414,11 +450,13 @@ class OperationsRepository:
                 # Return the number of rows affected
                 return cursor.rowcount or 0
 
+    @log_timing
     def get_operation_count(self, limit: Optional[int] = None) -> int:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "run_operations", limit=limit)
 
+    @log_timing
     def get_operations_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -438,6 +476,7 @@ class OperationsRepository:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
+    @log_timing
     def get_operations_min_timestamp(self) -> Optional[datetime]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -457,6 +496,7 @@ class OperationsRepository:
                 (timestamp,) = row
                 return datetime.fromtimestamp(timestamp / 1000)
 
+    @log_timing
     def save_metadata(self, project: str, run_id: str) -> None:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -480,6 +520,7 @@ class OperationsRepository:
                     (DB_VERSION, project, run_id),
                 )
 
+    @log_timing
     def get_metadata(self) -> Optional[Metadata]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -501,6 +542,7 @@ class OperationsRepository:
 
                 return Metadata(project=project, run_id=run_id)
 
+    @log_timing
     def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -517,6 +559,7 @@ class OperationsRepository:
                 cursor.execute("SELECT last_insert_rowid()")
                 return SequenceId(cursor.fetchone()[0])
 
+    @log_timing
     def get_file_upload_requests(self, n: int) -> list[FileUploadRequest]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -543,6 +586,7 @@ class OperationsRepository:
             for row in rows
         ]
 
+    @log_timing
     def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -554,11 +598,13 @@ class OperationsRepository:
                     [(seq_id,) for seq_id in seq_ids],
                 )
 
+    @log_timing
     def get_file_upload_requests_count(self, limit: Optional[int] = None) -> int:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "file_upload_requests", limit=limit)
 
+    @log_timing
     def save_operation_submissions(self, submissions: list[OperationSubmission]) -> SequenceId:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -572,6 +618,7 @@ class OperationsRepository:
                 cursor.execute("SELECT last_insert_rowid()")
                 return SequenceId(cursor.fetchone()[0])
 
+    @log_timing
     def get_operation_submissions(self, limit: int) -> list[OperationSubmission]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -595,6 +642,7 @@ class OperationsRepository:
             for row in rows
         ]
 
+    @log_timing
     def delete_operation_submissions(self, up_to_seq_id: Optional[SequenceId]) -> int:
         if up_to_seq_id is not None and up_to_seq_id <= 0:
             return 0
@@ -611,11 +659,13 @@ class OperationsRepository:
 
                 return cursor.rowcount or 0
 
+    @log_timing
     def get_operation_submission_count(self, limit: Optional[int] = None) -> int:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "run_operation_submission", limit=limit)
 
+    @log_timing
     def get_operation_submission_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -635,6 +685,7 @@ class OperationsRepository:
                     return None
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
+    @log_timing
     def get_errors(self, limit: int) -> list[OperationError]:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -662,9 +713,10 @@ class OperationsRepository:
             for row in rows
         ]
 
+    @log_timing
     def save_errors(
         self,
-        errors: typing.Iterable[BaseException],
+        errors: Iterable[BaseException],
         sequence_id: Optional[SequenceId] = None,
     ) -> ErrorId:
         operation_errors = [OperationError.serialize_error(error, sequence_id) for error in errors]
@@ -684,7 +736,8 @@ class OperationsRepository:
                 cursor.execute("SELECT last_insert_rowid()")
                 return ErrorId(cursor.fetchone()[0])
 
-    def delete_errors(self, error_ids: typing.Iterable[ErrorId]) -> None:
+    @log_timing
+    def delete_errors(self, error_ids: Iterable[ErrorId]) -> None:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
@@ -695,16 +748,19 @@ class OperationsRepository:
                     [(error_id,) for error_id in error_ids],
                 )
 
+    @log_timing
     def delete_all_errors(self) -> None:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute("DELETE FROM operation_errors")
 
+    @log_timing
     def get_errors_count(self, limit: Optional[int] = None) -> int:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "operation_errors", limit=limit)
 
+    @log_timing
     def _is_repository_empty(self) -> bool:
         with self._get_connection() as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -715,6 +771,7 @@ class OperationsRepository:
                 return True
 
     @staticmethod
+    @log_timing
     def _get_table_count(cursor: sqlite3.Cursor, table_name: str, limit: Optional[int] = None) -> int:
         try:
             if limit is None:
@@ -739,6 +796,7 @@ class OperationsRepository:
             else:
                 raise
 
+    @log_timing
     def close(self, cleanup_files: bool) -> None:
         with self._lock:
             if self._connection is not None:
