@@ -78,20 +78,21 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
 
     elapsed_ms_threshold = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
 
+    def represent_object(a: object) -> str:
+        s = repr(a)
+        return f"{s[:30]}{'...' if len(s) > 30 else ''}"
+
+    def represent_list(l: list) -> str:
+        return f"[{', '.join(represent_object(a) for a in l[:2])}{' ...' if len(l) > 2 else ''} (items={len(l)})]"
+
+    # simple, representation of arguments; 1-level deep for lists, single-line, truncated to 30 chars
     def arg_repr(arg: object) -> str:
-        repr_limit = 30
         try:
             if isinstance(arg, list):
-                item_count = len(arg)
-                list_size = sum(len(repr(a)) for a in arg)
-                if len(arg) <= 1:
-                    return f"[{', '.join(arg_repr(a) for a in arg)} ({item_count} items, {list_size} size)]"
-                else:
-                    return f"[{', '.join(repr(a)[:repr_limit] for a in arg[:2])}, ... ({item_count} items, {list_size} size)]"
+                return represent_list(arg)
             else:
-                r = repr(arg)
-                return r if len(r) <= repr_limit else r[:repr_limit] + "..."
-        except:
+                return represent_object(arg)
+        except Exception:
             return f"<unrepresentable {type(arg).__name__}>"
 
     @functools.wraps(func)
