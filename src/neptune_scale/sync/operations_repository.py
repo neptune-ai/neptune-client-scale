@@ -406,7 +406,6 @@ class OperationsRepository:
                     return SequenceId(cursor.fetchone()[0])
 
         except NeptuneUnableToLogData:
-            log_diagnostics(db_path=self._db_path)
             if self._log_failure_action == "raise":
                 raise
             else:
