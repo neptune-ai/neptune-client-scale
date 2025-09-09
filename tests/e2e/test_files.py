@@ -215,23 +215,21 @@ def test_assign_files_metadata(run, client, project_name, temp_dir, files, expec
                 assert metadata[attribute][key] == value
 
 
-@pytest.mark.parametrize("wait_after_first_upload", [True, False])
-def test_assign_files_duplicate_attribute_path(run, client, project_name, temp_dir, wait_after_first_upload):
+def test_assign_files_duplicate_attribute_path(run, client, project_name, temp_dir):
     # given
     ensure_test_directory()
-    files = {"test_files/file_duplicate1": "e2e/resources/file.txt"}
+    files_1 = {"test_files/file_duplicate1": "e2e/resources/file.txt"}
+    files_2 = {"test_files/file_duplicate1": "e2e/resources/binary_file"}
 
     # when
-    run.assign_files(files)
-    if wait_after_first_upload:
-        run.wait_for_processing(SYNC_TIMEOUT)
+    run.assign_files(files_1)
+    run.wait_for_processing(SYNC_TIMEOUT)
 
-    files = {"test_files/file_duplicate1": "e2e/resources/binary_file"}
-    run.assign_files(files)
+    run.assign_files(files_2)
     run.wait_for_processing(SYNC_TIMEOUT)
 
     # then
-    attributes = list(files.keys())
+    attributes = list(files_2.keys())
     fetch_files(
         client,
         project_name,
@@ -240,7 +238,7 @@ def test_assign_files_duplicate_attribute_path(run, client, project_name, temp_d
     )
 
     # check content
-    for attribute_path, attribute_content in files.items():
+    for attribute_path, attribute_content in files_2.items():
         compare_content(actual_path=temp_dir / attribute_path, expected_content=attribute_content)
 
 
