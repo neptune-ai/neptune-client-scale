@@ -25,12 +25,18 @@ import os
 import sqlite3
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import (
+    Generator,
+    Iterable,
+)
 from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager as ContextManager
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
 from typing import (
+    Any,
     Callable,
     Literal,
     NewType,
@@ -86,20 +92,22 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
         value_str = repr(value)
         return f"{name_str}{value_str[:100]}..." if len(value_str) > 100 else value_str
 
+    @contextlib.contextmanager
+    def timer(caller: str, args: Any = None, kwargs: Any = None) -> Generator[None, None, None]:
+        start = time.perf_counter()
+        yield
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        if elapsed_ms >= min_time_to_log_call_ms:
+            argument_representation = ", ".join(
+                [represent_argument(None, v) for v in (args or [])]
+                + [f"{k}={represent_argument(k, v)}" for k, v in (kwargs or {}).items() if k != "timer"]
+            )
+            pid = os.getpid()
+            logger.debug(f"PID={pid} {caller}({argument_representation}) executed in {elapsed_ms:.2f} ms")
+
     @functools.wraps(func)
     def wrapper(*args: T, **kwargs: T) -> R:
-        start = time.perf_counter()
-        try:
-            return func(*args, **kwargs)
-        finally:
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            if elapsed_ms >= min_time_to_log_call_ms:
-                argument_representation = ", ".join(
-                    [represent_argument(None, v) for v in args]
-                    + [f"{k}={represent_argument(k, v)}" for k, v in kwargs.items()]
-                )
-
-                logger.debug(f"{func.__qualname__}({argument_representation}) executed in {elapsed_ms:.2f} ms")
+        return func(*args, timer=timer(func.__qualname__, args, kwargs), **kwargs)
 
     return wrapper
 
@@ -249,10 +257,10 @@ class OperationsRepository:
         )
 
     @log_timing
-    def init_db(self) -> None:
+    def init_db(self, timer: Optional[ContextManager] = None) -> None:
         logger.debug(f"Create SQLite database file {self._db_path}")
         os.makedirs(self._db_path.parent, exist_ok=True)
-        with self._get_connection() as conn:  # type: ignore
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS run_operations (
@@ -321,7 +329,9 @@ class OperationsRepository:
             )
 
     @log_timing
-    def save_update_run_snapshots(self, updates: list[UpdateRunSnapshot]) -> SequenceId:
+    def save_update_run_snapshots(
+        self, updates: list[UpdateRunSnapshot], timer: Optional[ContextManager] = None
+    ) -> SequenceId:
         """
         Guarantees:
         - The order of operations saved to the DB is preserved within a single call.
@@ -351,7 +361,9 @@ class OperationsRepository:
         return last_insert_rowid
 
     @staticmethod
-    def _chunk_operations(updates: list[UpdateRunSnapshot]) -> list[list[bytes]]:
+    def _chunk_operations(
+        updates: list[UpdateRunSnapshot], timer: Optional[ContextManager] = None
+    ) -> list[list[bytes]]:
         """
         Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
         Returns serialized operations in a list of batches.
@@ -385,12 +397,14 @@ class OperationsRepository:
         return batches
 
     @log_timing
-    def _insert_update_run_snapshots(self, ops: list[bytes], current_time: int) -> Optional[SequenceId]:
+    def _insert_update_run_snapshots(
+        self, ops: list[bytes], current_time: int, timer: Optional[ContextManager] = None
+    ) -> Optional[SequenceId]:
         """
         Inserts operations into 'run_operations' in a single transaction.
         """
         try:
-            with self._get_connection() as conn:  # type: ignore
+            with self._get_connection(timer=timer) as conn:  # type: ignore
                 with contextlib.closing(conn.cursor()) as cursor:
                     cursor.executemany(
                         """
@@ -413,8 +427,8 @@ class OperationsRepository:
                 return None
 
     @log_timing
-    def save_create_run(self, run: CreateRun) -> SequenceId:
-        with self._get_connection() as conn:  # type: ignore
+    def save_create_run(self, run: CreateRun, timer: Optional[ContextManager] = None) -> SequenceId:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 current_time = int(time.time() * 1000)  # milliseconds timestamp
                 serialized_operation = run.SerializeToString()
@@ -427,7 +441,9 @@ class OperationsRepository:
                 return SequenceId(cursor.lastrowid)
 
     @log_timing
-    def get_operations(self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None) -> list[Operation]:
+    def get_operations(
+        self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None, timer: Optional[ContextManager] = None
+    ) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
             raise RuntimeError(
                 f"up to bytes is too small: {up_to_bytes} bytes, minimum is {MAX_SINGLE_OPERATION_SIZE_BYTES} bytes"
@@ -436,7 +452,7 @@ class OperationsRepository:
         if from_exclusive is None:
             from_exclusive = SequenceId(-1)
 
-        with self._get_connection() as conn:  # type: ignore
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -471,11 +487,11 @@ class OperationsRepository:
         return [_deserialize_operation(row) for row in rows]
 
     @log_timing
-    def delete_operations(self, up_to_seq_id: SequenceId) -> int:
+    def delete_operations(self, up_to_seq_id: SequenceId, timer: Optional[ContextManager] = None) -> int:
         if up_to_seq_id <= 0:
             return 0
 
-        with self._get_connection() as conn:  # type: ignore
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute("DELETE FROM run_operations WHERE sequence_id <= ?", (up_to_seq_id,))
 
@@ -483,14 +499,16 @@ class OperationsRepository:
                 return cursor.rowcount or 0
 
     @log_timing
-    def get_operation_count(self, limit: Optional[int] = None) -> int:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operation_count(self, limit: Optional[int] = None, timer: Optional[ContextManager] = None) -> int:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "run_operations", limit=limit)
 
     @log_timing
-    def get_operations_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operations_sequence_id_range(
+        self, timer: Optional[ContextManager] = None
+    ) -> Optional[tuple[SequenceId, SequenceId]]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -509,8 +527,8 @@ class OperationsRepository:
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     @log_timing
-    def get_operations_min_timestamp(self) -> Optional[datetime]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operations_min_timestamp(self, timer: Optional[ContextManager] = None) -> Optional[datetime]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -529,8 +547,8 @@ class OperationsRepository:
                 return datetime.fromtimestamp(timestamp / 1000)
 
     @log_timing
-    def save_metadata(self, project: str, run_id: str) -> None:
-        with self._get_connection() as conn:  # type: ignore
+    def save_metadata(self, project: str, run_id: str, timer: Optional[ContextManager] = None) -> None:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 # Check if metadata already exists
                 cursor.execute(
@@ -553,8 +571,8 @@ class OperationsRepository:
                 )
 
     @log_timing
-    def get_metadata(self) -> Optional[Metadata]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_metadata(self, timer: Optional[ContextManager] = None) -> Optional[Metadata]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -575,8 +593,10 @@ class OperationsRepository:
                 return Metadata(project=project, run_id=run_id)
 
     @log_timing
-    def save_file_upload_requests(self, files: list[FileUploadRequest]) -> SequenceId:
-        with self._get_connection() as conn:  # type: ignore
+    def save_file_upload_requests(
+        self, files: list[FileUploadRequest], timer: Optional[ContextManager] = None
+    ) -> SequenceId:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
@@ -592,8 +612,8 @@ class OperationsRepository:
                 return SequenceId(cursor.fetchone()[0])
 
     @log_timing
-    def get_file_upload_requests(self, n: int) -> list[FileUploadRequest]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_file_upload_requests(self, n: int, timer: Optional[ContextManager] = None) -> list[FileUploadRequest]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -619,8 +639,8 @@ class OperationsRepository:
         ]
 
     @log_timing
-    def delete_file_upload_requests(self, seq_ids: list[SequenceId]) -> None:
-        with self._get_connection() as conn:  # type: ignore
+    def delete_file_upload_requests(self, seq_ids: list[SequenceId], timer: Optional[ContextManager] = None) -> None:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
@@ -631,14 +651,18 @@ class OperationsRepository:
                 )
 
     @log_timing
-    def get_file_upload_requests_count(self, limit: Optional[int] = None) -> int:
-        with self._get_connection() as conn:  # type: ignore
+    def get_file_upload_requests_count(
+        self, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+    ) -> int:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "file_upload_requests", limit=limit)
 
     @log_timing
-    def save_operation_submissions(self, submissions: list[OperationSubmission]) -> SequenceId:
-        with self._get_connection() as conn:  # type: ignore
+    def save_operation_submissions(
+        self, submissions: list[OperationSubmission], timer: Optional[ContextManager] = None
+    ) -> SequenceId:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
@@ -651,8 +675,10 @@ class OperationsRepository:
                 return SequenceId(cursor.fetchone()[0])
 
     @log_timing
-    def get_operation_submissions(self, limit: int) -> list[OperationSubmission]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operation_submissions(
+        self, limit: int, timer: Optional[ContextManager] = None
+    ) -> list[OperationSubmission]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -675,11 +701,13 @@ class OperationsRepository:
         ]
 
     @log_timing
-    def delete_operation_submissions(self, up_to_seq_id: Optional[SequenceId]) -> int:
+    def delete_operation_submissions(
+        self, up_to_seq_id: Optional[SequenceId], timer: Optional[ContextManager] = None
+    ) -> int:
         if up_to_seq_id is not None and up_to_seq_id <= 0:
             return 0
 
-        with self._get_connection() as conn:  # type: ignore
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 if up_to_seq_id is None:
                     cursor.execute("DELETE FROM run_operation_submission")
@@ -692,14 +720,18 @@ class OperationsRepository:
                 return cursor.rowcount or 0
 
     @log_timing
-    def get_operation_submission_count(self, limit: Optional[int] = None) -> int:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operation_submission_count(
+        self, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+    ) -> int:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "run_operation_submission", limit=limit)
 
     @log_timing
-    def get_operation_submission_sequence_id_range(self) -> Optional[tuple[SequenceId, SequenceId]]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_operation_submission_sequence_id_range(
+        self, timer: Optional[ContextManager] = None
+    ) -> Optional[tuple[SequenceId, SequenceId]]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -718,8 +750,8 @@ class OperationsRepository:
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     @log_timing
-    def get_errors(self, limit: int) -> list[OperationError]:
-        with self._get_connection() as conn:  # type: ignore
+    def get_errors(self, limit: int, timer: Optional[ContextManager] = None) -> list[OperationError]:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
                     """
@@ -750,10 +782,11 @@ class OperationsRepository:
         self,
         errors: Iterable[BaseException],
         sequence_id: Optional[SequenceId] = None,
+        timer: Optional[ContextManager] = None,
     ) -> ErrorId:
         operation_errors = [OperationError.serialize_error(error, sequence_id) for error in errors]
 
-        with self._get_connection() as conn:  # type: ignore
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
@@ -769,8 +802,8 @@ class OperationsRepository:
                 return ErrorId(cursor.fetchone()[0])
 
     @log_timing
-    def delete_errors(self, error_ids: Iterable[ErrorId]) -> None:
-        with self._get_connection() as conn:  # type: ignore
+    def delete_errors(self, error_ids: Iterable[ErrorId], timer: Optional[ContextManager] = None) -> None:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
                     """
@@ -781,20 +814,20 @@ class OperationsRepository:
                 )
 
     @log_timing
-    def delete_all_errors(self) -> None:
-        with self._get_connection() as conn:  # type: ignore
+    def delete_all_errors(self, timer: Optional[ContextManager] = None) -> None:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute("DELETE FROM operation_errors")
 
     @log_timing
-    def get_errors_count(self, limit: Optional[int] = None) -> int:
-        with self._get_connection() as conn:  # type: ignore
+    def get_errors_count(self, limit: Optional[int] = None, timer: Optional[ContextManager] = None) -> int:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "operation_errors", limit=limit)
 
     @log_timing
-    def _is_repository_empty(self) -> bool:
-        with self._get_connection() as conn:  # type: ignore
+    def _is_repository_empty(self, timer: Optional[ContextManager] = None) -> bool:
+        with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 if self._get_table_count(cursor, "run_operations", limit=1) != 0:
                     return False
@@ -804,7 +837,9 @@ class OperationsRepository:
 
     @staticmethod
     @log_timing
-    def _get_table_count(cursor: sqlite3.Cursor, table_name: str, limit: Optional[int] = None) -> int:
+    def _get_table_count(
+        cursor: sqlite3.Cursor, table_name: str, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+    ) -> int:
         try:
             if limit is None:
                 source = table_name
@@ -829,59 +864,60 @@ class OperationsRepository:
                 raise
 
     @log_timing
-    def close(self, cleanup_files: bool) -> None:
+    def close(self, cleanup_files: bool, timer: Optional[ContextManager] = None) -> None:
         with self._lock:
-            if self._connection is not None:
-                if cleanup_files and self._is_repository_empty():
-                    self._connection.close()
-                    self._connection = None
-                    try:
-                        os.remove(self._db_path)
-                    except OSError:
-                        logger.debug(f"Failed to delete SQLite database file {self._db_path}", exc_info=True)
-                        pass
-                    logger.debug(f"Deleted SQLite database file {self._db_path}")
-                else:
-                    self._connection.close()
-                    self._connection = None
-                    logger.debug(f"Closed SQLite connection for {self._db_path}")
+            with timer or nullcontext():
+                if self._connection is not None:
+                    if cleanup_files and self._is_repository_empty():
+                        self._connection.close()
+                        self._connection = None
+                        try:
+                            os.remove(self._db_path)
+                        except OSError:
+                            logger.debug(f"Failed to delete SQLite database file {self._db_path}", exc_info=True)
+                        logger.debug(f"Deleted SQLite database file {self._db_path}")
+                    else:
+                        self._connection.close()
+                        self._connection = None
+                        logger.debug(f"Closed SQLite connection for {self._db_path}")
 
     @contextlib.contextmanager  # type: ignore
-    def _get_connection(self) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
+    def _get_connection(self, timer: Optional[ContextManager]) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
         with self._lock:
-            if self._connection is None:
-                try:
-                    self._connection = sqlite3.connect(
-                        self._db_path,
-                        timeout=self._timeout,
-                        check_same_thread=False,  # we use RLock to synchronize access
-                    )
-
-                    self._connection.execute("PRAGMA journal_mode = WAL")
-                    self._connection.execute("PRAGMA synchronous = FULL")
-
-                    logger.debug(f"Created new SQLite connection for {self._db_path}")
-                except sqlite3.DatabaseError as e:
+            with timer or nullcontext():
+                if self._connection is None:
                     try:
-                        if self._connection:
-                            self._connection.close()
-                            self._connection = None
-                    except sqlite3.DatabaseError:
-                        logger.debug(f"Failed to close SQLite connection for {self._db_path}", exc_info=True)
-                    log_diagnostics(self._db_path)
-                    raise NeptuneUnableToLogData() from e
+                        self._connection = sqlite3.connect(
+                            self._db_path,
+                            timeout=self._timeout,
+                            check_same_thread=False,  # we use RLock to synchronize access
+                        )
 
-            self._connection.execute("BEGIN")
-            try:
-                yield self._connection
-                self._connection.commit()
-            except sqlite3.DatabaseError as e:
-                self._connection.rollback()
-                log_diagnostics(db_path=self._db_path)
-                raise NeptuneUnableToLogData() from e
-            except Exception:
-                self._connection.rollback()
-                raise
+                        self._connection.execute("PRAGMA journal_mode = WAL")
+                        self._connection.execute("PRAGMA synchronous = FULL")
+
+                        logger.debug(f"Created new SQLite connection for {self._db_path}")
+                    except sqlite3.DatabaseError as e:
+                        try:
+                            if self._connection:
+                                self._connection.close()
+                                self._connection = None
+                        except sqlite3.DatabaseError:
+                            logger.debug(f"Failed to close SQLite connection for {self._db_path}", exc_info=True)
+                        log_diagnostics(self._db_path)
+                        raise NeptuneUnableToLogData() from e
+
+                self._connection.execute("BEGIN")
+                try:
+                    yield self._connection
+                    self._connection.commit()
+                except sqlite3.DatabaseError as e:
+                    self._connection.rollback()
+                    log_diagnostics(db_path=self._db_path)
+                    raise NeptuneUnableToLogData() from e
+                except Exception:
+                    self._connection.rollback()
+                    raise
 
 
 def _deserialize_operation(row: tuple[int, int, bytes, int, int]) -> Operation:
