@@ -875,7 +875,6 @@ class OperationsRepository:
                             os.remove(self._db_path)
                         except OSError:
                             logger.debug(f"Failed to delete SQLite database file {self._db_path}", exc_info=True)
-                            pass
                         logger.debug(f"Deleted SQLite database file {self._db_path}")
                     else:
                         self._connection.close()
