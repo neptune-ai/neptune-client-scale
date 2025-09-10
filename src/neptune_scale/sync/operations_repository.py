@@ -5,10 +5,7 @@ import logging
 import pickle
 from pathlib import Path
 
-from neptune_scale.sync.parameters import (
-    MAX_SINGLE_OPERATION_SIZE_BYTES,
-    OPERATION_REPOSITORY_TIMEOUT,
-)
+from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = (
     "OperationsRepository",
@@ -60,7 +57,6 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
-from neptune_scale.util.envs import LOG_TIMING_THRESHOLD_MS
 
 logger = get_logger()
 
@@ -83,7 +79,7 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
     if not logger.isEnabledFor(logging.DEBUG):
         return func
 
-    min_time_to_log_call_ms = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
+    min_time_to_log_call_ms = float(os.getenv(envs.LOG_TIMING_THRESHOLD_MS, "1000.0"))
 
     def represent_argument(name: Optional[str], value: object) -> str:
         if isinstance(value, OperationsRepository):
@@ -242,7 +238,7 @@ class OperationsRepository:
     def __init__(
         self,
         db_path: Path,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         if not db_path.is_absolute():
             raise RuntimeError("db_path must be an absolute path")
@@ -251,7 +247,11 @@ class OperationsRepository:
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
 
-        self._timeout = timeout if timeout is not None else OPERATION_REPOSITORY_TIMEOUT
+        self._timeout = (
+            timeout
+            if timeout is not None
+            else envs.get_positive_int(envs.OPERATION_REPOSITORY_TIMEOUT_MS, 60_000) / 1000.0
+        )
 
         self._log_failure_action: Literal["raise", "drop"] = envs.get_option(  # type: ignore
             envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop"

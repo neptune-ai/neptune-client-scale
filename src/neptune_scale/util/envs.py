@@ -27,6 +27,11 @@ MAX_CONCURRENT_FILE_UPLOADS = "NEPTUNE_MAX_CONCURRENT_FILE_UPLOADS"
 
 MODE_ENV_NAME = "NEPTUNE_MODE"
 
+# This gets passed to sqlite3.connect as the `timeout` parameter (after converting to seconds)
+# This controls how long the connection should wait when the database is locked by another connection
+# In the case of two processes trying to WRITE to our database
+OPERATION_REPOSITORY_TIMEOUT_MS = "NEPTUNE_OPERATION_REPOSITORY_TIMEOUT_MS"
+
 
 def get_bool(name: str, default_missing: bool, default_invalid: bool) -> bool:
     env_val = os.getenv(name)
