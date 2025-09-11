@@ -42,7 +42,7 @@ Configure the API token and project:
 1. Log in to your Neptune workspace.
 1. Get your API token from your user menu in the bottom left corner.
 
-    > If you're a workspace admin, you can also set up a service account. This way, multiple people or machines can share the same API token. To get started, access the workspace settings via the user menu.
+    > To create shared API tokens, see [how to set up a service account][service-account].
 
 1. In the environment where neptune-scale is installed, save your API token to the `NEPTUNE_API_TOKEN` environment variable:
 
@@ -73,7 +73,7 @@ Configure the API token and project:
 
 You're ready to start using Neptune.
 
-For more help with setup, see [Get started][docs] in the Neptune documentation.
+For more help with setup, see [Get started][setup] in the Neptune documentation.
 
 ## Example usage
 
@@ -81,6 +81,7 @@ Create an experiment:
 
 ```python
 from neptune_scale import Run
+
 
 run = Run(experiment_name="MyExperimentName")
 ```
@@ -109,7 +110,7 @@ for step in range(100):
     )
 ```
 
-[Upload files][log-files]:
+[Upload files][upload-files]:
 
 ```python
 run.assign_files(
@@ -120,13 +121,38 @@ run.assign_files(
 )
 ```
 
-To help organize and group runs, apply tags:
+Log series of [histograms][histograms]:
+
+```python
+from neptune_scale.types import Histogram
+
+
+for step in epoch:
+    # your training loop
+
+    my_histogram = Histogram(...)
+
+    run.log_histograms(
+        histograms={
+            "layers/1/activations": my_histogram
+        },
+        step=step,
+    )
+```
+
+To help organize and group runs, [apply tags][tags]:
 
 ```python
 run.add_tags(tags=["testing", "data v1.0"])
+
+# To assign the run to groups, apply group tags
+run.add_tags(
+    tags=["group1", "group2"]
+    group_tags=True,
+)
 ```
 
-The run is stopped when exiting the context or the script finishes execution, but you can use [`close()`][close] to stop it once logging is no longer needed:
+When logging is no longer needed, use [`close()`][close] to stop the run:
 
 ```python
 run.close()
@@ -137,7 +163,7 @@ To explore your experiment, open the project in Neptune and navigate to **Runs**
 For more instructions, see the Neptune documentation:
 
 - [Quickstart][quickstart]
-- [Create an experiment][new-experiment]
+- [Create a run][new-run]
 - [Log metadata][log-metadata]
 - [API reference][api-ref]
 
@@ -155,12 +181,16 @@ Created with :heart: by the [neptune.ai team &rarr;](https://neptune.ai/jobs#tea
 
 [api-ref]: https://docs.neptune.ai/run
 [close]: https://docs.neptune.ai/run/close
-[docs]: https://docs.neptune.ai/setup
 [experiments]: https://docs.neptune.ai/experiments
-[log-files]: https://docs.neptune.ai/log_files
+[histograms]: https://docs.neptune.ai/histograms
 [log-metadata]: https://docs.neptune.ai/log_metadata
 [log_configs]: https://docs.neptune.ai/run/log_configs
 [log_metrics]: https://docs.neptune.ai/run/log_metrics
-[new-experiment]: https://docs.neptune.ai/create_experiment
+[new-run]: https://docs.neptune.ai/create_run
 [quickstart]: https://docs.neptune.ai/quickstart
+[service-account]: https://docs.neptune.ai/service_accounts
+[setup]: https://docs.neptune.ai/setup
+[tags]: https://docs.neptune.ai/manage_tags
+[upload-files]: https://docs.neptune.ai/upload_files
+
 [demo-project]: https://scale.neptune.ai/o/examples/org/LLM-Pretraining/reports/9e6a2cad-77e7-42df-9d64-28f07d37e908
