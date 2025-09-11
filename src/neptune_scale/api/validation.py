@@ -6,12 +6,15 @@ __all__ = (
     "verify_max_length",
     "verify_value_between",
     "verify_project_qualified_name",
+    "verify_run_id",
 )
 
 from typing import (
     Any,
     Union,
 )
+
+from neptune_scale.sync.parameters import MAX_RUN_ID_LENGTH
 
 
 def get_type_name(var_type: Union[type, tuple]) -> str:
@@ -46,6 +49,15 @@ def verify_project_qualified_name(var_name: str, var: Any) -> None:
     project_parts = var.split("/")
     if len(project_parts) != 2:
         raise ValueError(f"{var_name} is not in expected format, should be 'workspace-name/project-name")
+
+
+def verify_run_id(var_name: str, var: Any) -> None:
+    verify_type(var_name, var, str)
+    verify_non_empty(var_name, var)
+    verify_max_length(var_name, var, MAX_RUN_ID_LENGTH)
+
+    if "/" in var:
+        raise ValueError(f"{var_name} is not in expected format, should not contain '/' character")
 
 
 def verify_value_between(
