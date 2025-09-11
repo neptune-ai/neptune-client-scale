@@ -130,7 +130,7 @@ from neptune_scale.types import Histogram
 for step in epoch:
     # your training loop
 
-    my_histogram = Histogram(...)  # or use NumPy to define the histogram
+    my_histogram = Histogram(...)
 
     run.log_histograms(
         histograms={
