@@ -13,6 +13,11 @@ from typing import (
     Union,
 )
 
+from neptune_scale.sync.parameters import (
+    MAX_STEP_VALUE,
+    MIN_STEP_VALUE,
+)
+
 
 def get_type_name(var_type: Union[type, tuple]) -> str:
     if isinstance(var_type, tuple):
@@ -53,3 +58,14 @@ def verify_value_between(
 ) -> None:
     if var > expected_max or var < expected_min:
         raise ValueError(f"{var_name} must have a value between {expected_min} and {expected_max}")
+
+
+def verify_step(var_name: str, var: Any, optional: bool = False) -> None:
+    if optional:
+        verify_type(var_name, var, (float, int, type(None)))
+    else:
+        verify_type(var_name, var, (float, int))
+
+    if var is not None:
+        if not MIN_STEP_VALUE <= var < MAX_STEP_VALUE:
+            raise ValueError(f"{var_name} must have a value between {MIN_STEP_VALUE} and {MAX_STEP_VALUE}")

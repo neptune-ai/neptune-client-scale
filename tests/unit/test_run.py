@@ -319,6 +319,61 @@ def test_log_step_float(api_token, mode):
 
 
 @pytest.mark.parametrize("mode", ["disabled", "offline"])
+@pytest.mark.parametrize(
+    "step",
+    [
+        None,
+        0,
+        1,
+        100,
+        3.14,
+        0.1**6,
+        10**12 - 1,
+    ],
+)
+def test_log_step_metric(api_token, step, mode):
+    # given
+    project = "workspace/project"
+
+    # then
+    with Run(project=project, api_token=api_token, mode=mode) as run:
+        run.log(
+            step=step,
+            timestamp=datetime.now(),
+            metrics={
+                "metric": 3.14,
+            },
+        )
+
+    # and
+    assert True
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+@pytest.mark.parametrize(
+    "step",
+    [
+        -1,
+        10**12,
+    ],
+)
+def test_log_step_metric_invalid(api_token, step, mode):
+    # given
+    project = "workspace/project"
+
+    # then
+    with Run(project=project, api_token=api_token, mode=mode) as run:
+        with pytest.raises(ValueError):
+            run.log(
+                step=step,
+                timestamp=datetime.now(),
+                metrics={
+                    "metric": 3.14,
+                },
+            )
+
+
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
 def test_log_no_timestamp(api_token, mode):
     # given
     project = "workspace/project"
