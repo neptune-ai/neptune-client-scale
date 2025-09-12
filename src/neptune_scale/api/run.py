@@ -46,6 +46,7 @@ from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
+    verify_step,
     verify_type,
     verify_value_between,
 )
@@ -1010,7 +1011,7 @@ class Run(AbstractContextManager):
         verify_type("files", files, (dict, type(None)))
 
         if metrics is not None:
-            verify_type("step", step, (float, int, type(None)))
+            verify_step("step", step, optional=True)
             verify_type("metrics", metrics, Metrics)
             verify_type("metrics", metrics.data, dict)
             verify_type("preview", metrics.preview, bool)
@@ -1027,16 +1028,16 @@ class Run(AbstractContextManager):
                 verify_value_between("preview_completion", metrics.preview_completion, 0.0, 1.0)
 
         if string_series is not None:
-            verify_type("step", step, (float, int))
+            verify_step("step", step)
             verify_type("string_series", string_series, dict)
 
         if file_series is not None:
-            verify_type("step", step, (float, int))
+            verify_step("step", step)
             verify_type("file_series", file_series, dict)
 
         if histograms is not None:
+            verify_step("step", step)
             verify_type("histograms", histograms, dict)
-            verify_type("step", step, (float, int))
 
         # Don't log anything after we've been stopped. This allows continuing the training script
         # after a non-recoverable error happened. Note we don't to use self._lock in this check,
