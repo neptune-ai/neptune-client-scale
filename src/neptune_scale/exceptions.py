@@ -442,7 +442,7 @@ For help, see https://docs.neptune.ai/log_metrics
 class NeptuneSeriesStepTooLarge(NeptuneScaleError):
     message = """
 {h1}
-NeptuneSeriesStepTooLarge: Step must be smaller than 1_000_000_000_000.
+NeptuneSeriesStepTooLarge: Step must be smaller than 1,000,000,000,000.
 {end}
 For help, see https://docs.neptune.ai/log_metrics
 """
