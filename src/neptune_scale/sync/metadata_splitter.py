@@ -576,8 +576,6 @@ def make_step(number: Union[float, int]) -> Step:
 
     Args:
         number: step expressed as number
-        raise_on_step_precision_loss: inform converter whether it should silently drop precision and
-            round down to 6 decimal places or raise an error.
 
     Returns: Step protobuf used in Neptune API.
     """
