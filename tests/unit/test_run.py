@@ -62,17 +62,52 @@ def test_close(api_token, mode):
     assert True
 
 
+@pytest.mark.parametrize(
+    "run_id",
+    [
+        False,
+        10,
+        "",
+        "a" * 731,
+        "/" "run/id",
+    ],
+)
 @pytest.mark.parametrize("mode", ["disabled", "offline"])
-def test_run_id_too_long(api_token, mode):
+def test_invalid_run_id(api_token, run_id, mode):
     # given
     project = "workspace/project"
 
     # and
-    run_id = "a" * 1000
 
     # then
-    with pytest.raises(ValueError):
+    with pytest.raises((TypeError, ValueError)):
         with Run(project=project, api_token=api_token, run_id=run_id, mode=mode):
+            ...
+
+    # and
+    assert True
+
+
+@pytest.mark.parametrize(
+    "run_id",
+    [
+        False,
+        10,
+        "",
+        "a" * 731,
+        "/" "run/id",
+    ],
+)
+@pytest.mark.parametrize("mode", ["disabled", "offline"])
+def test_invalid_fork_run_id(api_token, run_id, mode):
+    # given
+    project = "workspace/project"
+
+    # and
+
+    # then
+    with pytest.raises((TypeError, ValueError)):
+        with Run(project=project, api_token=api_token, fork_run_id=run_id, mode=mode):
             ...
 
     # and
@@ -588,7 +623,6 @@ def test_run_does_not_clean_up_non_empty_storage_directory(mock_repo, temp_dir, 
     "project, run_id",
     [
         ("\t\nworkspace/\\project", "run\\-id\t\n12\x003"),
-        ("workspace/project", "/run/with/slashes"),
         ("workspace/project", "\\run\\with\\backslashes"),
         ("workspace/漢字", "漢字"),
         ("w/" + "A" * 1000, "run-id"),

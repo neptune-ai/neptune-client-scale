@@ -46,6 +46,7 @@ from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,
     verify_project_qualified_name,
+    verify_run_id,
     verify_step,
     verify_type,
     verify_value_between,
@@ -80,7 +81,6 @@ from neptune_scale.sync.operations_repository import (
 )
 from neptune_scale.sync.parameters import (
     MAX_EXPERIMENT_NAME_LENGTH,
-    MAX_RUN_ID_LENGTH,
     OPERATION_REPOSITORY_POLL_SLEEP_TIME,
 )
 from neptune_scale.sync.supervisor import ProcessSupervisor
@@ -274,16 +274,14 @@ class Run(AbstractContextManager):
 
         mode = mode or os.environ.get(MODE_ENV_NAME, "async")  # type: ignore
 
-        verify_non_empty("run_id", run_id)
-        verify_max_length("run_id", run_id, MAX_RUN_ID_LENGTH)
+        verify_run_id("run_id", run_id)
 
         if experiment_name is not None:
             verify_non_empty("experiment_name", experiment_name)
             verify_max_length("experiment_name", experiment_name, MAX_EXPERIMENT_NAME_LENGTH)
 
         if fork_run_id is not None:
-            verify_non_empty("fork_run_id", fork_run_id)
-            verify_max_length("fork_run_id", fork_run_id, MAX_RUN_ID_LENGTH)
+            verify_run_id("fork_run_id", fork_run_id)
 
         # This flag is used to signal that we're closed or being closed (and most likely waiting for sync), and no
         # new data should be logged.
