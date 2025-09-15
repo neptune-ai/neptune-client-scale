@@ -44,7 +44,12 @@ def read_repository_info(
     if git_repo is None:
         return None
 
-    head_commit = git_repo.head.commit
+    try:
+        head_commit = git_repo.head.commit
+    except ValueError:
+        # Happens when the repository is empty (no commits)
+        return None
+
     is_dirty = git_repo.is_dirty(index=False)
     active_branch = _get_active_branch(git_repo)
     remotes = {remote.name: remote.url for remote in git_repo.remotes}
