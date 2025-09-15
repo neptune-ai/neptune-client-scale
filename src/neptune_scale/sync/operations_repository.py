@@ -5,10 +5,7 @@ import logging
 import pickle
 from pathlib import Path
 
-from neptune_scale.sync.parameters import (
-    MAX_SINGLE_OPERATION_SIZE_BYTES,
-    OPERATION_REPOSITORY_TIMEOUT,
-)
+from neptune_scale.sync.parameters import MAX_SINGLE_OPERATION_SIZE_BYTES
 
 __all__ = (
     "OperationsRepository",
@@ -29,9 +26,10 @@ from collections.abc import (
     Generator,
     Iterable,
 )
-from contextlib import AbstractContextManager
-from contextlib import AbstractContextManager as ContextManager
-from contextlib import nullcontext
+from contextlib import (
+    AbstractContextManager,
+    nullcontext,
+)
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
@@ -59,7 +57,6 @@ from neptune_scale.util import (
     envs,
     get_logger,
 )
-from neptune_scale.util.envs import LOG_TIMING_THRESHOLD_MS
 
 logger = get_logger()
 
@@ -82,7 +79,7 @@ def log_timing(func: Callable[..., R]) -> Callable[..., R]:
     if not logger.isEnabledFor(logging.DEBUG):
         return func
 
-    min_time_to_log_call_ms = float(os.getenv(LOG_TIMING_THRESHOLD_MS, "1000.0"))
+    min_time_to_log_call_ms = float(os.getenv(envs.LOG_TIMING_THRESHOLD_MS, "1000.0"))
 
     def represent_argument(name: Optional[str], value: object) -> str:
         if isinstance(value, OperationsRepository):
@@ -241,7 +238,7 @@ class OperationsRepository:
     def __init__(
         self,
         db_path: Path,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         if not db_path.is_absolute():
             raise RuntimeError("db_path must be an absolute path")
@@ -250,14 +247,18 @@ class OperationsRepository:
         self._lock = threading.RLock()
         self._connection: Optional[sqlite3.Connection] = None
 
-        self._timeout = timeout if timeout is not None else OPERATION_REPOSITORY_TIMEOUT
+        self._timeout = (
+            timeout
+            if timeout is not None
+            else envs.get_positive_int(envs.OPERATION_REPOSITORY_TIMEOUT_MS, 60_000) / 1000.0
+        )
 
         self._log_failure_action: Literal["raise", "drop"] = envs.get_option(  # type: ignore
             envs.LOG_FAILURE_ACTION, ("drop", "raise"), "drop"
         )
 
     @log_timing
-    def init_db(self, timer: Optional[ContextManager] = None) -> None:
+    def init_db(self, timer: Optional[AbstractContextManager] = None) -> None:
         logger.debug(f"Create SQLite database file {self._db_path}")
         os.makedirs(self._db_path.parent, exist_ok=True)
         with self._get_connection(timer=timer) as conn:  # type: ignore
@@ -330,7 +331,7 @@ class OperationsRepository:
 
     @log_timing
     def save_update_run_snapshots(
-        self, updates: list[UpdateRunSnapshot], timer: Optional[ContextManager] = None
+        self, updates: list[UpdateRunSnapshot], timer: Optional[AbstractContextManager] = None
     ) -> SequenceId:
         """
         Guarantees:
@@ -362,7 +363,7 @@ class OperationsRepository:
 
     @staticmethod
     def _chunk_operations(
-        updates: list[UpdateRunSnapshot], timer: Optional[ContextManager] = None
+        updates: list[UpdateRunSnapshot], timer: Optional[AbstractContextManager] = None
     ) -> list[list[bytes]]:
         """
         Split operations into batches so that each batch does not exceed MAX_SINGLE_OPERATION_SIZE_BYTES.
@@ -398,7 +399,7 @@ class OperationsRepository:
 
     @log_timing
     def _insert_update_run_snapshots(
-        self, ops: list[bytes], current_time: int, timer: Optional[ContextManager] = None
+        self, ops: list[bytes], current_time: int, timer: Optional[AbstractContextManager] = None
     ) -> Optional[SequenceId]:
         """
         Inserts operations into 'run_operations' in a single transaction.
@@ -427,7 +428,7 @@ class OperationsRepository:
                 return None
 
     @log_timing
-    def save_create_run(self, run: CreateRun, timer: Optional[ContextManager] = None) -> SequenceId:
+    def save_create_run(self, run: CreateRun, timer: Optional[AbstractContextManager] = None) -> SequenceId:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 current_time = int(time.time() * 1000)  # milliseconds timestamp
@@ -442,7 +443,10 @@ class OperationsRepository:
 
     @log_timing
     def get_operations(
-        self, up_to_bytes: int, from_exclusive: Optional[SequenceId] = None, timer: Optional[ContextManager] = None
+        self,
+        up_to_bytes: int,
+        from_exclusive: Optional[SequenceId] = None,
+        timer: Optional[AbstractContextManager] = None,
     ) -> list[Operation]:
         if up_to_bytes < MAX_SINGLE_OPERATION_SIZE_BYTES:
             raise RuntimeError(
@@ -487,7 +491,7 @@ class OperationsRepository:
         return [_deserialize_operation(row) for row in rows]
 
     @log_timing
-    def delete_operations(self, up_to_seq_id: SequenceId, timer: Optional[ContextManager] = None) -> int:
+    def delete_operations(self, up_to_seq_id: SequenceId, timer: Optional[AbstractContextManager] = None) -> int:
         if up_to_seq_id <= 0:
             return 0
 
@@ -499,14 +503,14 @@ class OperationsRepository:
                 return cursor.rowcount or 0
 
     @log_timing
-    def get_operation_count(self, limit: Optional[int] = None, timer: Optional[ContextManager] = None) -> int:
+    def get_operation_count(self, limit: Optional[int] = None, timer: Optional[AbstractContextManager] = None) -> int:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "run_operations", limit=limit)
 
     @log_timing
     def get_operations_sequence_id_range(
-        self, timer: Optional[ContextManager] = None
+        self, timer: Optional[AbstractContextManager] = None
     ) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -527,7 +531,7 @@ class OperationsRepository:
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     @log_timing
-    def get_operations_min_timestamp(self, timer: Optional[ContextManager] = None) -> Optional[datetime]:
+    def get_operations_min_timestamp(self, timer: Optional[AbstractContextManager] = None) -> Optional[datetime]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
@@ -547,7 +551,7 @@ class OperationsRepository:
                 return datetime.fromtimestamp(timestamp / 1000)
 
     @log_timing
-    def save_metadata(self, project: str, run_id: str, timer: Optional[ContextManager] = None) -> None:
+    def save_metadata(self, project: str, run_id: str, timer: Optional[AbstractContextManager] = None) -> None:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 # Check if metadata already exists
@@ -571,7 +575,7 @@ class OperationsRepository:
                 )
 
     @log_timing
-    def get_metadata(self, timer: Optional[ContextManager] = None) -> Optional[Metadata]:
+    def get_metadata(self, timer: Optional[AbstractContextManager] = None) -> Optional[Metadata]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
@@ -594,7 +598,7 @@ class OperationsRepository:
 
     @log_timing
     def save_file_upload_requests(
-        self, files: list[FileUploadRequest], timer: Optional[ContextManager] = None
+        self, files: list[FileUploadRequest], timer: Optional[AbstractContextManager] = None
     ) -> SequenceId:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -612,7 +616,9 @@ class OperationsRepository:
                 return SequenceId(cursor.fetchone()[0])
 
     @log_timing
-    def get_file_upload_requests(self, n: int, timer: Optional[ContextManager] = None) -> list[FileUploadRequest]:
+    def get_file_upload_requests(
+        self, n: int, timer: Optional[AbstractContextManager] = None
+    ) -> list[FileUploadRequest]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
@@ -639,7 +645,9 @@ class OperationsRepository:
         ]
 
     @log_timing
-    def delete_file_upload_requests(self, seq_ids: list[SequenceId], timer: Optional[ContextManager] = None) -> None:
+    def delete_file_upload_requests(
+        self, seq_ids: list[SequenceId], timer: Optional[AbstractContextManager] = None
+    ) -> None:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
@@ -652,7 +660,7 @@ class OperationsRepository:
 
     @log_timing
     def get_file_upload_requests_count(
-        self, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+        self, limit: Optional[int] = None, timer: Optional[AbstractContextManager] = None
     ) -> int:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -660,7 +668,7 @@ class OperationsRepository:
 
     @log_timing
     def save_operation_submissions(
-        self, submissions: list[OperationSubmission], timer: Optional[ContextManager] = None
+        self, submissions: list[OperationSubmission], timer: Optional[AbstractContextManager] = None
     ) -> SequenceId:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -676,7 +684,7 @@ class OperationsRepository:
 
     @log_timing
     def get_operation_submissions(
-        self, limit: int, timer: Optional[ContextManager] = None
+        self, limit: int, timer: Optional[AbstractContextManager] = None
     ) -> list[OperationSubmission]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -702,7 +710,7 @@ class OperationsRepository:
 
     @log_timing
     def delete_operation_submissions(
-        self, up_to_seq_id: Optional[SequenceId], timer: Optional[ContextManager] = None
+        self, up_to_seq_id: Optional[SequenceId], timer: Optional[AbstractContextManager] = None
     ) -> int:
         if up_to_seq_id is not None and up_to_seq_id <= 0:
             return 0
@@ -721,7 +729,7 @@ class OperationsRepository:
 
     @log_timing
     def get_operation_submission_count(
-        self, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+        self, limit: Optional[int] = None, timer: Optional[AbstractContextManager] = None
     ) -> int:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -729,7 +737,7 @@ class OperationsRepository:
 
     @log_timing
     def get_operation_submission_sequence_id_range(
-        self, timer: Optional[ContextManager] = None
+        self, timer: Optional[AbstractContextManager] = None
     ) -> Optional[tuple[SequenceId, SequenceId]]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
@@ -750,7 +758,7 @@ class OperationsRepository:
                 return SequenceId(min_seq_id), SequenceId(max_seq_id)
 
     @log_timing
-    def get_errors(self, limit: int, timer: Optional[ContextManager] = None) -> list[OperationError]:
+    def get_errors(self, limit: int, timer: Optional[AbstractContextManager] = None) -> list[OperationError]:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute(
@@ -782,7 +790,7 @@ class OperationsRepository:
         self,
         errors: Iterable[BaseException],
         sequence_id: Optional[SequenceId] = None,
-        timer: Optional[ContextManager] = None,
+        timer: Optional[AbstractContextManager] = None,
     ) -> ErrorId:
         operation_errors = [OperationError.serialize_error(error, sequence_id) for error in errors]
 
@@ -802,7 +810,7 @@ class OperationsRepository:
                 return ErrorId(cursor.fetchone()[0])
 
     @log_timing
-    def delete_errors(self, error_ids: Iterable[ErrorId], timer: Optional[ContextManager] = None) -> None:
+    def delete_errors(self, error_ids: Iterable[ErrorId], timer: Optional[AbstractContextManager] = None) -> None:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.executemany(
@@ -814,19 +822,19 @@ class OperationsRepository:
                 )
 
     @log_timing
-    def delete_all_errors(self, timer: Optional[ContextManager] = None) -> None:
+    def delete_all_errors(self, timer: Optional[AbstractContextManager] = None) -> None:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 cursor.execute("DELETE FROM operation_errors")
 
     @log_timing
-    def get_errors_count(self, limit: Optional[int] = None, timer: Optional[ContextManager] = None) -> int:
+    def get_errors_count(self, limit: Optional[int] = None, timer: Optional[AbstractContextManager] = None) -> int:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 return self._get_table_count(cursor, "operation_errors", limit=limit)
 
     @log_timing
-    def _is_repository_empty(self, timer: Optional[ContextManager] = None) -> bool:
+    def _is_repository_empty(self, timer: Optional[AbstractContextManager] = None) -> bool:
         with self._get_connection(timer=timer) as conn:  # type: ignore
             with contextlib.closing(conn.cursor()) as cursor:
                 if self._get_table_count(cursor, "run_operations", limit=1) != 0:
@@ -838,7 +846,10 @@ class OperationsRepository:
     @staticmethod
     @log_timing
     def _get_table_count(
-        cursor: sqlite3.Cursor, table_name: str, limit: Optional[int] = None, timer: Optional[ContextManager] = None
+        cursor: sqlite3.Cursor,
+        table_name: str,
+        limit: Optional[int] = None,
+        timer: Optional[AbstractContextManager] = None,
     ) -> int:
         try:
             if limit is None:
@@ -864,7 +875,7 @@ class OperationsRepository:
                 raise
 
     @log_timing
-    def close(self, cleanup_files: bool, timer: Optional[ContextManager] = None) -> None:
+    def close(self, cleanup_files: bool, timer: Optional[AbstractContextManager] = None) -> None:
         with self._lock:
             with timer or nullcontext():
                 if self._connection is not None:
@@ -882,7 +893,7 @@ class OperationsRepository:
                         logger.debug(f"Closed SQLite connection for {self._db_path}")
 
     @contextlib.contextmanager  # type: ignore
-    def _get_connection(self, timer: Optional[ContextManager]) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
+    def _get_connection(self, timer: Optional[AbstractContextManager]) -> AbstractContextManager[sqlite3.Connection]:  # type: ignore
         with self._lock:
             with timer or nullcontext():
                 if self._connection is None:

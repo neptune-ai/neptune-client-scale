@@ -1,6 +1,8 @@
 # Input validation
 MAX_RUN_ID_LENGTH = 730
 MAX_EXPERIMENT_NAME_LENGTH = 730
+MIN_STEP_VALUE = 0
+MAX_STEP_VALUE = 1_000_000_000_000
 
 # Threads
 SYNC_THREAD_SLEEP_TIME = 0.5
@@ -28,7 +30,6 @@ MAX_REQUESTS_STATUS_BATCH_SIZE = 1000
 # Operations
 MAX_SINGLE_OPERATION_SIZE_BYTES = 2 * 1024 * 1024  # 2MB
 MAX_REQUEST_SIZE_BYTES = 16 * 1024 * 1024  # 16MB
-OPERATION_REPOSITORY_TIMEOUT = 60  # 1 minute
 # Maximum number of bytes in a single string series data point
 MAX_STRING_SERIES_DATA_POINT_LENGTH = 1024 * 1024
 # Max histogram bins = 512, thus max bin edges = 513
