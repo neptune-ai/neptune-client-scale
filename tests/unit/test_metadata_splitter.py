@@ -77,10 +77,7 @@ def test_empty():
     result = list(builder)
 
     # then
-    assert len(result) == 1
-    operation = result[0]
-    expected_update = UpdateRunSnapshot(timestamp=Timestamp(seconds=1722341532, nanos=21934))
-    assert operation == expected_update
+    assert len(result) == 0
 
 
 @freeze_time("2024-07-30 12:12:12.000022")
@@ -437,25 +434,26 @@ def test_split_large_tags():
     ]
 
 
-@pytest.mark.parametrize("action", ("raise", "drop"))
+@pytest.mark.parametrize("action", ["raise", "drop"])
 @pytest.mark.parametrize(
     "invalid_path",
-    (None, "A" * 1025, UTF_CHAR * 256 + "A", object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()),
+    [None, "A" * 1025, UTF_CHAR * 256 + "A", object(), 1, 1.0, True, frozenset(), tuple(), datetime.now()],
 )
-@pytest.mark.parametrize("param_name", ("add_tags", "remove_tags", "configs", "metrics", "files", "file_series"))
+@pytest.mark.parametrize("param_name", ["add_tags", "remove_tags", "configs", "metrics", "files", "file_series"])
 def test_invalid_paths(caplog, action, invalid_path, param_name):
-    data = {invalid_path: object()}
     step = None
     kwargs = {name: None for name in ("add_tags", "remove_tags", "configs", "metrics", "files", "file_series")}
 
     if param_name == "metrics":
-        data = Metrics(data=data)
+        data = Metrics(data={invalid_path: 1})
         step = 1
     elif param_name == "files":
         data = {invalid_path: FileRefData(destination="x", mime_type="text/plain", size_bytes=0)}
     elif param_name == "file_series":
         data = {invalid_path: FileRefData(destination="x", mime_type="text/plain", size_bytes=0)}
         step = 1
+    else:
+        data = {invalid_path: "foo"}
 
     kwargs[param_name] = data
 
@@ -470,10 +468,10 @@ def test_invalid_paths(caplog, action, invalid_path, param_name):
     with patch("neptune_scale.sync.metadata_splitter.INVALID_VALUE_ACTION", action):
         if action == "raise":
             with pytest.raises(NeptuneUnableToLogData, match="paths must be"):
-                next(splitter)
+                list(splitter)
         else:
             with caplog.at_level("WARNING"):
-                next(splitter)
+                list(splitter)
             assert "paths must be" in caplog.text
 
 
