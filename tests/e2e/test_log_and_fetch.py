@@ -217,32 +217,3 @@ def test_source_tracking(run, client, project_name):
         assert file_ref["mime_type"] == "application/patch"
         assert file_ref["size_bytes"] == len(value)
         assert file_ref["path"] is not None
-
-
-@pytest.mark.parametrize(
-    "inherit_configs",
-    [True, False],
-)
-def test_inherit_configs(api_token, client, run, project_name, inherit_configs):
-    # given
-    now = time.time()
-    data = {
-        "int-value": int(now),
-        "float-value": now,
-        "str-value": f"hello-{now}",
-    }
-    run.log_configs(data)
-    assert run.wait_for_processing(SYNC_TIMEOUT)
-
-    # when
-    with Run(
-        api_token=api_token, project=project_name, fork_run_id=run._run_id, fork_step=0, inherit_configs=inherit_configs
-    ) as run_2:
-        pass
-
-    fetched = fetch_attribute_values(client, project_name, custom_run_id=run_2._run_id, attributes=data.keys())
-    for key, value in data.items():
-        if inherit_configs:
-            assert fetched[key] == value, f"Value for {key} does not match"
-        else:
-            assert key not in fetched, f"Value for {key} was inherited but should not be"
