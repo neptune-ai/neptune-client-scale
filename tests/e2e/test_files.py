@@ -678,7 +678,7 @@ def test_log_files_error_single(
         ],
         [
             (1.0, {"test_file_series/series_8": b"bytes content 1"}),
-            (1.0, {"test_file_series/series_8": b"bytes content 2"}),
+            (1.0, {"test_file_series/series_8": b"bytes content 1"}),
         ],
     ],
 )
