@@ -217,7 +217,7 @@ class Run(AbstractContextManager):
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
             source_tracking_config: Change or disable the logging of source code and Git information. To specify what
                 information to log, pass a `SourceTrackingConfig` object. To disable logging, set to `None`.
-            inherit_configs:
+            inherit_configs: Whether to inherit configuration settings from the parent run. Defaults to True.
         """
 
         if run_id is None:
