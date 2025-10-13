@@ -48,6 +48,9 @@ __all__ = (
     "NeptuneHistogramTooManyBins",
     "NeptuneHistogramBinEdgesNotIncreasing",
     "NeptuneHistogramValuesLengthMismatch",
+    "NeptuneProjectAlreadyExists",
+    "NeptuneProjectError",
+    "NeptuneRunError",
 )
 
 from typing import (
@@ -339,7 +342,7 @@ class NeptuneRunDuplicate(NeptuneScaleWarning):
     )
 
 
-class NeptuneRunConflicting(NeptuneRunError):
+class NeptuneRunConflicting(NeptuneScaleWarning):
     message = """
 {h1}
 NeptuneRunConflicting: Run with specified `run_id` already exists, but has a different `fork_run_id` parameter.
