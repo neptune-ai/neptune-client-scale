@@ -182,6 +182,7 @@ class Run(AbstractContextManager):
         enable_console_log_capture: bool = True,
         runtime_namespace: Optional[str] = None,
         source_tracking_config: Optional[SourceTrackingConfig] = SourceTrackingConfig(),
+        inherit_configs: bool = True,
         **kwargs: Any,
     ) -> None:
         """
@@ -216,6 +217,7 @@ class Run(AbstractContextManager):
             runtime_namespace: Attribute path prefix for the captured logs. If not provided, defaults to "runtime".
             source_tracking_config: Change or disable the logging of source code and Git information. To specify what
                 information to log, pass a `SourceTrackingConfig` object. To disable logging, set to `None`.
+            inherit_configs: Whether to inherit configuration settings from the parent run. Defaults to True.
         """
 
         if run_id is None:
@@ -398,6 +400,7 @@ class Run(AbstractContextManager):
                 experiment_name=experiment_name,
                 fork_run_id=fork_run_id,
                 fork_step=fork_step,
+                inherit_configs=inherit_configs,
             )
             self._write_source_tracking_attributes(source_tracking_config)
 
@@ -536,6 +539,7 @@ class Run(AbstractContextManager):
         experiment_name: Optional[str],
         fork_run_id: Optional[str],
         fork_step: Optional[Union[int, float]],
+        inherit_configs: bool,
     ) -> None:
         if self._operations_repo is None:
             logger.debug("Run is in mode that doesn't support creating runs.")
@@ -554,6 +558,7 @@ class Run(AbstractContextManager):
             fork_point=fork_point,
             experiment_id=experiment_name,
             creation_time=None if creation_time is None else datetime_to_proto(creation_time),
+            inherit_configs=inherit_configs,
         )
 
         self._operations_repo.save_create_run(create_run)
