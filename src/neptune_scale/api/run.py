@@ -58,7 +58,10 @@ from neptune_scale.exceptions import (
     NeptuneSynchronizationStopped,
 )
 from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
-from neptune_scale.sync.errors_tracking import ErrorsMonitor
+from neptune_scale.sync.errors_tracking import (
+    ErrorsMonitor,
+    create_default_warning_callback,
+)
 from neptune_scale.sync.files import (
     generate_destination,
     guess_mime_type_from_bytes,
@@ -341,7 +344,7 @@ class Run(AbstractContextManager):
                 operations_repository=self._operations_repo,
                 on_network_error_callback=on_network_error_callback,
                 on_error_callback=on_error_callback,
-                on_warning_callback=on_warning_callback,
+                on_warning_callback=on_warning_callback or create_default_warning_callback(fork_run_id, fork_step),
             )
 
             self._sync_process: Optional[BaseProcess] = spawn_mp_context.Process(
