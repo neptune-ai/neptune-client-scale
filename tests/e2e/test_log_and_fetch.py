@@ -227,22 +227,36 @@ def test_inherit_configs(api_token, client, run, project_name, inherit_configs):
     # given
     now = time.time()
     data = {
-        "int-value": int(now),
-        "float-value": now,
-        "str-value": f"hello-{now}",
+        "int-value-1": int(now),
+        "float-value-1": now,
+        "str-value-1": f"hello-{now}",
     }
     run.log_configs(data)
     assert run.wait_for_processing(SYNC_TIMEOUT)
 
     # when
+    data_2 = {
+        "int-value-2": int(now + 1),
+        "float-value-2": now + 1,
+        "str-value-2": f"hello-{now + 1}",
+    }
     with Run(
-        api_token=api_token, project=project_name, fork_run_id=run._run_id, fork_step=0, inherit_configs=inherit_configs
+        api_token=api_token,
+        project=project_name,
+        fork_run_id=run._run_id,
+        fork_step=0,
+        inherit_configs=inherit_configs,
+        experiment_name="test_inherit_configs",
     ) as run_2:
-        pass
+        run_2.log_configs(data_2)
 
-    fetched = fetch_attribute_values(client, project_name, custom_run_id=run_2._run_id, attributes=data.keys())
+    fetched = fetch_attribute_values(
+        client, project_name, custom_run_id=run_2._run_id, attributes=data.keys() | data_2.keys()
+    )
     for key, value in data.items():
         if inherit_configs:
             assert fetched[key] == value, f"Value for {key} does not match"
         else:
             assert key not in fetched, f"Value for {key} was inherited but should not be"
+    for key, value in data_2.items():
+        assert fetched[key] == value, f"Value for {key} does not match"
