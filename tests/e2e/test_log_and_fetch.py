@@ -240,6 +240,8 @@ def test_inherit_configs(api_token, client, run, project_name, inherit_configs):
     ) as run_2:
         pass
 
+    assert run_2.wait_for_processing(SYNC_TIMEOUT)
+
     fetched = fetch_attribute_values(client, project_name, custom_run_id=run_2._run_id, attributes=data.keys())
     for key, value in data.items():
         if inherit_configs:
