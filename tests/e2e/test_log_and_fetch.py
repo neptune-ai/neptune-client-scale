@@ -223,7 +223,11 @@ def test_source_tracking(run, client, project_name):
     "inherit_configs",
     [True, False],
 )
-def test_inherit_configs(api_token, client, run, project_name, inherit_configs):
+@pytest.mark.parametrize(
+    "experiment_name",
+    ["pye2e-scale", "test_inherit_configs", None],
+)
+def test_inherit_configs(api_token, client, run, project_name, inherit_configs, experiment_name):
     # given
     now = time.time()
     data = {
@@ -246,7 +250,7 @@ def test_inherit_configs(api_token, client, run, project_name, inherit_configs):
         fork_run_id=run._run_id,
         fork_step=0,
         inherit_configs=inherit_configs,
-        experiment_name="test_inherit_configs",
+        experiment_name=experiment_name,
     ) as run_2:
         run_2.log_configs(data_2)
 
