@@ -22,7 +22,9 @@ from typing import (
 from neptune_scale.generated.neptune_api.api.retrieval import get_multiple_float_series_values_proto
 from neptune_scale.generated.neptune_api.client import AuthenticatedClient
 from neptune_scale.generated.neptune_api.models import FloatTimeSeriesValuesRequest
-from neptune_scale.generated.neptune_api.proto.neptune_pb.api.v1.model.series_values_pb2 import ProtoFloatSeriesValuesResponseDTO
+from neptune_scale.generated.neptune_api.proto.neptune_pb.api.v1.model.series_values_pb2 import (
+    ProtoFloatSeriesValuesResponseDTO,
+)
 
 from . import (
     fetch_attribute_values,

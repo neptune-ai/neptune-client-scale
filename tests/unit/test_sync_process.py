@@ -14,12 +14,22 @@ from unittest.mock import (
     patch,
 )
 
-import neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 as ingest_pb2
 import pytest
 from azure.core.exceptions import (
     AzureError,
     ClientAuthenticationError,
     HttpResponseError,
+)
+
+import neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 as ingest_pb2
+from neptune_scale import NeptuneScaleWarning
+from neptune_scale.exceptions import (
+    NeptuneFileUploadError,
+    NeptuneFileUploadTemporaryError,
+    NeptuneRetryableError,
+    NeptuneScaleError,
+    NeptuneSynchronizationStopped,
+    NeptuneUnexpectedError,
 )
 from neptune_scale.generated.neptune_api.proto.google_rpc.code_pb2 import Code
 from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
@@ -30,16 +40,6 @@ from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 i
 from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     SubmitResponse,
-)
-
-from neptune_scale import NeptuneScaleWarning
-from neptune_scale.exceptions import (
-    NeptuneFileUploadError,
-    NeptuneFileUploadTemporaryError,
-    NeptuneRetryableError,
-    NeptuneScaleError,
-    NeptuneSynchronizationStopped,
-    NeptuneUnexpectedError,
 )
 from neptune_scale.net.api_client import FileSignRequest
 from neptune_scale.sync.operations_repository import (

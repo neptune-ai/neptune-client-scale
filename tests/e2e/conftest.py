@@ -12,11 +12,11 @@ from datetime import (
 )
 from pathlib import Path
 
-from neptune_scale.generated.neptune_api import AuthenticatedClient
 from pytest import fixture
 
 from neptune_scale import Run
 from neptune_scale.api.run import SourceTrackingConfig
+from neptune_scale.generated.neptune_api import AuthenticatedClient
 
 from .test_fetcher.client import create_client
 

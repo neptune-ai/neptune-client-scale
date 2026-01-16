@@ -39,9 +39,6 @@ from typing import (
 )
 from urllib.parse import quote_plus
 
-from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
-from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
-
 from neptune_scale.api.validation import (
     verify_max_length,
     verify_non_empty,
@@ -57,6 +54,8 @@ from neptune_scale.exceptions import (
     NeptuneProjectNotProvided,
     NeptuneSynchronizationStopped,
 )
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 from neptune_scale.logging.console_log_capture import ConsoleLogCaptureThread
 from neptune_scale.sync.errors_tracking import ErrorsMonitor
 from neptune_scale.sync.files import (

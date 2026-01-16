@@ -33,6 +33,13 @@ from typing import (
 import httpx
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from httpx import Timeout
+
+from neptune_scale.exceptions import (
+    NeptuneConnectionLostError,
+    NeptuneInvalidCredentialsError,
+    NeptuneUnableToAuthenticateError,
+    NeptuneUnexpectedResponseError,
+)
 from neptune_scale.generated.neptune_api import (
     AuthenticatedClient,
     Client,
@@ -72,13 +79,6 @@ from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_p
 from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_scale.generated.neptune_api.types import File as BinaryContent
 from neptune_scale.generated.neptune_api.types import Response
-
-from neptune_scale.exceptions import (
-    NeptuneConnectionLostError,
-    NeptuneInvalidCredentialsError,
-    NeptuneUnableToAuthenticateError,
-    NeptuneUnexpectedResponseError,
-)
 from neptune_scale.sync.parameters import HTTP_CLIENT_NETWORKING_TIMEOUT
 from neptune_scale.util.envs import (
     ALLOW_SELF_SIGNED_CERTIFICATE,
@@ -127,6 +127,10 @@ def get_config_and_token_urls(
                 raise NeptuneUnexpectedResponseError()
 
             config = config_response.parsed
+            # Ensure the parsed config is the expected type before accessing its attributes
+            if not isinstance(config, ClientConfig):
+                raise NeptuneUnexpectedResponseError()
+
             urls_response = client.get_httpx_client().get(config.security.open_id_discovery)
             if not urls_response.is_success:
                 raise NeptuneUnexpectedResponseError()
