@@ -39,8 +39,8 @@ from typing import (
 )
 from urllib.parse import quote_plus
 
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import ForkPoint
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
 
 from neptune_scale.api.validation import (
     verify_max_length,

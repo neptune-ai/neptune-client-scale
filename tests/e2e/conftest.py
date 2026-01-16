@@ -12,7 +12,7 @@ from datetime import (
 )
 from pathlib import Path
 
-from neptune_api import AuthenticatedClient
+from neptune_scale.generated.neptune_api import AuthenticatedClient
 from pytest import fixture
 
 from neptune_scale import Run

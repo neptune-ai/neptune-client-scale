@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from neptune_api.models import Provider
+from neptune_scale.generated.neptune_api.models import Provider
 
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
@@ -39,14 +39,14 @@ from typing import (
 
 import backoff
 import psutil
-from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
-from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
+from neptune_scale.generated.neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     SubmitResponse,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
     GenericFloatValueNanInfUnsupported,

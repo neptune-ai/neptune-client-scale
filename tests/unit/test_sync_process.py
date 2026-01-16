@@ -14,20 +14,20 @@ from unittest.mock import (
     patch,
 )
 
-import neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 as ingest_pb2
+import neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 as ingest_pb2
 import pytest
 from azure.core.exceptions import (
     AzureError,
     ClientAuthenticationError,
     HttpResponseError,
 )
-from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+from neptune_scale.generated.neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     BulkRequestStatus,
     SubmitResponse,
 )

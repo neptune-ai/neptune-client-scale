@@ -33,22 +33,22 @@ from typing import (
 import httpx
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from httpx import Timeout
-from neptune_api import (
+from neptune_scale.generated.neptune_api import (
     AuthenticatedClient,
     Client,
 )
-from neptune_api.api.backend import get_client_config
-from neptune_api.api.ingestion import (
+from neptune_scale.generated.neptune_api.api.backend import get_client_config
+from neptune_scale.generated.neptune_api.api.ingestion import (
     bulk_check_status,
     ingest,
 )
-from neptune_api.api.storage import (
+from neptune_scale.generated.neptune_api.api.storage import (
     complete_multipart_upload,
     signed_url_generic,
 )
-from neptune_api.auth_helpers import exchange_api_key
-from neptune_api.credentials import Credentials
-from neptune_api.errors import (
+from neptune_scale.generated.neptune_api.auth_helpers import exchange_api_key
+from neptune_scale.generated.neptune_api.credentials import Credentials
+from neptune_scale.generated.neptune_api.errors import (
     ApiKeyRejectedError,
     InvalidApiTokenException,
     UnableToDeserializeApiKeyError,
@@ -56,7 +56,7 @@ from neptune_api.errors import (
     UnableToParseResponse,
     UnableToRefreshTokenError,
 )
-from neptune_api.models import (
+from neptune_scale.generated.neptune_api.models import (
     ClientConfig,
     CompleteMultipartUploadRequest,
     CreateSignedUrlsRequest,
@@ -65,13 +65,13 @@ from neptune_api.models import (
     MultipartPart,
     Permission,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
     RequestId,
     RequestIdList,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
-from neptune_api.types import File as BinaryContent
-from neptune_api.types import Response
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
+from neptune_scale.generated.neptune_api.types import File as BinaryContent
+from neptune_scale.generated.neptune_api.types import Response
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,

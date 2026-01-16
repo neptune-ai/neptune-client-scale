@@ -20,9 +20,9 @@ from typing import (
 )
 
 import requests
-from neptune_api.api.storage import signed_url_generic
-from neptune_api.client import AuthenticatedClient
-from neptune_api.models import (
+from neptune_scale.generated.neptune_api.api.storage import signed_url_generic
+from neptune_scale.generated.neptune_api.client import AuthenticatedClient
+from neptune_scale.generated.neptune_api.models import (
     CreateSignedUrlsRequest,
     CreateSignedUrlsResponse,
     FileToSign,

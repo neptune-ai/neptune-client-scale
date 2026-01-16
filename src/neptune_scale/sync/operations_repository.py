@@ -43,8 +43,8 @@ from typing import (
     Union,
 )
 
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Run as CreateRun
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshot
 
 from neptune_scale.exceptions import (
     NeptuneLocalStorageInUnsupportedVersion,

@@ -1,4 +1,4 @@
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Value
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Value
 
 SINGLE_FLOAT_VALUE_SIZE = Value(float64=1.0).ByteSize()
 

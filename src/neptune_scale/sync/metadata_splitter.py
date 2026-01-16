@@ -12,12 +12,12 @@ from typing import (
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from more_itertools import peekable
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     FileRef,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Histogram as ProtobufHistogram
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Histogram as ProtobufHistogram
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Preview,
     Step,
     StringSet,
