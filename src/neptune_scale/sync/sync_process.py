@@ -4,8 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from neptune_api.models import Provider
-
+from neptune_scale.generated.neptune_api.models import Provider
 from neptune_scale.sync.operations_repository import (
     FileUploadRequest,
     Metadata,
@@ -35,18 +34,11 @@ from types import FrameType
 from typing import (
     Optional,
     TypeVar,
+    cast,
 )
 
 import backoff
 import psutil
-from neptune_api.proto.google_rpc.code_pb2 import Code
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
-from neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
-from neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
-    BulkRequestStatus,
-    SubmitResponse,
-)
-from neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 
 from neptune_scale.exceptions import (
     GenericFloatValueNanInfUnsupported,
@@ -89,6 +81,14 @@ from neptune_scale.exceptions import (
     NeptuneUnexpectedError,
     NeptuneUnexpectedResponseError,
 )
+from neptune_scale.generated.neptune_api.proto.google_rpc.code_pb2 import Code
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import UpdateRunSnapshots
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.ingest_pb2 import IngestCode
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.client_pb2 import (
+    BulkRequestStatus,
+    SubmitResponse,
+)
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.pub.ingest_pb2 import RunOperation
 from neptune_scale.net.api_client import (
     ApiClient,
     FileSignRequest,
@@ -296,7 +296,7 @@ class SenderThread(Daemon):
         if status_code != 200:
             _raise_exception(status_code)
 
-        return SubmitResponse.FromString(response.content)
+        return cast(SubmitResponse, SubmitResponse.FromString(response.content))
 
     def work(self) -> None:
         try:
@@ -453,7 +453,7 @@ class StatusTrackingThread(Daemon):
         if status_code != 200:
             _raise_exception(status_code)
 
-        return BulkRequestStatus.FromString(response.content)
+        return cast(BulkRequestStatus, BulkRequestStatus.FromString(response.content))
 
     def work(self) -> None:
         try:

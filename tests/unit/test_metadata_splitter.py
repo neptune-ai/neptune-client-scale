@@ -4,7 +4,9 @@ from unittest.mock import patch
 import pytest
 from freezegun import freeze_time
 from google.protobuf.timestamp_pb2 import Timestamp
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+
+from neptune_scale.exceptions import NeptuneUnableToLogData
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     ModifySet,
     ModifyStringSet,
@@ -14,8 +16,6 @@ from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     UpdateRunSnapshot,
     Value,
 )
-
-from neptune_scale.exceptions import NeptuneUnableToLogData
 from neptune_scale.sync.metadata_splitter import (
     FileRefData,
     MetadataSplitter,

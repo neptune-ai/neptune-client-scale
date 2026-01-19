@@ -1,3 +1,4 @@
+exclude: /neptune_scale/generated/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -29,5 +30,7 @@ repos:
       - id: mypy
         args: [ --config-file, pyproject.toml ]
         pass_filenames: false
+        additional_dependencies:
+          - attrs
 default_language_version:
   python: python3

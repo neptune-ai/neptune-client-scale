@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import (
+    Iterable,
+    Iterator,
+)
 from dataclasses import dataclass
 from datetime import datetime
 from typing import (
@@ -8,24 +11,25 @@ from typing import (
     Optional,
     TypeVar,
     Union,
+    cast,
 )
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from more_itertools import peekable
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+
+from neptune_scale.exceptions import NeptuneUnableToLogData
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     SET_OPERATION,
     FileRef,
 )
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Histogram as ProtobufHistogram
-from neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import Histogram as ProtobufHistogram
+from neptune_scale.generated.neptune_api.proto.neptune_pb.ingest.v1.common_pb2 import (
     Preview,
     Step,
     StringSet,
     UpdateRunSnapshot,
     Value,
 )
-
-from neptune_scale.exceptions import NeptuneUnableToLogData
 from neptune_scale.sync.parameters import (
     MAX_ATTRIBUTE_PATH_LENGTH,
     MAX_FILE_DESTINATION_LENGTH,
@@ -292,17 +296,17 @@ class MetadataSplitter(Iterator[UpdateRunSnapshot]):
         _is_instance = isinstance  # local binding, faster in tight loops
         for key, value in _validate_paths(configs):
             if _is_instance(value, float):
-                yield key, Value(float64=value)
+                yield key, Value(float64=cast(float, value))
             elif _is_instance(value, bool):
-                yield key, Value(bool=value)
+                yield key, Value(bool=cast(bool, value))
             elif _is_instance(value, int):
-                yield key, Value(int64=value)
+                yield key, Value(int64=cast(int, value))
             elif _is_instance(value, str):
-                yield key, Value(string=value)
+                yield key, Value(string=cast(str, value))
             elif _is_instance(value, datetime):
-                yield key, Value(timestamp=datetime_to_proto(value))  # type: ignore
+                yield key, Value(timestamp=datetime_to_proto(cast(datetime, value)))
             elif _is_instance(value, (list, set, tuple)):
-                yield key, Value(string_set=StringSet(values=value))
+                yield key, Value(string_set=StringSet(values=cast(Iterable[str], value)))
             else:
                 _warn_or_raise_on_invalid_value(
                     f"Config values must be float, bool, int, str, datetime, list, set or tuple "
