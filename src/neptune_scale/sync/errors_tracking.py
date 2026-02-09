@@ -4,11 +4,15 @@ __all__ = ("ErrorsMonitor",)
 
 import time
 from collections.abc import Callable
-from typing import Optional
+from typing import (
+    Optional,
+    Union,
+)
 
 from neptune_scale.exceptions import (
     NeptuneConnectionLostError,
     NeptuneRetryableError,
+    NeptuneRunConflicting,
     NeptuneScaleError,
     NeptuneScaleWarning,
     NeptuneUnexpectedError,
@@ -30,8 +34,23 @@ def default_network_error_callback(error: BaseException, last_seen_at: Optional[
         logger.warning(f"A network error occurred: {error}. Retrying...")
 
 
-def default_warning_callback(error: BaseException, last_seen_at: Optional[float]) -> None:
-    logger.warning(error)
+def create_default_warning_callback(
+    fork_run_id: Optional[str] = None,
+    fork_step: Optional[Union[int, float]] = None,
+) -> Callable[[BaseException, Optional[float]], None]:
+    def callback(
+        error: BaseException,
+        last_seen_at: Optional[float],
+    ) -> None:
+        if isinstance(error, NeptuneRunConflicting):
+            if fork_run_id is not None or fork_step is not None:
+                logger.error(error)
+            else:
+                logger.warning(error)
+        else:
+            logger.warning(error)
+
+    return callback
 
 
 class ErrorsMonitor(Daemon):
@@ -52,7 +71,7 @@ class ErrorsMonitor(Daemon):
             on_error_callback or default_error_callback
         )
         self._on_warning_callback: Callable[[BaseException, Optional[float]], None] = (
-            on_warning_callback or default_warning_callback
+            on_warning_callback or create_default_warning_callback()
         )
         self._last_raised_timestamps: dict[str, float] = {}
 
